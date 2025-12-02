@@ -50,6 +50,6 @@
     }
   ],
   "redirects": [],
-  "outputDirectory": "excalidraw-app/build",
-  "installCommand": "yarn install"
+  "outputDirectory": "ColabDraw-app/dist",
+  "installCommand": "yarn install --no-lockfile"
 }
