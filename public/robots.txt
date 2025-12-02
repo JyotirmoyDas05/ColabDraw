@@ -1,0 +1,12 @@
+User-agent: Twitterbot
+Disallow:
+
+User-agent: facebookexternalhit
+Disallow:
+
+User-agent: *
+Allow: /$
+Allow: /
+Allow: /sitemap.xml
+Disallow: /
+
