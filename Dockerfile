@@ -15,6 +15,9 @@ RUN npm_config_target_arch=${TARGETARCH} yarn build:app:docker
 
 FROM --platform=${TARGETPLATFORM} nginx:1.27-alpine
 
+# Update Alpine packages to fix vulnerabilities
+RUN apk update && apk upgrade --no-cache
+
 COPY --from=build /opt/node_app/ColabDraw-app/build /usr/share/nginx/html
 
 HEALTHCHECK CMD wget -q -O /dev/null http://localhost || exit 1
