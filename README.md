@@ -56,6 +56,10 @@ The ColabDraw editor supports:
 # Install dependencies
 yarn install
 
+# Configure environment variables
+cp .env.development.example .env.development
+# Edit .env.development with your Appwrite credentials
+
 # Start development server
 yarn start
 
@@ -103,7 +107,7 @@ docker run -p 80:80 colabdraw
 - **Build Tool**: Vite
 - **State Management**: Jotai
 - **Real-time Communication**: Socket.io
-- **Backend**: Firebase (optional for collaboration features)
+- **Backend**: Appwrite (for collaboration and storage)
 
 ## Project Structure
 
