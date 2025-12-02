@@ -1,9 +1,9 @@
-FROM node:12-alpine
+FROM node:18-alpine
 
-WORKDIR /excalidraw-room
+WORKDIR /colabdraw-room
 
 COPY package.json yarn.lock ./
-RUN yarn
+RUN yarn install
 
 COPY tsconfig.json ./
 COPY src ./src
