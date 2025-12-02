@@ -1,4 +1,4 @@
-import type { UnsubscribeCallback } from "@excalidraw/excalidraw/types";
+import type { UnsubscribeCallback } from "../../ColabDraw/types";
 
 type Subscriber<T extends any[]> = (...payload: T) => void;
 

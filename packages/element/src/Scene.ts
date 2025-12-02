@@ -40,7 +40,7 @@ import type {
   SameType,
 } from "@excalidraw/common/utility-types";
 
-import type { AppState } from "../../excalidraw/types";
+import type { AppState } from "../../ColabDraw/types";
 
 type SceneStateCallback = () => void;
 type SceneStateCallbackRemover = () => void;

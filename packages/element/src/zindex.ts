@@ -1,6 +1,6 @@
 import { arrayToMap, findIndex, findLastIndex } from "@excalidraw/common";
 
-import type { AppState } from "@excalidraw/excalidraw/types";
+import type { AppState } from "../../ColabDraw/types";
 import type { GlobalPoint } from "@excalidraw/math";
 
 import { isFrameLikeElement, isTextElement } from "./typeChecks";

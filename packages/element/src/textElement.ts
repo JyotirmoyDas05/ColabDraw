@@ -12,7 +12,7 @@ import {
 
 import { pointFrom, pointRotateRads, type Radians } from "@excalidraw/math";
 
-import type { AppState } from "@excalidraw/excalidraw/types";
+import type { AppState } from "../../ColabDraw/types";
 
 import type { ExtractSetType } from "@excalidraw/common/utility-types";
 

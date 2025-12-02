@@ -11,7 +11,7 @@ import {
 
 import { pointsEqual } from "@excalidraw/math";
 
-import type { AppState, Offsets, Zoom } from "@excalidraw/excalidraw/types";
+import type { AppState, Offsets, Zoom } from "../../ColabDraw/types";
 
 import { getCommonBounds, getElementBounds } from "./bounds";
 import {

@@ -23,7 +23,7 @@ import {
 
 import type { LineSegment, LocalPoint, Radians } from "@excalidraw/math";
 
-import type { AppState } from "@excalidraw/excalidraw/types";
+import type { AppState } from "../../ColabDraw/types";
 
 import type { MapEntry, Mutable } from "@excalidraw/common/utility-types";
 

@@ -27,7 +27,7 @@ import {
 
 import type { Curve, LineSegment, LocalPoint } from "@excalidraw/math";
 
-import type { NormalizedZoomValue, Zoom } from "@excalidraw/excalidraw/types";
+import type { NormalizedZoomValue, Zoom } from "../../ColabDraw/types";
 
 import { elementCenterPoint, getDiamondPoints } from "./bounds";
 

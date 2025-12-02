@@ -21,7 +21,7 @@
   },
   "license": "MIT",
   "main": "dist/index.js",
-  "name": "excalidraw-portal",
+  "name": "colabdraw-room",
   "prettier": "@excalidraw/prettier-config",
   "scripts": {
     "build": "tsc",

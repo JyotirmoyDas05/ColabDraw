@@ -29,14 +29,8 @@ import type { GlobalPoint } from "@excalidraw/math";
 
 import type { Mutable } from "@excalidraw/common/utility-types";
 
-import type {
-  AppState,
-  EmbedsValidationStatus,
-} from "@excalidraw/excalidraw/types";
-import type {
-  ElementShape,
-  ElementShapes,
-} from "@excalidraw/excalidraw/scene/types";
+import type { AppState, EmbedsValidationStatus } from "../../ColabDraw/types";
+import type { ElementShape, ElementShapes } from "../../ColabDraw/scene/types";
 
 import { elementWithCanvasCache } from "./renderElement";
 

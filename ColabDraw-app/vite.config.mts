@@ -49,12 +49,12 @@ export default defineConfig(({ mode }) => {
           find: /^@excalidraw\/excalidraw$/,
           replacement: path.resolve(
             __dirname,
-            "../packages/excalidraw/index.tsx",
+            "../packages/ColabDraw/index.tsx",
           ),
         },
         {
           find: /^@excalidraw\/excalidraw\/(.*?)/,
-          replacement: path.resolve(__dirname, "../packages/excalidraw/$1"),
+          replacement: path.resolve(__dirname, "../packages/ColabDraw/$1"),
         },
         {
           find: /^@excalidraw\/math$/,

@@ -25,7 +25,7 @@ import type {
   Radians,
 } from "@excalidraw/math";
 
-import type { FrameNameBounds } from "@excalidraw/excalidraw/types";
+import type { FrameNameBounds } from "../../ColabDraw/types";
 
 import { isPathALoop } from "./utils";
 import {

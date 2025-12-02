@@ -6,7 +6,7 @@ import {
   sceneCoordsToViewportCoords,
   type EditorInterface,
 } from "@excalidraw/common";
-import { AnimationController } from "@excalidraw/excalidraw/renderer/animation";
+import { AnimationController } from "../../renderer/animation";
 
 import type {
   InteractiveCanvasRenderConfig,
@@ -14,7 +14,7 @@ import type {
   InteractiveSceneRenderConfig,
   RenderableElementsMap,
   RenderInteractiveSceneCallback,
-} from "@excalidraw/excalidraw/scene/types";
+} from "../../scene/types";
 
 import type {
   NonDeletedExcalidrawElement,

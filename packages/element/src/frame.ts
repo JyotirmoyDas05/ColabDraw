@@ -7,7 +7,7 @@ import type {
   AppClassProperties,
   AppState,
   StaticCanvasAppState,
-} from "@excalidraw/excalidraw/types";
+} from "../../ColabDraw/types";
 
 import type { ReadonlySetLike } from "@excalidraw/common/utility-types";
 

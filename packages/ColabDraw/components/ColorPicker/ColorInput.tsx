@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { KEYS } from "@excalidraw/common";
 
-import { getShortcutKey } from "../..//shortcut";
+import { getShortcutKey } from "../../shortcut";
 import { useAtom } from "../../editor-jotai";
 import { t } from "../../i18n";
 import { useEditorInterface } from "../App";

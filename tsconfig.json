@@ -21,8 +21,8 @@
     "paths": {
       "@excalidraw/common": ["./packages/common/src/index.ts"],
       "@excalidraw/common/*": ["./packages/common/src/*"],
-      "@excalidraw/excalidraw": ["./packages/excalidraw/index.tsx"],
-      "@excalidraw/excalidraw/*": ["./packages/excalidraw/*"],
+      "@excalidraw/excalidraw": ["./packages/ColabDraw/index.tsx"],
+      "@excalidraw/excalidraw/*": ["./packages/ColabDraw/*"],
       "@excalidraw/element": ["./packages/element/src/index.ts"],
       "@excalidraw/element/*": ["./packages/element/src/*"],
       "@excalidraw/math": ["./packages/math/src/index.ts"],
@@ -31,6 +31,6 @@
       "@excalidraw/utils/*": ["./packages/utils/src/*"]
     }
   },
-  "include": ["packages", "excalidraw-app"],
+  "include": ["packages", "ColabDraw-app"],
   "exclude": ["examples", "dist", "types", "tests"]
 }

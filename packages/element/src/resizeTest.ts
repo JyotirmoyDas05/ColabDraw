@@ -12,7 +12,7 @@ import {
 
 import type { GlobalPoint, LineSegment, LocalPoint } from "@excalidraw/math";
 
-import type { AppState, Zoom } from "@excalidraw/excalidraw/types";
+import type { AppState, Zoom } from "../../ColabDraw/types";
 
 import { getElementAbsoluteCoords } from "./bounds";
 import {

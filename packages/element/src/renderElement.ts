@@ -32,13 +32,13 @@ import type {
   ElementsPendingErasure,
   PendingExcalidrawElements,
   NormalizedZoomValue,
-} from "@excalidraw/excalidraw/types";
+} from "../../ColabDraw/types";
 
 import type {
   StaticCanvasRenderConfig,
   RenderableElementsMap,
   InteractiveCanvasRenderConfig,
-} from "@excalidraw/excalidraw/scene/types";
+} from "../../ColabDraw/scene/types";
 
 import { getElementAbsoluteCoords, getElementBounds } from "./bounds";
 import { getUncroppedImageElement } from "./cropElement";

@@ -8,7 +8,7 @@ import type {
   ToolType,
   UnsubscribeCallback,
   Zoom,
-} from "@excalidraw/excalidraw/types";
+} from "../../ColabDraw/types";
 
 import { COLOR_PALETTE } from "./colors";
 import {

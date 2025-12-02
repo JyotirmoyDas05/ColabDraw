@@ -42,7 +42,7 @@ import type {
   AppClassProperties,
   NullableGridSize,
   Zoom,
-} from "@excalidraw/excalidraw/types";
+} from "../../ColabDraw/types";
 
 import {
   calculateFixedPointForNonElbowArrowBinding,

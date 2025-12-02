@@ -17,7 +17,7 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import type { AllPossibleKeys } from "@excalidraw/common/utility-types";
 
-import { STORAGE_KEYS } from "../../../excalidraw-app/app_constants";
+import { STORAGE_KEYS } from "../../../ColabDraw-app/app_constants";
 
 import { Pointer, UI } from "./helpers/ui";
 import * as toolQueries from "./queries/toolQueries";

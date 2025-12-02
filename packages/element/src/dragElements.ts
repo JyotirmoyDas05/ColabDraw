@@ -10,7 +10,7 @@ import type {
   NormalizedZoomValue,
   NullableGridSize,
   PointerDownState,
-} from "@excalidraw/excalidraw/types";
+} from "../../ColabDraw/types";
 
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 

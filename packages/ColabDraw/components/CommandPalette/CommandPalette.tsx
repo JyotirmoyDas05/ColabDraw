@@ -10,9 +10,9 @@ import {
   isWritableElement,
 } from "@excalidraw/common";
 
-import { actionToggleShapeSwitch } from "@excalidraw/excalidraw/actions/actionToggleShapeSwitch";
+import { actionToggleShapeSwitch } from "../../actions/actionToggleShapeSwitch";
 
-import { getShortcutKey } from "@excalidraw/excalidraw/shortcut";
+import { getShortcutKey } from "../../shortcut";
 
 import type { MarkRequired } from "@excalidraw/common/utility-types";
 

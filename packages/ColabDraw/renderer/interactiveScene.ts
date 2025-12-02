@@ -64,8 +64,8 @@ import type {
   NonDeletedSceneElementsMap,
 } from "@excalidraw/element/types";
 
-import { renderSnaps } from "../renderer/renderSnaps";
-import { roundRect } from "../renderer/roundRect";
+import { renderSnaps } from "./renderSnaps";
+import { roundRect } from "./roundRect";
 import {
   getScrollBars,
   SCROLLBAR_COLOR,
