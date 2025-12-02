@@ -1,5 +1,5 @@
 {
-  "name": "@colabdraw/math",
+  "name": "@excalidraw/math",
   "version": "0.18.0",
   "type": "module",
   "types": "./dist/types/math/src/index.d.ts",

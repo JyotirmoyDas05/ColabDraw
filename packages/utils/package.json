@@ -1,5 +1,5 @@
 {
-  "name": "@colabdraw/utils",
+  "name": "@excalidraw/utils",
   "version": "0.1.2",
   "type": "module",
   "types": "./dist/types/utils/src/index.d.ts",
