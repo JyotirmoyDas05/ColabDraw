@@ -1,16 +1,22 @@
 .excalidraw {
   .ExcalidrawLogo {
-    --logo-icon--mobile: 4rem;
-    --logo-text--mobile: 3rem;
+    --logo-icon--mobile: 0.8rem;
+    --logo-text--mobile: 0.6rem;
 
-    --logo-icon--xs: 8rem;
-    --logo-text--xs: 6rem;
+    --logo-icon--xs: 3rem;
+    --logo-text--xs: 2rem;
 
-    --logo-icon--small: 10rem;
-    --logo-text--small: 7rem;
+    --logo-icon--tablet: 4.7rem;
+    --logo-text--tablet: 3rem;
+
+    --logo-icon--small: 7rem;
+    --logo-text--small: 5rem;
 
     --logo-icon--normal: 12rem;
     --logo-text--normal: 9rem;
+
+    --logo-icon--QHD: 14rem;
+    --logo-text--QHD: 11rem;
 
     --logo-icon--large: 360px;
     --logo-text--large: 260px;
@@ -33,54 +39,132 @@
       color: var(--color-logo-text);
     }
 
-    &.is-mobile {
+    // &.is-mobile {
+    //   .ExcalidrawLogo-icon {
+    //     height: var(--logo-icon--mobile);
+    //   }
+
+    //   .ExcalidrawLogo-text {
+    //     height: var(--logo-text--mobile);
+    //     margin-left: 0.5rem;
+    //   }
+    // }
+
+    // &.is-xs {
+    //   .ExcalidrawLogo-icon {
+    //     height: var(--logo-icon--xs);
+    //   }
+
+    //   .ExcalidrawLogo-text {
+    //     height: var(--logo-text--xs);
+    //   }
+    // }
+
+    // &.is-small {
+    //   .ExcalidrawLogo-icon {
+    //     height: var(--logo-icon--small);
+    //   }
+
+    //   .ExcalidrawLogo-text {
+    //     height: var(--logo-text--small);
+    //   }
+    // }
+
+    // &.is-normal {
+    //   .ExcalidrawLogo-icon {
+    //     height: var(--logo-icon--normal);
+    //   }
+
+    //   .ExcalidrawLogo-text {
+    //     height: var(--logo-text--normal);
+    //   }
+    // }
+
+    // &.is-large {
+    //   .ExcalidrawLogo-icon {
+    //     height: var(--logo-icon--large);
+    //   }
+
+    //   .ExcalidrawLogo-text {
+    //     height: var(--logo-text--large);
+    //   }
+    // }
+
+    // Responsive media queries to handle different screen sizes
+    // Mobile-S (320px) and Mobile-M (375px) and Mobile-L (425px)
+    @media (min-width: 320px) and (max-width: 424px) {
       .ExcalidrawLogo-icon {
-        height: var(--logo-icon--mobile);
+        height: var(--logo-icon--xs) !important;
       }
 
       .ExcalidrawLogo-text {
-        height: var(--logo-text--mobile);
-        margin-left: 0.5rem;
+        height: var(--logo-text--xs) !important;
+        margin-left: 0.5rem !important;
+      }
+    }
+    @media (min-width: 425px) and (max-width: 610px) {
+      .ExcalidrawLogo-icon {
+        height: var(--logo-icon--tablet) !important;
+      }
+
+      .ExcalidrawLogo-text {
+        height: var(--logo-text--tablet) !important;
+        margin-left: 0.3rem !important;
       }
     }
 
-    &.is-xs {
+    // Tablet (768px)
+    @media (min-width: 610px) and (max-width: 768px) {
       .ExcalidrawLogo-icon {
-        height: var(--logo-icon--xs);
+        height: var(--logo-icon--small) !important;
       }
 
       .ExcalidrawLogo-text {
-        height: var(--logo-text--xs);
+        height: var(--logo-text--small) !important;
+        margin-left: 0.4rem !important;
       }
     }
 
-    &.is-small {
+    // Laptop (1024px)
+    @media (min-width: 769px) and (max-width: 1024px) {
       .ExcalidrawLogo-icon {
-        height: var(--logo-icon--small);
+        height: var(--logo-icon--small) !important;
       }
 
       .ExcalidrawLogo-text {
-        height: var(--logo-text--small);
+        height: var(--logo-text--small) !important;
       }
     }
 
-    &.is-normal {
+    // Laptop-L (1440px)
+    @media (min-width: 1025px) and (max-width: 1440px) {
       .ExcalidrawLogo-icon {
-        height: var(--logo-icon--normal);
+        height: var(--logo-icon--normal) !important;
       }
 
       .ExcalidrawLogo-text {
-        height: var(--logo-text--normal);
+        height: var(--logo-text--normal) !important;
       }
     }
 
-    &.is-large {
+    @media (min-width: 1441px) and (max-width: 2560px) {
       .ExcalidrawLogo-icon {
-        height: var(--logo-icon--large);
+        height: var(--logo-icon--QHD) !important;
       }
 
       .ExcalidrawLogo-text {
-        height: var(--logo-text--large);
+        height: var(--logo-text--QHD) !important;
+      }
+    }
+
+    // 4K and larger (2560px+)
+    @media (min-width: 2561px) {
+      .ExcalidrawLogo-icon {
+        height: var(--logo-icon--large) !important;
+      }
+
+      .ExcalidrawLogo-text {
+        height: var(--logo-text--large) !important;
       }
     }
   }

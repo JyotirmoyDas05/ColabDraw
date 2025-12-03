@@ -1,20 +1,58 @@
-# ColabDraw
-
 <div align="center">
-  <h2>
-    An open source collaborative virtual whiteboard<br/>
+  <img src="./public/Brand.png" alt="ColabDraw Brand" width="600"/>
+  
+  <h1>ColabDraw</h1>
+  
+  <p>
+    <strong>An open source collaborative virtual whiteboard</strong><br/>
     Hand-drawn style • Real-time collaboration • End-to-end encrypted
-  <br />
-  </h2>
+  </p>
+
+  <!-- Badges -->
+  <p>
+    <a href="https://github.com/JyotirmoyDas05/ColabDraw/blob/master/LICENSE">
+      <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg" />
+    </a>
+    <a href="https://github.com/JyotirmoyDas05/ColabDraw">
+      <img alt="GitHub Stars" src="https://img.shields.io/github/stars/JyotirmoyDas05/ColabDraw?style=social" />
+    </a>
+    <a href="https://github.com/JyotirmoyDas05/ColabDraw/fork">
+      <img alt="GitHub Forks" src="https://img.shields.io/github/forks/JyotirmoyDas05/ColabDraw?style=social" />
+    </a>
+  </p>
+
+  <p>
+    <img alt="Node Version" src="https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen" />
+    <img alt="Yarn Version" src="https://img.shields.io/badge/yarn-1.22.22-2C8EBB?logo=yarn" />
+    <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-4.9.4-3178C6?logo=typescript&logoColor=white" />
+    <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" />
+    <img alt="Vite" src="https://img.shields.io/badge/Vite-5.0.12-646CFF?logo=vite&logoColor=white" />
+  </p>
+
+  <p>
+    <a href="https://github.com/JyotirmoyDas05/ColabDraw/issues">
+      <img alt="GitHub Issues" src="https://img.shields.io/github/issues/JyotirmoyDas05/ColabDraw" />
+    </a>
+    <a href="https://github.com/JyotirmoyDas05/ColabDraw/pulls">
+      <img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" />
+    </a>
+    <a href="https://github.com/JyotirmoyDas05/ColabDraw/graphs/contributors">
+      <img alt="Contributors" src="https://img.shields.io/github/contributors/JyotirmoyDas05/ColabDraw" />
+    </a>
+    <img alt="Last Commit" src="https://img.shields.io/github/last-commit/JyotirmoyDas05/ColabDraw" />
+  </p>
+
+  <p>
+    <img alt="Maintained" src="https://img.shields.io/badge/Maintained%3F-yes-green.svg" />
+    <img alt="Open Source Love" src="https://badges.frapsoft.com/os/v1/open-source.svg?v=103" />
+    <img alt="Built with Love" src="https://img.shields.io/badge/Built%20with-%E2%9D%A4-red" />
+  </p>
+
+---
+
 </div>
 
-<br />
-<p align="center">
-  <a href="https://github.com/JyotirmoyDas05/ColabDraw/blob/master/LICENSE">
-    <img alt="ColabDraw is released under the MIT license." src="https://img.shields.io/badge/license-MIT-blue.svg"  /></a>
-</p>
-
-> [!NOTE] > **ColabDraw** is a fork of [Excalidraw](https://github.com/excalidraw/excalidraw), customized and maintained by JyotirmoyDas05. This project maintains the MIT license and includes all original copyright attributions as required.
+> [!NOTE] > **ColabDraw** has taken some Components from [Excalidraw](https://github.com/excalidraw/excalidraw), and Fully Customized it according to the Project Author's Likings and is currently Maintained by JyotirmoyDas05. This project maintains the MIT license and includes all original copyright attributions as required.
 
 ## Features
 
@@ -150,12 +188,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Attribution
 
-ColabDraw is a fork of [Excalidraw](https://github.com/excalidraw/excalidraw):
+ColabDraw has taken some Components from[Excalidraw](https://github.com/excalidraw/excalidraw):
 
 - Copyright (c) 2020 Excalidraw
 - Copyright (c) 2025 JyotirmoyDas05 (ColabDraw modifications)
 
 ## Acknowledgments
 
-- Original Excalidraw team and contributors
+- Original Excalidraw team and contributors (for their Great Components and Documentation)
 - All open-source libraries used in this project
