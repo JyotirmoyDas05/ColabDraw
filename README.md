@@ -7,6 +7,14 @@
     <strong>An open source collaborative virtual whiteboard</strong><br/>
     Hand-drawn style • Real-time collaboration • End-to-end encrypted
   </p>
+  <!-- DeepWiki Badge -->
+  <p>
+    <a href="https://deepwiki.com/JyotirmoyDas05/ColabDraw">
+      <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg" height="40" />
+    </a>
+  </p>
+
+  <br/>
 
   <!-- Badges -->
   <p>
