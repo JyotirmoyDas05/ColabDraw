@@ -5,7 +5,6 @@ import {
   getFontString,
 } from "@excalidraw/common";
 
-import type { ExcalidrawProps } from "../../ColabDraw/types";
 import type { MarkRequired } from "@excalidraw/common/utility-types";
 
 import { newTextElement } from "./newElement";
@@ -17,6 +16,8 @@ import type {
   ExcalidrawIframeLikeElement,
   IframeData,
 } from "./types";
+
+import type { ExcalidrawProps } from "../../ColabDraw/types";
 
 type IframeDataWithSandbox = MarkRequired<IframeData, "sandbox">;
 
@@ -91,7 +92,7 @@ const ALLOWED_DOMAINS = new Set([
   "vimeo.com",
   "player.vimeo.com",
   "figma.com",
-  "link.placeholder.colabdraw.app", // TODO: Update with your actual domain
+  "colab-draw-with-nextjs.vercel.app", // Production Vercel domain
   "gist.github.com",
   "twitter.com",
   "x.com",

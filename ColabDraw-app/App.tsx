@@ -39,11 +39,10 @@ import { t } from "@excalidraw/excalidraw/i18n";
 
 import {
   GithubIcon,
-  XBrandIcon,
+  LinkedinIcon,
   DiscordIcon,
   usersIcon,
   share,
-  youtubeIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { isElementLink } from "@excalidraw/element";
 import { restore, restoreAppState } from "@excalidraw/excalidraw/data/restore";
@@ -947,21 +946,27 @@ const ExcalidrawWrapper = () => {
               ],
               perform: () => {
                 window.open(
-                  "https://github.com/excalidraw/excalidraw",
+                  "https://github.com/JyotirmoyDas05",
                   "_blank",
                   "noopener noreferrer",
                 );
               },
             },
             {
-              label: t("labels.followUs"),
-              icon: XBrandIcon,
+              label: "Connect with Me",
+              icon: LinkedinIcon,
               category: DEFAULT_CATEGORIES.links,
               predicate: true,
-              keywords: ["twitter", "contact", "social", "community"],
+              keywords: [
+                "linkedin",
+                "contact",
+                "social",
+                "community",
+                "profile",
+              ],
               perform: () => {
                 window.open(
-                  "https://x.com/excalidraw",
+                  "https://www.linkedin.com/in/jyotimoydas/",
                   "_blank",
                   "noopener noreferrer",
                 );
@@ -986,21 +991,7 @@ const ExcalidrawWrapper = () => {
               ],
               perform: () => {
                 window.open(
-                  "https://discord.gg/UexuTaE",
-                  "_blank",
-                  "noopener noreferrer",
-                );
-              },
-            },
-            {
-              label: "YouTube",
-              icon: youtubeIcon,
-              category: DEFAULT_CATEGORIES.links,
-              predicate: true,
-              keywords: ["features", "tutorials", "howto", "help", "community"],
-              perform: () => {
-                window.open(
-                  "https://youtube.com/@excalidraw",
+                  "https://discord.gg/sf9WWRT5TB",
                   "_blank",
                   "noopener noreferrer",
                 );
