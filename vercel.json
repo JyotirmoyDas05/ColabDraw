@@ -50,7 +50,7 @@
     }
   ],
   "redirects": [],
-  "buildCommand": "bun run --filter '@excalidraw/*' build:esm && cd ColabDraw-app && bun run build",
+  "buildCommand": "bun run build:packages && bun run build",
   "outputDirectory": "ColabDraw-app/build",
   "installCommand": "bun install"
 }
