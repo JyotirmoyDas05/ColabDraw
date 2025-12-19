@@ -1,0 +1,63 @@
+/**
+ * Stateful Button Styles
+ * Matches the Excalidraw app design system
+ */
+
+@import "../../packages/ColabDraw/css/variables.module.scss";
+
+.excalidraw {
+  .StatefulButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.75rem 1.25rem;
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    border-radius: var(--border-radius-md);
+    font-family: var(--ui-font);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: box-shadow 0.2s ease;
+    overflow: hidden;
+
+    &:hover:not(:disabled) {
+      box-shadow: 0 4px 16px rgba(var(--color-primary-rgb), 0.35);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+    }
+
+    &.is-active {
+      background: var(--color-primary);
+      cursor: wait;
+    }
+  }
+
+  .StatefulButton__content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .StatefulButton__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .StatefulButton__svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .StatefulButton__label {
+    white-space: nowrap;
+  }
+}

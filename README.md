@@ -31,7 +31,7 @@
 
   <p>
     <img alt="Node Version" src="https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen" />
-    <img alt="Yarn Version" src="https://img.shields.io/badge/yarn-1.22.22-2C8EBB?logo=yarn" />
+    <img alt="Bun Version" src="https://img.shields.io/badge/Bun-%3E%3D1.0.0-black?logo=bun" />
     <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-4.9.4-3178C6?logo=typescript&logoColor=white" />
     <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" />
     <img alt="Vite" src="https://img.shields.io/badge/Vite-5.0.12-646CFF?logo=vite&logoColor=white" />
@@ -83,9 +83,11 @@ The ColabDraw editor supports:
 
 ## ColabDraw App Features
 
+- ⚡ **Powered by Bun** (ultra-fast builds and installs)
 - 📡 PWA support (works offline)
-- 🤼 Real-time collaboration
+- 🤼 Real-time collaboration via Appwrite
 - 🔒 End-to-end encryption
+- 📊 Web Analytics with Vercel Integration
 - 💾 Local-first support (autosaves to the browser)
 - 🔗 Shareable links
 
@@ -94,39 +96,38 @@ The ColabDraw editor supports:
 ### Prerequisites
 
 - Node.js >= 18.0.0
-- Yarn 1.22.22
+- **Bun >= 1.0.0** (Recommended)
 
 ### Quick Start
 
 ```bash
 # Install dependencies
-yarn install
+bun install
 
 # Configure environment variables
 cp .env.development.example .env.development
 # Edit .env.development with your Appwrite credentials
 
-# Start development server
-yarn start
+# Start development server (App + Room)
+bun run dev
 
 # Build for production
-yarn build
+bun run build
 ```
 
 ### Available Scripts
 
-- `yarn start` - Start development server
-- `yarn build` - Build for production
-- `yarn test` - Run tests
-- `yarn test:coverage` - Run tests with coverage
-- `yarn fix` - Auto-fix linting and formatting issues
+- `bun run dev` - Start development server (Frontend + Backend)
+- `bun run build` - Build for production (All packages + App)
+- `bun run test` - Run tests
+- `bun run fix` - Auto-fix linting and formatting issues
 
 ## Building & Deployment
 
 ### Local Development
 
 ```bash
-yarn start
+bun run dev
 ```
 
 The app will be available at `http://localhost:3000`
@@ -134,7 +135,7 @@ The app will be available at `http://localhost:3000`
 ### Production Build
 
 ```bash
-yarn build:app
+bun run build:app
 ```
 
 ### Docker
@@ -149,19 +150,22 @@ docker run -p 80:80 colabdraw
 
 ## Technology Stack
 
+- **Package Manager**: Bun 🚀
 - **Frontend**: React 19 with TypeScript
 - **Build Tool**: Vite
 - **State Management**: Jotai
 - **Real-time Communication**: Socket.io
-- **Backend**: Appwrite (for collaboration and storage)
+- **Backend/Storage**: Appwrite
+- **Analytics**: Vercel Web Analytics 📊
 
 ## Project Structure
 
 ```
 ColabDraw/
-├── excalidraw-app/     # Main application
+├── ColabDraw-app/      # Main application
+├── ColabDraw-room/     # Collaboration backend
 ├── packages/
-│   ├── excalidraw/     # Core drawing library
+│   ├── ColabDraw/      # Core drawing library
 │   ├── math/           # Math utilities
 │   ├── element/        # Element handling
 │   ├── utils/          # Shared utilities
@@ -196,7 +200,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Attribution
 
-ColabDraw has taken some Components from[Excalidraw](https://github.com/excalidraw/excalidraw):
+ColabDraw has taken some Components from [Excalidraw](https://github.com/excalidraw/excalidraw):
 
 - Copyright (c) 2020 Excalidraw
 - Copyright (c) 2025 JyotirmoyDas05 (ColabDraw modifications)

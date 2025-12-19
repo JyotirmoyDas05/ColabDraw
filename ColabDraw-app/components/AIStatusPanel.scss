@@ -1,0 +1,77 @@
+/**
+ * AI Status Panel Styles
+ */
+
+@import "../../packages/ColabDraw/css/variables.module.scss";
+
+.excalidraw {
+  .AIStatusPanel {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--island-bg-color);
+    border: 1px solid var(--dialog-border-color);
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-island);
+    font-family: var(--ui-font);
+    font-size: 0.8125rem;
+    color: var(--text-primary-color);
+    white-space: nowrap;
+  }
+
+  .AIStatusPanel__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+  }
+
+  .AIStatusPanel__message {
+    font-weight: 500;
+  }
+
+  // Status variants
+  .AIStatusPanel--waiting,
+  .AIStatusPanel--capturing {
+    .AIStatusPanel__icon {
+      color: var(--color-primary);
+    }
+  }
+
+  .AIStatusPanel--processing {
+    .AIStatusPanel__icon {
+      color: var(--color-primary);
+    }
+    .AIStatusPanel__message {
+      color: var(--color-primary);
+    }
+  }
+
+  .AIStatusPanel--complete {
+    border-color: var(--color-success);
+    .AIStatusPanel__icon {
+      color: var(--color-success);
+    }
+    .AIStatusPanel__message {
+      color: var(--color-success);
+    }
+  }
+
+  .AIStatusPanel--error {
+    border-color: var(--color-danger);
+    .AIStatusPanel__icon {
+      color: var(--color-danger);
+    }
+    .AIStatusPanel__message {
+      color: var(--color-danger);
+    }
+  }
+}

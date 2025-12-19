@@ -50,7 +50,7 @@
     }
   ],
   "redirects": [],
-  "buildCommand": "yarn build:common && yarn build:math && yarn build:element && yarn build",
+  "buildCommand": "bun build:packages && bun build",
   "outputDirectory": "ColabDraw-app/build",
-  "installCommand": "yarn install --no-lockfile"
+  "installCommand": "bun install"
 }

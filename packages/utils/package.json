@@ -70,6 +70,6 @@
   "repository": "https://github.com/JyotirmoyDas05/ColabDraw",
   "scripts": {
     "gen:types": "rimraf types && tsc",
-    "build:esm": "rimraf dist && node ../../scripts/buildUtils.js && yarn gen:types"
+    "build:esm": "rimraf dist && node ../../scripts/buildUtils.js && bun gen:types"
   }
 }
