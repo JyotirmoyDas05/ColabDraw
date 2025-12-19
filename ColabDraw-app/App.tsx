@@ -7,6 +7,7 @@ import {
   useEditorInterface,
 } from "@excalidraw/excalidraw";
 import { trackEvent } from "@excalidraw/excalidraw/analytics";
+import { Analytics } from "@vercel/analytics/react";
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 import {
   CommandPalette,
@@ -1040,6 +1041,7 @@ const ExcalidrawApp = () => {
     <TopErrorBoundary>
       <Provider store={appJotaiStore}>
         <ExcalidrawWrapper />
+        <Analytics />
       </Provider>
     </TopErrorBoundary>
   );
