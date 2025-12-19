@@ -144,12 +144,13 @@ export default defineConfig(({ mode }) => {
         },
 
         workbox: {
-          // don't precache fonts, locales and separate chunks
+          // don't precache fonts, locales, separate chunks, and large WASM files
           globIgnores: [
             "fonts.css",
             "**/locales/**",
             "service-worker.js",
             "**/*.chunk-*.js",
+            "**/*.wasm", // Exclude large WASM files (AI models) from precaching
           ],
           runtimeCaching: [
             {
@@ -199,8 +200,23 @@ export default defineConfig(({ mode }) => {
                 },
               },
             },
+            {
+              // Cache WASM files at runtime instead of precaching
+              urlPattern: new RegExp(".+\\.wasm$"),
+              handler: "CacheFirst",
+              options: {
+                cacheName: "wasm",
+                expiration: {
+                  maxEntries: 10,
+                  maxAgeSeconds: 60 * 60 * 24 * 90, // 90 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
           ],
-          maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3 MB
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB (for remaining assets)
         },
         manifest: {
           short_name: "Excalidraw",
