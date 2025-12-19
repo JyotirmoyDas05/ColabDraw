@@ -128,6 +128,15 @@ import DebugCanvas, {
   loadSavedDebugState,
 } from "./components/DebugCanvas";
 import { AIComponents } from "./components/AI";
+import AISettingsDialog from "./components/AISettingsDialog";
+import IconPenSparkle from "./components/icons/IconPenSparkle";
+import { AIStatusPanel } from "./components/AIStatusPanel";
+import { useCanvasAI, isRateLimited as checkRateLimited } from "./ai";
+import {
+  createAIResponseElement,
+  calculateResponsePosition,
+  loadAISettings,
+} from "./ai/aiUtils";
 import "./index.scss";
 import { AppSidebar } from "./components/AppSidebar";
 
@@ -369,6 +378,11 @@ const ExcalidrawWrapper = () => {
   });
   const collabError = useAtomValue(collabErrorIndicatorAtom);
 
+  // Smart Canvas AI
+  const [aiEnabled, setAiEnabled] = useState(() => loadAISettings().aiEnabled);
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const canvasAI = useCanvasAI(excalidrawAPI, aiEnabled);
+
   useHandleLibrary({
     excalidrawAPI,
     adapter: LibraryIndexedDBAdapter,
@@ -392,6 +406,28 @@ const ExcalidrawWrapper = () => {
       forceRefresh((prev) => !prev);
     }
   }, [excalidrawAPI]);
+
+  // Effect to render AI response on canvas
+  useEffect(() => {
+    if (canvasAI.aiResponse && excalidrawAPI && aiEnabled) {
+      const position = calculateResponsePosition(excalidrawAPI);
+      const responseElement = createAIResponseElement(
+        canvasAI.aiResponse,
+        position,
+      );
+
+      excalidrawAPI.updateScene({
+        elements: [
+          ...excalidrawAPI.getSceneElementsIncludingDeleted(),
+          responseElement as any,
+        ],
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+
+      // Clear the response after adding to canvas
+      canvasAI.clearResponse();
+    }
+  }, [canvasAI.aiResponse, excalidrawAPI, aiEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!excalidrawAPI || (!isCollabDisabled && !collabAPI)) {
@@ -663,6 +699,11 @@ const ExcalidrawWrapper = () => {
         window.devicePixelRatio,
       );
     }
+
+    // Track activity for Smart Canvas AI
+    if (aiEnabled) {
+      canvasAI.trackActivity();
+    }
   };
 
   const [latestShareableLink, setLatestShareableLink] = useState<string | null>(
@@ -778,20 +819,43 @@ const ExcalidrawWrapper = () => {
         autoFocus={true}
         theme={editorTheme}
         renderTopRightUI={(isMobile) => {
-          if (isMobile || !collabAPI || isCollabDisabled) {
+          if (isMobile || isCollabDisabled) {
             return null;
           }
 
           return (
             <div className="excalidraw-ui-top-right">
               {collabError.message && <CollabError collabError={collabError} />}
-              <LiveCollaborationTrigger
-                isCollaborating={isCollaborating}
-                onSelect={() =>
-                  setShareDialogState({ isOpen: true, type: "share" })
-                }
-                editorInterface={editorInterface}
-              />
+
+              {/* AI Button - beside Share */}
+              <button
+                className={`collab-button ai-header-button ${
+                  aiEnabled ? "ai-active" : ""
+                }`}
+                onClick={() => setAiSettingsOpen(true)}
+                title="Smart Canvas AI"
+              >
+                <span className="ai-header-button__icon">
+                  <IconPenSparkle />
+                </span>
+                <span className="ai-header-button__label">AI</span>
+                {canvasAI.isAnalyzing && (
+                  <span className="ai-header-button__pulse" />
+                )}
+              </button>
+
+              {/* AI Status Panel - shows real-time processing status */}
+              <AIStatusPanel status={canvasAI.status} isVisible={aiEnabled} />
+
+              {collabAPI && (
+                <LiveCollaborationTrigger
+                  isCollaborating={isCollaborating}
+                  onSelect={() =>
+                    setShareDialogState({ isOpen: true, type: "share" })
+                  }
+                  editorInterface={editorInterface}
+                />
+              )}
             </div>
           );
         }}
@@ -820,6 +884,22 @@ const ExcalidrawWrapper = () => {
         </OverwriteConfirmDialog>
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
         {excalidrawAPI && <AIComponents excalidrawAPI={excalidrawAPI} />}
+
+        {/* Smart Canvas AI Settings Dialog */}
+        <AISettingsDialog
+          isOpen={aiSettingsOpen}
+          onClose={() => setAiSettingsOpen(false)}
+          onApiKeyChange={() => canvasAI.setUserGeminiKey(null)}
+          onModeChange={(mode) => canvasAI.setAIMode(mode)}
+          onToggleAI={setAiEnabled}
+          isAIEnabled={aiEnabled}
+          isRateLimited={checkRateLimited()}
+          downloadState={canvasAI.downloadState}
+          isQwenReady={canvasAI.isQwenReady}
+          isJanusReady={canvasAI.isJanusReady}
+          isModelLoading={canvasAI.isModelLoading}
+          onInitializeModels={canvasAI.initializeModels}
+        />
 
         <TTDDialogTrigger />
         {isCollaborating && isOffline && (

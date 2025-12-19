@@ -27,11 +27,13 @@
   },
   "dependencies": {
     "@excalidraw/random-username": "1.0.0",
+    "@huggingface/transformers": "3.8.1",
     "@sentry/browser": "9.0.1",
     "@vercel/analytics": "1.6.1",
     "appwrite": "^16.0.2",
     "callsites": "4.2.0",
     "dotenv": "16.0.1",
+    "framer-motion": "12.23.25",
     "i18next-browser-languagedetector": "6.1.4",
     "idb-keyval": "6.0.3",
     "jotai": "2.11.0",

@@ -128,3 +128,77 @@
     }
   }
 }
+
+/* ===========================================================================
+   Smart Canvas AI - Header Button Styles
+   =========================================================================== */
+
+.excalidraw-ui-top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-header-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  height: 36px;
+  background-color: #a8a5ff;
+  color: white;
+  border: 0.8px solid #a8a5ff;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  box-shadow: var(--color-surface-lowest) 0px 0px 0px 1px;
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(168, 165, 255, 0.4), var(--color-surface-lowest) 0px 0px 0px 1px;
+  }
+  
+  &:active {
+    transform: translateY(0);
+  }
+  
+  &.ai-active {
+    box-shadow: 0 0 0 2px rgba(168, 165, 255, 0.3), var(--color-surface-lowest) 0px 0px 0px 1px;
+  }
+}
+
+.ai-header-button__icon {
+  display: flex;
+  align-items: center;
+  font-size: 16px;
+  transform: translateY(1.5px);
+}
+
+.ai-header-button__label {
+  font-family: var(--ui-font);
+}
+
+.ai-header-button__pulse {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  animation: ai-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes ai-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.3);
+  }
+}

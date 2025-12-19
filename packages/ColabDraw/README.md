@@ -1,6 +1,6 @@
-# Excalidraw
+# ColabDraw
 
-**Excalidraw** is exported as a component to be directly embedded in your project.
+**ColabDraw** is exported as a component to be directly embedded in your project.
 
 ## Installation
 
@@ -16,7 +16,7 @@ yarn add react react-dom @excalidraw/excalidraw
 
 #### Self-hosting fonts
 
-By default, Excalidraw will try to download all the used fonts from the [CDN](https://esm.run/@excalidraw/excalidraw/dist/prod).
+By default, ColabDraw will try to download all the used fonts from the [CDN](https://esm.run/@excalidraw/excalidraw/dist/prod).
 
 For self-hosting purposes, you'll have to copy the content of the folder `node_modules/@excalidraw/excalidraw/dist/prod/fonts` to the path where your assets should be served from (i.e. `public/` directory in your project). In that case, you should also set `window.EXCALIDRAW_ASSET_PATH` to the very same path, i.e. `/` in case it's in the root:
 
@@ -24,9 +24,9 @@ For self-hosting purposes, you'll have to copy the content of the folder `node_m
 <script>window.EXCALIDRAW_ASSET_PATH = "/";</script>
 ```
 
-### Dimensions of Excalidraw
+### Dimensions of ColabDraw
 
-Excalidraw takes _100%_ of `width` and `height` of the containing block so make sure the container in which you render Excalidraw has non zero dimensions.
+ColabDraw takes _100%_ of `width` and `height` of the containing block so make sure the container in which you render ColabDraw has non zero dimensions.
 
 ## Demo
 

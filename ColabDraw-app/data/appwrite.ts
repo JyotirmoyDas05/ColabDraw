@@ -31,11 +31,14 @@ import type { Socket } from "socket.io-client";
 // Appwrite Configuration
 // -----------------------------------------------------------------------------
 
-const APPWRITE_ENDPOINT = import.meta.env.VITE_APP_APPWRITE_ENDPOINT;
-const APPWRITE_PROJECT_ID = import.meta.env.VITE_APP_APPWRITE_PROJECT_ID;
-const APPWRITE_DATABASE_ID = import.meta.env.VITE_APP_APPWRITE_DATABASE_ID;
-const APPWRITE_TABLE_ID = import.meta.env.VITE_APP_APPWRITE_TABLE_ID;
-const APPWRITE_BUCKET_ID = import.meta.env.VITE_APP_APPWRITE_BUCKET_ID;
+export const APPWRITE_ENDPOINT = import.meta.env.VITE_APP_APPWRITE_ENDPOINT;
+export const APPWRITE_PROJECT_ID = import.meta.env.VITE_APP_APPWRITE_PROJECT_ID;
+export const APPWRITE_DATABASE_ID = import.meta.env
+  .VITE_APP_APPWRITE_DATABASE_ID;
+export const APPWRITE_TABLE_ID = import.meta.env.VITE_APP_APPWRITE_TABLE_ID;
+export const APPWRITE_BUCKET_ID = import.meta.env.VITE_APP_APPWRITE_BUCKET_ID;
+export const APPWRITE_SHARE_LINKS_TABLE_ID = import.meta.env
+  .VITE_APP_APPWRITE_SHARE_LINKS_TABLE_ID;
 
 let appwriteClient: Client | null = null;
 let appwriteDatabase: Databases | null = null;
@@ -50,7 +53,7 @@ const _initializeAppwrite = () => {
   return appwriteClient;
 };
 
-const _getDatabase = () => {
+export const _getDatabase = () => {
   if (!appwriteDatabase) {
     appwriteDatabase = new Databases(_initializeAppwrite());
   }

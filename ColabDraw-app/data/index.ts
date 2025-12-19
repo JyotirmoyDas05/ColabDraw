@@ -2,11 +2,7 @@ import {
   compressData,
   decompressData,
 } from "@excalidraw/excalidraw/data/encode";
-import {
-  decryptData,
-  generateEncryptionKey,
-  IV_LENGTH_BYTES,
-} from "@excalidraw/excalidraw/data/encryption";
+import { generateEncryptionKey } from "@excalidraw/excalidraw/data/encryption";
 import { serializeAsJSON } from "@excalidraw/excalidraw/data/json";
 import { restore } from "@excalidraw/excalidraw/data/restore";
 import { isInvisiblySmallElement } from "@excalidraw/element";
@@ -37,7 +33,13 @@ import {
 } from "../app_constants";
 
 import { encodeFilesForUpload } from "./FileManager";
-import { saveFilesToAppwrite } from "./appwrite";
+import {
+  saveFilesToAppwrite,
+  _getDatabase,
+  APPWRITE_DATABASE_ID,
+  APPWRITE_TABLE_ID,
+  APPWRITE_SHARE_LINKS_TABLE_ID,
+} from "./appwrite";
 
 import type { WS_SUBTYPES } from "../app_constants";
 
@@ -63,8 +65,7 @@ export const getSyncableElements = (
     isSyncableElement(element),
   ) as SyncableExcalidrawElement[];
 
-const BACKEND_V2_GET = import.meta.env.VITE_APP_BACKEND_V2_GET_URL;
-const BACKEND_V2_POST = import.meta.env.VITE_APP_BACKEND_V2_POST_URL;
+// Backend URLs - no longer used for sharing, everything goes through Appwrite now
 
 const generateRoomId = async () => {
   const buffer = new Uint8Array(ROOM_ID_BYTES);
@@ -164,54 +165,29 @@ export const getCollaborationLink = (data: {
   return `${window.location.origin}${window.location.pathname}#room=${data.roomId},${data.roomKey}`;
 };
 
-/**
- * Decodes shareLink data using the legacy buffer format.
- * @deprecated
- */
-const legacy_decodeFromBackend = async ({
-  buffer,
-  decryptionKey,
-}: {
-  buffer: ArrayBuffer;
-  decryptionKey: string;
-}) => {
-  let decrypted: ArrayBuffer;
-
-  try {
-    // Buffer should contain both the IV (fixed length) and encrypted data
-    const iv = buffer.slice(0, IV_LENGTH_BYTES);
-    const encrypted = buffer.slice(IV_LENGTH_BYTES, buffer.byteLength);
-    decrypted = await decryptData(new Uint8Array(iv), encrypted, decryptionKey);
-  } catch (error: any) {
-    // Fixed IV (old format, backward compatibility)
-    const fixedIv = new Uint8Array(IV_LENGTH_BYTES);
-    decrypted = await decryptData(fixedIv, buffer, decryptionKey);
-  }
-
-  // We need to convert the decrypted array buffer to a string
-  const string = new window.TextDecoder("utf-8").decode(
-    new Uint8Array(decrypted),
-  );
-  const data: ImportedDataState = JSON.parse(string);
-
-  return {
-    elements: data.elements || null,
-    appState: data.appState || null,
-  };
-};
+// legacy_decodeFromBackend removed as we are now using Appwrite storage for new shares
 
 const importFromBackend = async (
   id: string,
   decryptionKey: string,
 ): Promise<ImportedDataState> => {
   try {
-    const response = await fetch(`${BACKEND_V2_GET}${id}`);
+    const database = _getDatabase();
+    // Fetch from Appwrite instead of Excalidraw public API
+    const doc = await database.getDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_SHARE_LINKS_TABLE_ID || APPWRITE_TABLE_ID, // Use share-links table if defined, else fallback to scenes
+      id,
+    );
 
-    if (!response.ok) {
+    if (!doc) {
       window.alert(t("alerts.importBackendFailed"));
       return {};
     }
-    const buffer = await response.arrayBuffer();
+
+    const buffer = Uint8Array.from(atob((doc as any).ciphertext), (c) =>
+      c.charCodeAt(0),
+    );
 
     try {
       const { data: decodedBuffer } = await decompressData(
@@ -229,11 +205,8 @@ const importFromBackend = async (
         appState: data.appState || null,
       };
     } catch (error: any) {
-      console.warn(
-        "error when decoding shareLink data using the new format:",
-        error,
-      );
-      return legacy_decodeFromBackend({ buffer, decryptionKey });
+      console.warn("error when decoding shareLink data:", error);
+      return {};
     }
   } catch (error: any) {
     window.alert(t("alerts.importBackendFailed"));
@@ -313,32 +286,33 @@ export const exportToBackend = async (
       maxBytes: FILE_UPLOAD_MAX_BYTES,
     });
 
-    const response = await fetch(BACKEND_V2_POST, {
-      method: "POST",
-      body: payload.buffer.slice(0) as ArrayBuffer,
+    const database = _getDatabase();
+    const id = await generateRoomId();
+
+    // Save encrypted JSON to Appwrite
+    const ciphertextBase64 = btoa(
+      String.fromCharCode(...new Uint8Array(payload.buffer)),
+    );
+
+    await database.createDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_SHARE_LINKS_TABLE_ID || APPWRITE_TABLE_ID,
+      id,
+      {
+        ciphertext: ciphertextBase64,
+      },
+    );
+
+    const url = new URL(window.location.href);
+    url.hash = `json=${id},${encryptionKey}`;
+    const urlString = url.toString();
+
+    await saveFilesToAppwrite({
+      prefix: `/files/shareLinks/${id}`,
+      files: filesToUpload,
     });
-    const json = await response.json();
-    if (json.id) {
-      const url = new URL(window.location.href);
-      // We need to store the key (and less importantly the id) as hash instead
-      // of queryParam in order to never send it to the server
-      url.hash = `json=${json.id},${encryptionKey}`;
-      const urlString = url.toString();
 
-      await saveFilesToAppwrite({
-        prefix: `/files/shareLinks/${json.id}`,
-        files: filesToUpload,
-      });
-
-      return { url: urlString, errorMessage: null };
-    } else if (json.error_class === "RequestTooLargeError") {
-      return {
-        url: null,
-        errorMessage: t("alerts.couldNotCreateShareableLinkTooBig"),
-      };
-    }
-
-    return { url: null, errorMessage: t("alerts.couldNotCreateShareableLink") };
+    return { url: urlString, errorMessage: null };
   } catch (error: any) {
     console.error(error);
 
