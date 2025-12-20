@@ -96,6 +96,8 @@ export function buildAIPrompt(context?: string): string {
 - If it's a sketch or wireframe, describe it or suggest UI improvements.
 - If unclear, describe what you see and ask for clarification.
 
+IMPORTANT: Respond in PLAIN TEXT only. Do NOT use any markdown formatting like **bold**, *italic*, #headers, or bullet points. Just write natural sentences.
+
 Be concise. Respond in 1-3 sentences unless more detail is needed.
 Do not repeat the question. Just provide the answer or insight.`;
 
@@ -104,6 +106,46 @@ Do not repeat the question. Just provide the answer or insight.`;
     : "Analyze this whiteboard and provide an appropriate response.";
 
   return `${systemPrompt}\n\nUser: ${userMessage}`;
+}
+
+/**
+ * Strips markdown formatting from text for use in Excalidraw text elements.
+ * Removes bold, italic, headers, bullet points, and other markdown syntax.
+ *
+ * @param text - Text potentially containing markdown
+ * @returns Plain text without markdown formatting
+ */
+export function stripMarkdown(text: string): string {
+  return (
+    text
+      // Remove bold: **text** or __text__
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/__(.+?)__/g, "$1")
+      // Remove italic: *text* or _text_
+      .replace(/\*(.+?)\*/g, "$1")
+      .replace(/_(.+?)_/g, "$1")
+      // Remove strikethrough: ~~text~~
+      .replace(/~~(.+?)~~/g, "$1")
+      // Remove inline code: `text`
+      .replace(/`(.+?)`/g, "$1")
+      // Remove headers: # Header
+      .replace(/^#{1,6}\s+/gm, "")
+      // Remove bullet points: - item or * item
+      .replace(/^[-*]\s+/gm, "")
+      // Remove numbered lists: 1. item
+      .replace(/^\d+\.\s+/gm, "")
+      // Remove links: [text](url) -> text
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      // Remove images: ![alt](url)
+      .replace(/!\[([^\]]*)]\([^)]+\)/g, "$1")
+      // Remove blockquotes: > text
+      .replace(/^>\s+/gm, "")
+      // Remove horizontal rules: --- or ***
+      .replace(/^[-*]{3,}$/gm, "")
+      // Clean up extra whitespace
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
 }
 
 // ============================================================================
@@ -222,8 +264,68 @@ export function calculateResponsePosition(
 }
 
 /**
+ * Placeholder patterns that indicate where AI should place its answer.
+ * These are common patterns users might write to indicate "answer here".
+ */
+const PLACEHOLDER_PATTERNS = [
+  /^\?{1,3}$/, // ?, ??, ???
+  /^={1,2}\s*\?{1,3}$/, // =?, =??, ===?
+  /\?{2,}$/, // ends with ??
+  /^\s*\?\s*$/, // just ? with whitespace
+];
+
+/**
+ * Finds text elements that contain placeholder patterns (like "??" or "?").
+ * These are elements where the user expects the AI to provide an answer.
+ *
+ * @param elements - All scene elements
+ * @returns Text elements that match placeholder patterns, sorted by most recent
+ */
+export function findPlaceholderElements(elements: readonly any[]): any[] {
+  return elements
+    .filter((el) => {
+      if (el.isDeleted || el.type !== "text") {
+        return false;
+      }
+      const text = (el.text || "").trim();
+      return PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(text));
+    })
+    .sort((a, b) => (b.updated || 0) - (a.updated || 0)); // Most recent first
+}
+
+/**
+ * Creates an updated version of a placeholder element with the AI response.
+ * Preserves the original element's position, styling, and appearance.
+ *
+ * @param placeholderElement - The original placeholder element to update
+ * @param response - The AI response text
+ * @returns The updated element with the response text
+ */
+export function updatePlaceholderWithResponse(
+  placeholderElement: any,
+  response: string,
+): any {
+  const now = Date.now();
+
+  // Strip markdown and clean up the response
+  const cleanResponse = stripMarkdown(response);
+
+  // Preserve original styling but update text
+  return {
+    ...placeholderElement,
+    text: cleanResponse,
+    originalText: cleanResponse,
+    version: (placeholderElement.version || 1) + 1,
+    versionNonce: Math.floor(Math.random() * 100000),
+    updated: now,
+    // Update dimensions to accommodate new text (Excalidraw will auto-resize)
+    autoResize: true,
+  };
+}
+
+/**
  * Creates a text element for displaying the AI response on the canvas.
- * The element is styled distinctly to differentiate from user content.
+ * This is used as a fallback when no placeholder element is found.
  *
  * @param text - The AI response text
  * @param position - Where to place the element
@@ -266,14 +368,14 @@ export function createAIResponseElement(
     updated: now,
     link: null,
     locked: false,
-    // Text-specific properties
-    text: `🤖 ${text}`,
+    // Text-specific properties - no robot emoji
+    text,
     fontSize: 16,
     fontFamily: 1, // Virgil (hand-drawn style)
     textAlign: "left",
     verticalAlign: "top",
     containerId: null,
-    originalText: `🤖 ${text}`,
+    originalText: text,
     autoResize: true,
     lineHeight: 1.25,
   };

@@ -11,6 +11,8 @@ export {
   buildAIPrompt,
   detectBrowser,
   createAIResponseElement,
+  findPlaceholderElements,
+  updatePlaceholderWithResponse,
   loadAISettings,
   saveAISettings,
   calculateResponsePosition,

@@ -1,3 +1,4 @@
+/// <reference path="./vite-env.d.ts" />
 import {
   Excalidraw,
   LiveCollaborationTrigger,
@@ -135,6 +136,8 @@ import { useCanvasAI, isRateLimited as checkRateLimited } from "./ai";
 import {
   createAIResponseElement,
   calculateResponsePosition,
+  findPlaceholderElements,
+  updatePlaceholderWithResponse,
   loadAISettings,
 } from "./ai/aiUtils";
 import "./index.scss";
@@ -410,19 +413,42 @@ const ExcalidrawWrapper = () => {
   // Effect to render AI response on canvas
   useEffect(() => {
     if (canvasAI.aiResponse && excalidrawAPI && aiEnabled) {
-      const position = calculateResponsePosition(excalidrawAPI);
-      const responseElement = createAIResponseElement(
-        canvasAI.aiResponse,
-        position,
-      );
+      const elements = excalidrawAPI.getSceneElements();
+      const placeholders = findPlaceholderElements(elements);
 
-      excalidrawAPI.updateScene({
-        elements: [
-          ...excalidrawAPI.getSceneElementsIncludingDeleted(),
-          responseElement as any,
-        ],
-        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-      });
+      if (placeholders.length > 0) {
+        // Update the most recent placeholder with the response
+        const placeholder = placeholders[0];
+        const updatedElement = updatePlaceholderWithResponse(
+          placeholder,
+          canvasAI.aiResponse,
+        );
+
+        // Replace the placeholder element with the updated one
+        const updatedElements = excalidrawAPI
+          .getSceneElementsIncludingDeleted()
+          .map((el) => (el.id === placeholder.id ? updatedElement : el));
+
+        excalidrawAPI.updateScene({
+          elements: updatedElements as any,
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        });
+      } else {
+        // Fallback: Create new element at calculated position
+        const position = calculateResponsePosition(excalidrawAPI);
+        const responseElement = createAIResponseElement(
+          canvasAI.aiResponse,
+          position,
+        );
+
+        excalidrawAPI.updateScene({
+          elements: [
+            ...excalidrawAPI.getSceneElementsIncludingDeleted(),
+            responseElement as any,
+          ],
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        });
+      }
 
       // Clear the response after adding to canvas
       canvasAI.clearResponse();
@@ -833,7 +859,7 @@ const ExcalidrawWrapper = () => {
                   aiEnabled ? "ai-active" : ""
                 }`}
                 onClick={() => setAiSettingsOpen(true)}
-                title="Smart Canvas AI"
+                title="Canvas AI (Experimental)"
               >
                 <span className="ai-header-button__icon">
                   <IconPenSparkle />

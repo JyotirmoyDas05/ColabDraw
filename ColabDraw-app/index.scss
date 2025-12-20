@@ -145,9 +145,9 @@
   gap: 6px;
   padding: 0 14px;
   height: 36px;
-  background-color: #a8a5ff;
+  background-color: var(--color-primary);
   color: white;
-  border: 0.8px solid #a8a5ff;
+  border: 0.8px solid var(--color-primary);
   border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
@@ -158,7 +158,7 @@
   
   &:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(168, 165, 255, 0.4), var(--color-surface-lowest) 0px 0px 0px 1px;
+    box-shadow: 0 4px 12px rgba(105, 101, 219, 0.4), var(--color-surface-lowest) 0px 0px 0px 1px;
   }
   
   &:active {
@@ -166,7 +166,7 @@
   }
   
   &.ai-active {
-    box-shadow: 0 0 0 2px rgba(168, 165, 255, 0.3), var(--color-surface-lowest) 0px 0px 0px 1px;
+    box-shadow: 0 0 0 2px rgba(105, 101, 219, 0.3), var(--color-surface-lowest) 0px 0px 0px 1px;
   }
 }
 
@@ -179,6 +179,7 @@
 
 .ai-header-button__label {
   font-family: var(--ui-font);
+  color: var(--color-surface-lowest);
 }
 
 .ai-header-button__pulse {
