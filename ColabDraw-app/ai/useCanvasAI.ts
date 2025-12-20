@@ -478,6 +478,16 @@ export function useCanvasAI(
     }
   }, []);
 
+  // Refresh API usage state (used after external key changes)
+  const refreshApiUsage = useCallback(() => {
+    const apiKeyInfo = getActiveApiKey();
+    if (apiKeyInfo) {
+      setApiUsage(getUsage(apiKeyInfo.isUserKey));
+    } else {
+      setApiUsage(null);
+    }
+  }, []);
+
   // ============================================================================
   // Return
   // ============================================================================
@@ -520,5 +530,6 @@ export function useCanvasAI(
     dismissBrowserBanner,
     setAIMode,
     setUserGeminiKey,
+    refreshApiUsage,
   };
 }

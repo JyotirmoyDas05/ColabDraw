@@ -99,12 +99,25 @@ export function canUseAPI(isUserKey: boolean): boolean {
   return usage.count < usage.limit;
 }
 
+/**
+ * Check if user has exhausted their quota (not whether API is available)
+ * Only returns true when quota is actually used up.
+ */
 export function isRateLimited(): boolean {
   const apiKeyInfo = getActiveApiKey();
+  // If no API key exists, we're not "rate limited" - API is just unavailable
   if (!apiKeyInfo) {
-    return true;
+    return false;
   }
+  // Only rate limited if we have a key but quota is exhausted
   return !canUseAPI(apiKeyInfo.isUserKey);
+}
+
+/**
+ * Check if any API key is configured (user or default)
+ */
+export function hasApiKey(): boolean {
+  return getActiveApiKey() !== null;
 }
 
 // ============================================================================

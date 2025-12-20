@@ -19,6 +19,7 @@ export {
   analyzeWithGemini,
   isGeminiAvailable,
   isRateLimited,
+  hasApiKey,
   getUsage,
   getUserApiKey,
   setUserApiKey,

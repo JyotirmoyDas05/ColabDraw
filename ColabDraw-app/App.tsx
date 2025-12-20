@@ -889,7 +889,7 @@ const ExcalidrawWrapper = () => {
         <AISettingsDialog
           isOpen={aiSettingsOpen}
           onClose={() => setAiSettingsOpen(false)}
-          onApiKeyChange={() => canvasAI.setUserGeminiKey(null)}
+          onApiKeyChange={() => canvasAI.refreshApiUsage()}
           onModeChange={(mode) => canvasAI.setAIMode(mode)}
           onToggleAI={setAiEnabled}
           isAIEnabled={aiEnabled}

@@ -141,7 +141,7 @@ export interface AISettings {
 
 /** Default AI settings */
 export const DEFAULT_AI_SETTINGS: AISettings = {
-  aiEnabled: true,
+  aiEnabled: false, // OFF by default - user must explicitly enable
   aiInactivityDelay: 3,
   aiAutoTrigger: true,
   browserBannerDismissed: false,
@@ -217,6 +217,8 @@ export interface UseCanvasAIReturn {
   setAIMode: (mode: AIMode) => void;
   /** Set user's Gemini API key */
   setUserGeminiKey: (key: string | null) => void;
+  /** Refresh API usage state */
+  refreshApiUsage: () => void;
 }
 
 // ============================================================================

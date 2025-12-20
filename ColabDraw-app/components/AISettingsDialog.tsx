@@ -17,6 +17,7 @@ import {
   setUserApiKey,
   hasUserProvidedKey,
   getActiveApiKey,
+  hasApiKey,
   GOOGLE_AI_STUDIO_URL,
 } from "../ai/geminiClient";
 import { loadAISettings, saveAISettings } from "../ai/aiUtils";
@@ -359,8 +360,19 @@ export const AISettingsDialog = ({
 
         {/* Content */}
         <div className="AISettingsDialog__content">
+          {/* No API Key Warning */}
+          {!hasApiKey() && (aiMode === "api" || aiMode === "auto") && (
+            <div className="AISettingsDialog__warning AISettingsDialog__warning--info">
+              <strong>API Key Required</strong>
+              <p>
+                No Gemini API key is configured. Add your own API key below to
+                use API mode, or switch to Local mode.
+              </p>
+            </div>
+          )}
+
           {/* Rate Limit Warning */}
-          {isRateLimited && (
+          {isRateLimited && hasApiKey() && (
             <div className="AISettingsDialog__warning">
               <strong>Daily limit reached</strong>
               <p>

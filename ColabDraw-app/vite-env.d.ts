@@ -1,6 +1,8 @@
+/// <reference types="vite/client" />
 /// <reference types="vite-plugin-pwa/vanillajs" />
 /// <reference types="vite-plugin-pwa/info" />
 /// <reference types="vite-plugin-svgr/client" />
+
 interface ImportMetaEnv {
   // The port to run the dev server
   VITE_APP_PORT: string;
@@ -29,7 +31,8 @@ interface ImportMetaEnv {
   // debugging Service Workers.
   VITE_APP_DEV_DISABLE_LIVE_RELOAD: string;
 
-  VITE_APP_DISABLE_SENTRY: string;
+  // Disable prevent unload prompts
+  VITE_APP_DISABLE_PREVENT_UNLOAD: string;
 
   // Set this flag to false if you want to open the overlay by default
   VITE_APP_COLLAPSE_OVERLAY: string;
@@ -48,10 +51,15 @@ interface ImportMetaEnv {
 
   MODE: string;
 
-  DEV: string;
-  PROD: string;
+  DEV: boolean;
+  PROD: boolean;
 }
 
 interface ImportMeta {
   readonly env: ImportMetaEnv;
+}
+
+// Extend Window for Excalidraw globals
+interface Window {
+  EXCALIDRAW_THROTTLE_RENDER?: boolean;
 }
