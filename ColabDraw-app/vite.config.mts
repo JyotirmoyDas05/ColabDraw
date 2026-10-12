@@ -79,6 +79,20 @@ export default defineConfig(({ mode }) => {
           find: /^@excalidraw\/utils\/(.*?)/,
           replacement: path.resolve(__dirname, "../packages/utils/src/$1"),
         },
+        {
+          find: /^@excalidraw\/fractional-indexing$/,
+          replacement: path.resolve(
+            __dirname,
+            "../packages/fractional-indexing/src/index.ts",
+          ),
+        },
+        {
+          find: /^@excalidraw\/laser-pointer$/,
+          replacement: path.resolve(
+            __dirname,
+            "../packages/laser-pointer/src/index.ts",
+          ),
+        },
       ],
     },
     build: {
@@ -105,6 +119,14 @@ export default defineConfig(({ mode }) => {
               const index = id.indexOf("locales/");
               // Taking the substring after "locales/"
               return `locales/${id.substring(index + 8)}`;
+            }
+
+            if (id.includes("@excalidraw/mermaid-to-excalidraw")) {
+              return "mermaid-to-excalidraw";
+            }
+
+            if (id.includes("@codemirror/") || id.includes("@lezer/")) {
+              return "codemirror.chunk";
             }
           },
         },
@@ -151,6 +173,11 @@ export default defineConfig(({ mode }) => {
             "service-worker.js",
             "**/*.chunk-*.js",
             "**/*.wasm", // Exclude large WASM files (AI models) from precaching
+            // CodeMirrorEditor can't be assigned a `.chunk` name via
+            // manualChunks because Rollup would hoist shared deps (React)
+            // via a static import from the main bundle, defeating lazy
+            // loading. So we exclude it by name instead.
+            "**/CodeMirrorEditor-*.js",
           ],
           runtimeCaching: [
             {
@@ -190,7 +217,7 @@ export default defineConfig(({ mode }) => {
               },
             },
             {
-              urlPattern: new RegExp(".chunk-.+.js"),
+              urlPattern: new RegExp("(.chunk-.+|CodeMirrorEditor-.+)\\.js"),
               handler: "CacheFirst",
               options: {
                 cacheName: "chunk",

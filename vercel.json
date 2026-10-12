@@ -1,5 +1,4 @@
 {
-  "public": true,
   "headers": [
     {
       "source": "/(.*)",
@@ -50,7 +49,7 @@
     }
   ],
   "redirects": [],
-  "buildCommand": "bun run build:packages && bun run build",
+  "buildCommand": "bun run build",
   "outputDirectory": "ColabDraw-app/build",
   "installCommand": "bun install"
 }

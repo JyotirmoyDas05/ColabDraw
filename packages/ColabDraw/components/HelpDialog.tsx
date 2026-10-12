@@ -4,11 +4,13 @@ import { isDarwin, isFirefox, isWindows } from "@excalidraw/common";
 
 import { KEYS } from "@excalidraw/common";
 
+import { actionToggleTheme } from "../actions";
 import { getShortcutFromShortcutName } from "../actions/shortcuts";
 import { probablySupportsClipboardBlob } from "../clipboard";
 import { t } from "../i18n";
 import { getShortcutKey } from "../shortcut";
 
+import { useExcalidrawActionManager } from "./App";
 import { Dialog } from "./Dialog";
 import { ExternalLinkIcon, GithubIcon } from "./icons";
 
@@ -96,7 +98,7 @@ const Shortcut = ({
     <div className="HelpDialog__shortcut">
       <div>{label}</div>
       <div className="HelpDialog__key-container">
-        {[...intersperse(splitShortcutKeys, isOr ? t("helpDialog.or") : null)]}
+        {[...intersperse(splitShortcutKeys, isOr ? t("helpDialog.or") : "")]}
       </div>
     </div>
   );
@@ -107,6 +109,7 @@ const ShortcutKey = (props: { children: React.ReactNode }) => (
 );
 
 export const HelpDialog = ({ onClose }: { onClose?: () => void }) => {
+  const actionManager = useExcalidrawActionManager();
   const handleClose = React.useCallback(() => {
     if (onClose) {
       onClose();
@@ -159,6 +162,7 @@ export const HelpDialog = ({ onClose }: { onClose?: () => void }) => {
               label={t("toolBar.text")}
               shortcuts={[KEYS.T, KEYS["8"]]}
             />
+            <Shortcut label={t("toolBar.stickynote")} shortcuts={[KEYS.N]} />
             <Shortcut label={t("toolBar.image")} shortcuts={[KEYS["9"]]} />
             <Shortcut
               label={t("toolBar.eraser")}
@@ -166,6 +170,7 @@ export const HelpDialog = ({ onClose }: { onClose?: () => void }) => {
             />
             <Shortcut label={t("toolBar.frame")} shortcuts={[KEYS.F]} />
             <Shortcut label={t("toolBar.laser")} shortcuts={[KEYS.K]} />
+            <Shortcut label={t("toolBar.bucketfill")} shortcuts={[KEYS.B]} />
             <Shortcut
               label={t("labels.eyeDropper")}
               shortcuts={[KEYS.I, "Shift+S", "Shift+G"]}
@@ -285,10 +290,12 @@ export const HelpDialog = ({ onClose }: { onClose?: () => void }) => {
               label={t("labels.viewMode")}
               shortcuts={[getShortcutKey("Alt+R")]}
             />
-            <Shortcut
-              label={t("labels.toggleTheme")}
-              shortcuts={[getShortcutKey("Alt+Shift+D")]}
-            />
+            {actionManager.isActionEnabled(actionToggleTheme) && (
+              <Shortcut
+                label={t("labels.toggleTheme")}
+                shortcuts={[getShortcutKey("Alt+Shift+D")]}
+              />
+            )}
             <Shortcut
               label={t("stats.fullTitle")}
               shortcuts={[getShortcutKey("Alt+/")]}
@@ -460,6 +467,10 @@ export const HelpDialog = ({ onClose }: { onClose?: () => void }) => {
             <Shortcut
               label={t("labels.ungroup")}
               shortcuts={[getShortcutKey("CtrlOrCmd+Shift+G")]}
+            />
+            <Shortcut
+              label={t("labels.toggleWrap")}
+              shortcuts={[getShortcutKey("W")]}
             />
             <Shortcut
               label={t("labels.flipHorizontal")}

@@ -12,7 +12,8 @@ import {
 
 import type { GlobalPoint, LineSegment, LocalPoint } from "@excalidraw/math";
 
-import type { AppState, Zoom } from "../../ColabDraw/types";
+import type { AppState, Zoom } from "@excalidraw/excalidraw/types";
+import type { Bounds } from "@excalidraw/common";
 
 import { getElementAbsoluteCoords } from "./bounds";
 import {
@@ -23,7 +24,6 @@ import {
 } from "./transformHandles";
 import { isImageElement, isLinearElement } from "./typeChecks";
 
-import type { Bounds } from "./bounds";
 import type {
   TransformHandleType,
   TransformHandle,
@@ -71,6 +71,8 @@ export const resizeTest = <Point extends GlobalPoint | LocalPoint>(
 
   if (
     rotationTransformHandle &&
+    // (the crop editor has none, nor draws it)
+    !appState.croppingElementId &&
     isInsideTransformHandle(rotationTransformHandle, x, y)
   ) {
     return "rotation" as TransformHandleType;

@@ -4,7 +4,13 @@ import util from "util";
 
 import { pointFrom, type LocalPoint, type Radians } from "@excalidraw/math";
 
-import { DEFAULT_VERTICAL_ALIGN, ROUNDNESS, assertNever } from "@excalidraw/common";
+import {
+  DEFAULT_VERTICAL_ALIGN,
+  ROUNDNESS,
+  assertNever,
+  getStrokeWidthByKey,
+  getUpdatedTimestamp,
+} from "@excalidraw/common";
 
 import {
   newArrowElement,
@@ -16,12 +22,14 @@ import {
   newImageElement,
   newLinearElement,
   newMagicFrameElement,
+  newStickyNoteElement,
   newTextElement,
 } from "@excalidraw/element";
 
-import { isLinearElementType } from "@excalidraw/element";
-import { getSelectedElements } from "@excalidraw/element";
-import { selectGroupsForSelectedElements } from "@excalidraw/element";
+import { isUsingAdaptiveRadius, getSelectedElements } from "@excalidraw/element";
+
+
+import { FONT_SIZES } from "@excalidraw/common";
 
 import type {
   ExcalidrawElement,
@@ -36,10 +44,15 @@ import type {
   ExcalidrawMagicFrameElement,
   ExcalidrawElbowArrowElement,
   ExcalidrawArrowElement,
+  ExcalidrawStickyNoteElement,
   FixedSegment,
+  NonDeleted,
+  NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
 
 import type { Mutable } from "@excalidraw/common/utility-types";
+
+import { selectGroupsForSelectedElements } from "../../components/App.selection";
 
 import { getMimeType } from "../../data/blob";
 import { createTestHook } from "../../components/App";
@@ -78,7 +91,7 @@ export class API {
     });
   };
 
-  static setSelectedElements = (elements: ExcalidrawElement[], editingGroupId?: string | null) => {
+  static setSelectedElements = (elements: NonDeletedExcalidrawElement[], editingGroupId?: string | null) => {
     act(() => {
       h.setState({
         ...selectGroupsForSelectedElements(
@@ -142,8 +155,7 @@ export class API {
 
   static clearSelection = () => {
     act(() => {
-      // @ts-ignore
-      h.app.clearSelection(null);
+      h.app.selectionTool.clearSelection(null);
     });
     expect(API.getSelectedElements().length).toBe(0);
   };
@@ -177,6 +189,7 @@ export class API {
     frameId?: ExcalidrawElement["id"] | null;
     index?: ExcalidrawElement["index"];
     groupIds?: ExcalidrawElement["groupIds"];
+    created?: ExcalidrawElement["created"];
     // generic element props
     strokeColor?: ExcalidrawGenericElement["strokeColor"];
     backgroundColor?: ExcalidrawGenericElement["backgroundColor"];
@@ -195,10 +208,17 @@ export class API {
       ? ExcalidrawTextElement["verticalAlign"]
       : never;
     boundElements?: ExcalidrawGenericElement["boundElements"];
+    baseHeight?: T extends "stickynote"
+      ? ExcalidrawStickyNoteElement["baseHeight"]
+      : never;
     containerId?: T extends "text"
       ? ExcalidrawTextElement["containerId"]
       : never;
     points?: T extends "arrow" | "line" | "freedraw" ? readonly LocalPoint[] : never;
+    polygon?: T extends "line" ? boolean : never;
+    strokeOptions?: T extends "freedraw"
+      ? ExcalidrawFreeDrawElement["strokeOptions"]
+      : never;
     locked?: boolean;
     fileId?: T extends "image" ? string : never;
     scale?: T extends "image" ? ExcalidrawImageElement["scale"] : never;
@@ -217,19 +237,23 @@ export class API {
       : never;
     elbowed?: boolean;
     fixedSegments?: FixedSegment[] | null;
-  }): T extends "arrow" | "line"
-    ? ExcalidrawLinearElement
-    : T extends "freedraw"
-    ? ExcalidrawFreeDrawElement
-    : T extends "text"
-    ? ExcalidrawTextElement
-    : T extends "image"
-    ? ExcalidrawImageElement
-    : T extends "frame"
-    ? ExcalidrawFrameElement
-    : T extends "magicframe"
-    ? ExcalidrawMagicFrameElement
-    : ExcalidrawGenericElement => {
+  }): NonDeleted<
+    T extends "arrow" | "line"
+      ? ExcalidrawLinearElement
+      : T extends "freedraw"
+      ? ExcalidrawFreeDrawElement
+      : T extends "text"
+      ? ExcalidrawTextElement
+      : T extends "image"
+      ? ExcalidrawImageElement
+      : T extends "frame"
+      ? ExcalidrawFrameElement
+      : T extends "magicframe"
+      ? ExcalidrawMagicFrameElement
+      : T extends "stickynote"
+      ? ExcalidrawStickyNoteElement
+      : ExcalidrawGenericElement
+  > => {
     let element: Mutable<ExcalidrawElement> = null!;
 
     const appState = h?.state || getDefaultAppState();
@@ -253,11 +277,20 @@ export class API {
       frameId: rest.frameId ?? null,
       index: rest.index ?? null,
       angle: (rest.angle ?? 0) as Radians,
-      strokeColor: rest.strokeColor ?? appState.currentItemStrokeColor,
+      strokeColor:
+        rest.strokeColor ??
+        (type === "stickynote"
+          ? appState.currentItemStickynoteStrokeColor
+          : appState.currentItemStrokeColor),
       backgroundColor:
-        rest.backgroundColor ?? appState.currentItemBackgroundColor,
+        rest.backgroundColor ??
+        (type === "stickynote"
+          ? appState.currentItemStickynoteBackgroundColor
+          : appState.currentItemBackgroundColor),
       fillStyle: rest.fillStyle ?? appState.currentItemFillStyle,
-      strokeWidth: rest.strokeWidth ?? appState.currentItemStrokeWidth,
+      strokeWidth:
+        rest.strokeWidth ??
+        getStrokeWidthByKey(type, appState.currentItemStrokeWidthKey),
       strokeStyle: rest.strokeStyle ?? appState.currentItemStrokeStyle,
       roundness: (
         rest.roundness === undefined
@@ -265,15 +298,16 @@ export class API {
           : rest.roundness
       )
         ? {
-            type: isLinearElementType(type)
-              ? ROUNDNESS.PROPORTIONAL_RADIUS
-              : ROUNDNESS.ADAPTIVE_RADIUS,
+            type: isUsingAdaptiveRadius(type)
+                    ? ROUNDNESS.ADAPTIVE_RADIUS
+                    : ROUNDNESS.PROPORTIONAL_RADIUS,
           }
         : null,
       roughness: rest.roughness ?? appState.currentItemRoughness,
       opacity: rest.opacity ?? appState.currentItemOpacity,
       boundElements: rest.boundElements ?? null,
       locked: rest.locked ?? false,
+      created: rest.created === undefined ? getUpdatedTimestamp() : rest.created,
     };
     switch (type) {
       case "rectangle":
@@ -296,6 +330,15 @@ export class API {
           ...base,
         });
         break;
+      case "stickynote":
+        element = newStickyNoteElement({
+          ...base,
+          width,
+          height,
+          type,
+          baseHeight: rest.baseHeight ?? height,
+        });
+        break;
       case "text":
         const fontSize = rest.fontSize ?? appState.currentItemFontSize;
         const fontFamily = rest.fontFamily ?? appState.currentItemFontFamily;
@@ -316,6 +359,7 @@ export class API {
           type: type as "freedraw",
           simulatePressure: true,
           points: rest.points,
+          strokeOptions: rest.strokeOptions,
           ...base,
         });
         break;
@@ -342,6 +386,7 @@ export class API {
             pointFrom<LocalPoint>(0, 0),
             pointFrom<LocalPoint>(100, 100),
           ],
+          polygon: rest.polygon,
         });
         break;
       case "image":
@@ -406,7 +451,7 @@ export class API {
       text: opts?.label?.text || "sample-text",
       width: 50,
       height: 20,
-      fontSize: 16,
+      fontSize: FONT_SIZES.sm,
       containerId: rectangle.id,
       frameId:
         opts?.label?.frameId === undefined
@@ -464,7 +509,7 @@ export class API {
   static readFile = async <T extends "utf8" | null>(
     filepath: string,
     encoding?: T,
-  ): Promise<T extends "utf8" ? string : Buffer> => {
+  ): Promise<T extends "utf8" ? string : ArrayBuffer> => {
     filepath = path.isAbsolute(filepath)
       ? filepath
       : path.resolve(path.join(__dirname, "../", filepath));
