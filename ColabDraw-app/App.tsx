@@ -137,6 +137,8 @@ import DebugCanvas, {
 } from "./components/DebugCanvas";
 import { useSimulatedCollaborators } from "./debugCollaborators";
 import { AIComponents } from "./components/AI";
+import { AIBuddyButton } from "./components/AIBuddyButton";
+import { AIKeyDialog } from "./components/AIKeyDialog";
 import "./index.scss";
 import { AppSidebar } from "./components/AppSidebar";
 
@@ -921,15 +923,18 @@ const ExcalidrawWrapper = () => {
         theme={editorTheme}
         onThemeChange={setAppTheme}
         renderTopRightUI={(isMobile) => {
-          if (isMobile || isCollabDisabled) {
+          if (isMobile) {
             return null;
           }
 
           return (
             <div className="excalidraw-ui-top-right">
-              {collabError.message && <CollabError collabError={collabError} />}
+              {excalidrawAPI && <AIBuddyButton excalidrawAPI={excalidrawAPI} />}
+              {!isCollabDisabled && collabError.message && (
+                <CollabError collabError={collabError} />
+              )}
 
-              {collabAPI && (
+              {!isCollabDisabled && collabAPI && (
                 <LiveCollaborationTrigger
                   isCollaborating={isCollaborating}
                   onSelect={() =>
@@ -968,7 +973,8 @@ const ExcalidrawWrapper = () => {
           <OverwriteConfirmDialog.Actions.SaveToDisk />
         </OverwriteConfirmDialog>
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
-        {excalidrawAPI && <AIComponents excalidrawAPI={excalidrawAPI} />}
+        <AIComponents />
+        <AIKeyDialog />
 
         <TTDDialogTrigger />
         {isCollaborating && isOffline && (

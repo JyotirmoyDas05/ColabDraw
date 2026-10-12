@@ -163,8 +163,11 @@ app.post("/api/ai/trial/generate", async (req, res) => {
       const error = geminiRes.status === 429 ? "trial_busy" : "upstream_error";
       return res.status(geminiRes.status === 429 ? 429 : 502).json({ error });
     }
-    res.set("X-Trial-Remaining", String(getTrialRemaining(deviceId, req.ip)));
-    res.json(data);
+    res.json({
+      response: data,
+      remaining: getTrialRemaining(deviceId, req.ip),
+      limit: TRIAL_LIMITS.device,
+    });
   } catch (error: any) {
     addTrialUsage(deviceId, req.ip, -1);
     serverDebug(`trial generate failed: ${error.message}`);

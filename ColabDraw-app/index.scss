@@ -166,3 +166,26 @@
   align-items: center;
   gap: 8px;
 }
+
+.ai-buddy-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lg-button-size, 2.25rem);
+  height: var(--lg-button-size, 2.25rem);
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-lg);
+  background-color: var(--island-bg-color);
+  box-shadow: var(--shadow-island);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--button-hover-bg);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
