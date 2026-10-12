@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ESNext",
+    "checkJs": false,
+    "maxNodeModuleJsDepth": 0
+  },
+  "exclude": ["node_modules", "dist", "build", ".next", "packages", "ColabDraw-app"]
+}

@@ -11,6 +11,12 @@
 /** AI processing mode */
 export type AIMode = "api" | "local" | "auto";
 
+/** AI run state machine states */
+export type AIRunState = "DISABLED" | "IDLE" | "ARMED" | "RUNNING" | "COOLDOWN";
+
+/** AI output mode - text answers or image generation */
+export type AIOutputMode = "text" | "image";
+
 /** Which local model to use */
 export type LocalModel = "qwen" | "janus";
 
@@ -219,6 +225,36 @@ export interface UseCanvasAIReturn {
   setUserGeminiKey: (key: string | null) => void;
   /** Refresh API usage state */
   refreshApiUsage: () => void;
+
+  // New: State Machine & AI Panel
+  /** Current run state */
+  runState: AIRunState;
+  /** Run AI with a custom prompt */
+  runWithPrompt: (prompt: string) => Promise<void>;
+  /** Whether auto-run on inactivity is enabled */
+  autoRunEnabled: boolean;
+  /** Toggle auto-run on inactivity */
+  setAutoRun: (enabled: boolean) => void;
+  /** Partial streaming response */
+  partialResponse: string | null;
+  /** Whether to analyze only selected elements */
+  selectionOnly: boolean;
+  /** Toggle selection-only mode */
+  setSelectionOnly: (val: boolean) => void;
+  /** Set the AI applying flag (used by App.tsx before updateScene) */
+  setApplyingAI: (val: boolean) => void;
+
+  // Output Mode (text vs image)
+  /** Current output mode */
+  outputMode: AIOutputMode;
+  /** Set output mode */
+  setOutputMode: (mode: AIOutputMode) => void;
+  /** Clear generated image */
+  clearGeneratedImage: () => void;
+  /** Accept generated image and apply to canvas */
+  acceptGeneratedImage: () => void;
+  /** Reject generated image and dismiss */
+  rejectGeneratedImage: () => void;
 }
 
 // ============================================================================

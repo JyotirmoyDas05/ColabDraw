@@ -150,6 +150,8 @@ import {
 } from "./ai/aiUtils";
 import "./index.scss";
 import { AppSidebar } from "./components/AppSidebar";
+import { AIPanel } from "./components/AIPanel";
+import { AISuggestionPanel } from "./components/AISuggestionPanel";
 
 import type { CollabAPI } from "./collab/Collab";
 
@@ -449,6 +451,7 @@ const ExcalidrawWrapper = () => {
   const [aiEnabled, setAiEnabled] = useState(() => loadAISettings().aiEnabled);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const canvasAI = useCanvasAI(excalidrawAPI, aiEnabled);
+  const [imageAccepted, setImageAccepted] = useState(false);
 
   useHandleLibrary({
     excalidrawAPI,
@@ -477,6 +480,9 @@ const ExcalidrawWrapper = () => {
   // Effect to render AI response on canvas
   useEffect(() => {
     if (canvasAI.aiResponse && excalidrawAPI && aiEnabled) {
+      // Set guard to prevent onChange from retriggering AI
+      canvasAI.setApplyingAI(true);
+
       const elements = excalidrawAPI.getSceneElements();
       const placeholders = findPlaceholderElements(elements);
 
@@ -518,6 +524,110 @@ const ExcalidrawWrapper = () => {
       canvasAI.clearResponse();
     }
   }, [canvasAI.aiResponse, excalidrawAPI, aiEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Effect to render AI-generated images on canvas (only when accepted)
+  useEffect(() => {
+    if (
+      !canvasAI.generatedImage ||
+      !excalidrawAPI ||
+      !aiEnabled ||
+      !imageAccepted
+    ) {
+      return;
+    }
+
+    // Reset acceptance flag
+    setImageAccepted(false);
+
+    // Guard against infinite loops
+    if (canvasAI.setApplyingAI) {
+      canvasAI.setApplyingAI(true);
+    }
+
+    // Create image element from generated image
+    const base64Data = canvasAI.generatedImage;
+    const dataUrl = base64Data.startsWith("data:")
+      ? base64Data
+      : `data:image/png;base64,${base64Data}`;
+
+    // Load image to get dimensions
+    const img = new Image();
+    img.src = dataUrl;
+
+    img.onload = () => {
+      const width = img.width || 800;
+      const height = img.height || 600;
+
+      // Position at viewport center
+      const appState = excalidrawAPI.getAppState();
+      const centerX = appState.scrollX * -1 + appState.width / 2 - width / 2;
+      const centerY = appState.scrollY * -1 + appState.height / 2 - height / 2;
+
+      // Create unique IDs
+      const fileId = `ai-gen-${Date.now()}` as any;
+      const elementId = `ai-img-${Date.now()}`;
+
+      // Add the image file
+      excalidrawAPI.addFiles([
+        {
+          mimeType: "image/png",
+          id: fileId,
+          dataURL: dataUrl as any,
+          created: Date.now(),
+          lastRetrieved: Date.now(),
+        },
+      ]);
+
+      // Create image element
+      const imageElement = {
+        id: elementId,
+        type: "image",
+        x: centerX,
+        y: centerY,
+        width,
+        height,
+        angle: 0,
+        strokeColor: "transparent",
+        backgroundColor: "transparent",
+        fillStyle: "hachure",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        roughness: 0,
+        opacity: 100,
+        groupIds: [],
+        frameId: null,
+        index: null,
+        roundness: null,
+        seed: Math.floor(Math.random() * 100000),
+        version: 1,
+        versionNonce: Math.floor(Math.random() * 100000),
+        isDeleted: false,
+        boundElements: null,
+        updated: Date.now(),
+        link: null,
+        locked: false,
+        status: "saved",
+        fileId,
+        scale: [1, 1],
+      };
+
+      excalidrawAPI.updateScene({
+        elements: [
+          ...excalidrawAPI.getSceneElementsIncludingDeleted(),
+          imageElement as any,
+        ],
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+
+      // Clear the generated image after adding to canvas
+      canvasAI.clearGeneratedImage();
+    };
+
+    img.onerror = () => {
+      console.error("Failed to load AI-generated image");
+      canvasAI.clearGeneratedImage();
+    };
+  }, [canvasAI.generatedImage, excalidrawAPI, aiEnabled, imageAccepted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ?collaborators=<N> — populate the canvas with N static fake
   // collaborators for exercising avatar/UserList UI without a real
@@ -1056,6 +1166,11 @@ const ExcalidrawWrapper = () => {
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
         {excalidrawAPI && <AIComponents excalidrawAPI={excalidrawAPI} />}
 
+        {/* AI Panel - Only visible when AI is enabled */}
+        {aiEnabled && excalidrawAPI && (
+          <AIPanel canvasAI={canvasAI} excalidrawAPI={excalidrawAPI} />
+        )}
+
         {/* Smart Canvas AI Settings Dialog */}
         <AISettingsDialog
           isOpen={aiSettingsOpen}
@@ -1274,6 +1389,21 @@ const ExcalidrawWrapper = () => {
           />
         )}
       </Excalidraw>
+
+      {/* AI Suggestion Preview Panel */}
+      {aiEnabled && canvasAI.outputMode === "image" && (
+        <AISuggestionPanel
+          imageData={canvasAI.generatedImage}
+          isVisible={!!canvasAI.generatedImage}
+          onAccept={() => {
+            setImageAccepted(true);
+            canvasAI.acceptGeneratedImage();
+          }}
+          onReject={() => {
+            canvasAI.rejectGeneratedImage();
+          }}
+        />
+      )}
     </div>
   );
 };

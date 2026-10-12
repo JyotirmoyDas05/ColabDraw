@@ -14,9 +14,10 @@ import type { GeminiUsage } from "./types";
 // Configuration
 // ============================================================================
 
-// Gemini 2.5 Flash - Latest fast, capable model
-const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+// AI Server Endpoints (ColabDraw-room server)
+const SERVER_URL = "http://localhost:3002";
+const GEMINI_API_URL = `${SERVER_URL}/api/analyze-canvas`;
+const GEMINI_IMAGE_API_URL = `${SERVER_URL}/api/generate-image`;
 
 const DAILY_LIMIT_DEFAULT = 15; // Limit for users using default key
 const DAILY_LIMIT_USER_KEY = 1500; // Much higher for user's own key
@@ -164,19 +165,9 @@ export function hasUserProvidedKey(): boolean {
 // API Calls
 // ============================================================================
 
-interface GeminiResponse {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{
-        text?: string;
-      }>;
-    };
-  }>;
-  error?: {
-    message: string;
-    code: number;
-  };
-}
+// ============================================================================
+// API Types
+// ============================================================================
 
 export interface GeminiAnalysisResult {
   success: boolean;
@@ -208,13 +199,6 @@ export async function analyzeWithGemini(
     };
   }
 
-  // Extract base64 data from data URL
-  const base64Match = imageDataUrl.match(/^data:image\/\w+;base64,(.+)$/);
-  if (!base64Match) {
-    return { success: false, error: "Invalid image data" };
-  }
-  const base64Data = base64Match[1];
-
   // Build the prompt
   const prompt =
     customPrompt ||
@@ -232,41 +216,55 @@ For math: show the calculation and result (e.g., "2+2 = 4").
 For diagrams: describe the structure and meaning.`;
 
   try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${apiKeyInfo.key}`, {
+    // Use server proxy for AI requests
+    const response = await fetch(GEMINI_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                inlineData: {
-                  mimeType: "image/png",
-                  data: base64Data,
-                },
-              },
-              {
-                text: prompt,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 512,
-        },
+        prompt,
+        image_data: imageDataUrl,
       }),
     });
 
-    const data = (await response.json()) as GeminiResponse;
-
-    if (data.error) {
-      return { success: false, error: data.error.message };
+    // Check for HTTP errors first
+    if (!response.ok) {
+      if (response.status === 429) {
+        return {
+          success: false,
+          error:
+            "Rate limit exceeded. Please wait a moment and try again, or add your own API key for higher limits.",
+          rateLimited: true,
+        };
+      }
+      if (response.status === 503) {
+        return {
+          success: false,
+          error:
+            "Gemini service is temporarily unavailable. Please try again in a few seconds.",
+        };
+      }
+      return {
+        success: false,
+        error: `API error (${response.status}): ${response.statusText}`,
+      };
     }
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const data = await response.json();
+
+    if (!data.success) {
+      const errorMsg = data.error || "API error";
+      if (
+        errorMsg.toLowerCase().includes("quota") ||
+        errorMsg.toLowerCase().includes("rate")
+      ) {
+        return { success: false, error: errorMsg, rateLimited: true };
+      }
+      return { success: false, error: errorMsg };
+    }
+
+    const text = data.response;
     if (!text) {
       return { success: false, error: "No response from Gemini" };
     }
@@ -304,4 +302,130 @@ export function getRemainingCalls(): number {
   }
   const usage = getUsage(apiKeyInfo.isUserKey);
   return Math.max(0, usage.limit - usage.count);
+}
+
+// ============================================================================
+// Image Generation
+// ============================================================================
+
+export interface GeminiImageResult {
+  success: boolean;
+  imageData?: string; // base64 PNG
+  error?: string;
+  rateLimited?: boolean;
+}
+
+/**
+ * Generate refined diagram image using Gemini's image generation model.
+ * Takes a sketch and prompt, returns a clean PNG image.
+ */
+export async function generateImageWithGemini(
+  imageDataUrl: string,
+  customPrompt?: string,
+): Promise<GeminiImageResult> {
+  const apiKeyInfo = getActiveApiKey();
+
+  if (!apiKeyInfo) {
+    return { success: false, error: "No Gemini API key configured" };
+  }
+
+  if (!canUseAPI(apiKeyInfo.isUserKey)) {
+    return {
+      success: false,
+      error: `Daily limit reached. Add your own API key for unlimited access.`,
+      rateLimited: true,
+    };
+  }
+
+  // Build the prompt for diagram refinement
+  const prompt =
+    customPrompt ||
+    `Generate a clean, high-quality, professional diagram as a PNG image based on the provided reference image.
+
+IMPORTANT INTERPRETATION RULE:
+- Treat the reference image as a rough sketch or visual hint, NOT as a final diagram.
+- You are allowed and expected to redraw, correct, and standardize shapes, proportions, and outlines to create a proper textbook-style diagram.
+
+Diagram guidelines:
+- Use a clean white background.
+- Replace all rough, hand-drawn, or uneven outlines with precise, smooth, and well-proportioned shapes.
+- Redraw objects using correct canonical forms (e.g., cylinders, boxes, arrows, tubes) even if the sketch is distorted or incomplete.
+- Do NOT trace the sketch. Reconstruct the diagram clearly and accurately.
+- Use consistent line thickness and clean geometry.
+- Use arrows and connectors to clearly show structure, flow, or relationships.
+- Include and clearly label all entities, components, and relationships.
+- If the sketch is ambiguous, resolve it into the most reasonable and standard diagram.
+
+Text handling:
+- Preserve any text or labels from the reference image exactly if they exist.
+- Add missing labels ONLY if they are clearly implied.
+
+Output requirements:
+- Output only the generated PNG image.
+- Do not include any text, explanations, or captions outside the image.`;
+
+  try {
+    const response = await fetch(GEMINI_IMAGE_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt,
+        image_data: imageDataUrl,
+      }),
+    });
+
+    // Check for HTTP errors first
+    if (!response.ok) {
+      if (response.status === 429) {
+        return {
+          success: false,
+          error:
+            "Rate limit exceeded. Please wait a moment and try again, or add your own API key for higher limits.",
+          rateLimited: true,
+        };
+      }
+      if (response.status === 503 || response.status === 504) {
+        return {
+          success: false,
+          error:
+            "Gemini service is temporarily unavailable or timed out. Please try again in a few seconds.",
+        };
+      }
+      return {
+        success: false,
+        error: `API error (${response.status}): ${response.statusText}`,
+      };
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      // Check if error message indicates rate limiting
+      const errorMsg = data.error || "API error";
+      const isRateLimit =
+        data.rateLimited ||
+        errorMsg.toLowerCase().includes("quota") ||
+        errorMsg.toLowerCase().includes("rate");
+
+      return { success: false, error: errorMsg, rateLimited: isRateLimit };
+    }
+
+    // Extract image from response
+    const imageData = data.image_data;
+    if (!imageData) {
+      return { success: false, error: "No image in response" };
+    }
+
+    // Increment usage on success (only for default key users)
+    if (!apiKeyInfo.isUserKey) {
+      incrementUsage();
+    }
+
+    return { success: true, imageData };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : "Unknown error";
+    return { success: false, error };
+  }
 }

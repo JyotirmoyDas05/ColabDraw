@@ -4,6 +4,11 @@
  * Manages AI analysis using:
  * - Gemini API (primary, when available)
  * - Local models (Qwen2-VL-2B + Janus-Pro-1B) as fallback
+ *
+ * State Machine: DISABLED → IDLE → ARMED → RUNNING → COOLDOWN
+ * - Prevents infinite loops from AI-originated onChange events
+ * - Deduplicates canvas analysis using content signatures
+ * - Supports cancellation via AbortController
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,6 +20,7 @@ import { INITIAL_DOWNLOAD_STATE as DOWNLOAD_STATE_INIT } from "./types";
 
 import {
   analyzeWithGemini,
+  generateImageWithGemini,
   isGeminiAvailable,
   getUsage,
   setUserApiKey as saveUserApiKey,
@@ -31,6 +37,8 @@ import {
 
 import type {
   AIMode,
+  AIOutputMode,
+  AIRunState,
   AIStatus,
   AIStatusStep,
   AIWorkerMessage,
@@ -39,6 +47,13 @@ import type {
   GeminiUsage,
   UseCanvasAIReturn,
 } from "./types";
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const COOLDOWN_DURATION_MS = 2000; // 2 seconds cooldown after AI applies result
+const DEFAULT_INACTIVITY_DELAY_MS = 3000; // 3 seconds
 
 // ============================================================================
 // Helpers
@@ -66,6 +81,16 @@ async function generateCanvasHash(dataUrl: string): Promise<string> {
   return hash.toString(16);
 }
 
+/** Generate signature from text elements for deduplication */
+function generateElementsSignature(elements: readonly any[]): string {
+  const textElements = elements
+    .filter((el) => el.type === "text" && !el.isDeleted)
+    .map((el) => `${el.id}:${el.version}:${el.text}`)
+    .sort()
+    .join("|");
+  return textElements;
+}
+
 // ============================================================================
 // Hook
 // ============================================================================
@@ -74,9 +99,17 @@ export function useCanvasAI(
   excalidrawAPI: ExcalidrawImperativeAPI | null,
   aiEnabled: boolean,
 ): UseCanvasAIReturn {
+  // ============================================================================
+  // State Machine
+  // ============================================================================
+  const [runState, setRunState] = useState<AIRunState>("DISABLED");
+
   // Mode & Settings
   const [aiMode, setAiModeState] = useState<AIMode>("auto");
+  const [outputMode, setOutputModeState] = useState<AIOutputMode>("text");
   const [isUsingAPI, setIsUsingAPI] = useState(false);
+  const [autoRunEnabled, setAutoRunEnabledState] = useState(false);
+  const [selectionOnly, setSelectionOnlyState] = useState(false);
 
   // Model States
   const [isQwenReady, setIsQwenReady] = useState(false);
@@ -92,6 +125,7 @@ export function useCanvasAI(
 
   // Results
   const [aiResponse, setAiResponse] = useState<string | null>(null);
+  const [partialResponse, setPartialResponse] = useState<string | null>(null);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,10 +138,15 @@ export function useCanvasAI(
   // Refs
   const workerRef = useRef<Worker | null>(null);
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentRequestIdRef = useRef<string | null>(null);
-  const isAnalyzingRef = useRef(false);
   const settingsRef = useRef(loadAISettings());
   const lastCanvasHashRef = useRef<string | null>(null);
+  const lastElementsSignatureRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Guard: Set to true before applying AI results to canvas
+  const isApplyingAIRef = useRef(false);
 
   // Status for real-time display
   const [status, setStatus] = useState<AIStatus>({
@@ -122,10 +161,49 @@ export function useCanvasAI(
   }, []);
 
   // ============================================================================
+  // State Machine Transitions
+  // ============================================================================
+
+  // Sync runState with aiEnabled
+  useEffect(() => {
+    if (!aiEnabled) {
+      setRunState("DISABLED");
+      // Clear any pending timers
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+      if (cooldownTimerRef.current) {
+        clearTimeout(cooldownTimerRef.current);
+        cooldownTimerRef.current = null;
+      }
+    } else if (runState === "DISABLED") {
+      setRunState("IDLE");
+    }
+  }, [aiEnabled, runState]);
+
+  // Transition to IDLE after cooldown
+  const startCooldown = useCallback(() => {
+    setRunState("COOLDOWN");
+    if (cooldownTimerRef.current) {
+      clearTimeout(cooldownTimerRef.current);
+    }
+    cooldownTimerRef.current = setTimeout(() => {
+      setRunState("IDLE");
+      cooldownTimerRef.current = null;
+    }, COOLDOWN_DURATION_MS);
+  }, []);
+
+  // ============================================================================
   // Worker Setup
   // ============================================================================
 
   useEffect(() => {
+    // Web Workers are unavailable in some environments (e.g. jsdom in tests)
+    if (typeof Worker === "undefined") {
+      return;
+    }
+
     // Create worker
     workerRef.current = new Worker(new URL("./aiWorker.ts", import.meta.url), {
       type: "module",
@@ -173,16 +251,21 @@ export function useCanvasAI(
         case "token":
           // Streaming token update
           if (data.token) {
-            setAiResponse((prev) => (prev || "") + data.token);
+            setPartialResponse((prev) => (prev || "") + data.token);
           }
           break;
 
         case "complete":
           if (data.requestId === currentRequestIdRef.current) {
             setAiResponse(data.response || null);
-            isAnalyzingRef.current = false;
+            setPartialResponse(null);
             setIsAnalyzing(false);
             currentRequestIdRef.current = null;
+            updateStatus("complete", "Response received!");
+            // Start cooldown after completion
+            startCooldown();
+            // Clear status after delay
+            setTimeout(() => updateStatus("idle", ""), 3000);
           }
           break;
 
@@ -196,9 +279,10 @@ export function useCanvasAI(
 
         case "cancelled":
           if (data.requestId === currentRequestIdRef.current) {
-            isAnalyzingRef.current = false;
             setIsAnalyzing(false);
+            setPartialResponse(null);
             currentRequestIdRef.current = null;
+            setRunState((prev) => (prev === "RUNNING" ? "IDLE" : prev));
           }
           break;
 
@@ -208,11 +292,13 @@ export function useCanvasAI(
             data.requestId === currentRequestIdRef.current
           ) {
             setError(data.error || "An error occurred");
-            isAnalyzingRef.current = false;
             setIsAnalyzing(false);
             setIsGeneratingImage(false);
             setIsModelLoading(false);
+            setPartialResponse(null);
             currentRequestIdRef.current = null;
+            setRunState((prev) => (prev === "RUNNING" ? "IDLE" : prev));
+            updateStatus("error", data.error || "An error occurred");
           }
           break;
       }
@@ -227,6 +313,7 @@ export function useCanvasAI(
 
     // Load settings
     setAiModeState(settings.aiMode || "auto");
+    setAutoRunEnabledState(settings.aiAutoTrigger ?? false);
 
     // Update API usage
     const apiKeyInfo = getActiveApiKey();
@@ -239,8 +326,11 @@ export function useCanvasAI(
       if (inactivityTimerRef.current) {
         clearTimeout(inactivityTimerRef.current);
       }
+      if (cooldownTimerRef.current) {
+        clearTimeout(cooldownTimerRef.current);
+      }
     };
-  }, []);
+  }, [startCooldown, updateStatus]);
 
   // ============================================================================
   // Mode Selection Logic
@@ -261,123 +351,218 @@ export function useCanvasAI(
   // Analysis Functions
   // ============================================================================
 
-  const analyzeCanvas = useCallback(async () => {
-    if (!excalidrawAPI) {
-      return;
-    }
-    if (isAnalyzingRef.current) {
-      return;
-    }
-    if (isModelLoading && !shouldUseAPI()) {
-      return;
-    }
-
-    // Set analyzing state
-    isAnalyzingRef.current = true;
-    setIsAnalyzing(true);
-    setError(null);
-    updateStatus("capturing", "Capturing canvas...");
-
-    // Capture canvas
-    const imageDataUrl = await captureCanvas(excalidrawAPI);
-    if (!imageDataUrl) {
-      isAnalyzingRef.current = false;
-      setIsAnalyzing(false);
-      updateStatus("idle", "");
-      return;
-    }
-
-    // Generate hash to check for duplicates
-    const canvasHash = await generateCanvasHash(imageDataUrl);
-    if (canvasHash === lastCanvasHashRef.current) {
-      // Same canvas as last analysis, skip
-      isAnalyzingRef.current = false;
-      setIsAnalyzing(false);
-      updateStatus("idle", "");
-      return;
-    }
-    lastCanvasHashRef.current = canvasHash;
-
-    const requestId = randomId();
-    currentRequestIdRef.current = requestId;
-
-    // Decide whether to use API or local
-    const useAPI = shouldUseAPI();
-    setIsUsingAPI(useAPI);
-    updateStatus(
-      "processing",
-      useAPI ? "Sending to Gemini API..." : "Processing with local model...",
-    );
-
-    if (useAPI) {
-      // Use Gemini API
-      try {
-        const result = await analyzeWithGemini(imageDataUrl);
-
-        if (currentRequestIdRef.current !== requestId) {
-          return; // Request was cancelled
-        }
-
-        if (result.success) {
-          setAiResponse(result.response ?? null);
-          updateStatus("complete", "Response received!");
-          // Update usage
-          const apiKeyInfo = getActiveApiKey();
-          if (apiKeyInfo) {
-            setApiUsage(getUsage(apiKeyInfo.isUserKey));
-          }
-          // Clear status after delay
-          setTimeout(() => updateStatus("idle", ""), 3000);
-        } else {
-          // API failed, try local if in auto mode
-          if (aiMode === "auto" && isQwenReady) {
-            updateStatus("processing", "API failed, trying local model...");
-            workerRef.current?.postMessage({
-              type: "analyze",
-              image: imageDataUrl,
-              prompt: buildAIPrompt(),
-              requestId,
-            } as AIWorkerMessage);
-            return;
-          }
-          setError(result.error ?? null);
-          updateStatus("error", result.error || "API error");
-        }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : "API error";
-        setError(errorMsg);
-        updateStatus("error", errorMsg);
+  const analyzeCanvas = useCallback(
+    async (customPrompt?: string) => {
+      if (!excalidrawAPI) {
+        return;
       }
-
-      isAnalyzingRef.current = false;
-      setIsAnalyzing(false);
-      currentRequestIdRef.current = null;
-    } else {
-      // Use local model
-      if (!isQwenReady && !isModelLoading) {
-        // Initialize models first
-        workerRef.current?.postMessage({ type: "init" } as AIWorkerMessage);
-        setIsModelLoading(true);
-        isAnalyzingRef.current = false;
-        setIsAnalyzing(false);
+      if (runState === "RUNNING" || runState === "COOLDOWN") {
+        return;
+      }
+      if (isModelLoading && !shouldUseAPI()) {
         return;
       }
 
-      workerRef.current?.postMessage({
-        type: "analyze",
-        image: imageDataUrl,
-        prompt: buildAIPrompt(),
-        requestId,
-      } as AIWorkerMessage);
-    }
-  }, [
-    excalidrawAPI,
-    isModelLoading,
-    isQwenReady,
-    aiMode,
-    shouldUseAPI,
-    updateStatus,
-  ]);
+      // Transition to RUNNING
+      setRunState("RUNNING");
+      setIsAnalyzing(true);
+      setError(null);
+      setPartialResponse(null);
+      updateStatus("capturing", "Capturing canvas...");
+
+      // Create abort controller for this request
+      abortControllerRef.current = new AbortController();
+
+      // Capture canvas (selection only if enabled)
+      const imageDataUrl = await captureCanvas(excalidrawAPI, selectionOnly);
+      if (!imageDataUrl) {
+        setIsAnalyzing(false);
+        setRunState("IDLE");
+        updateStatus("idle", "");
+        return;
+      }
+
+      // Deduplication: Check canvas hash
+      const canvasHash = await generateCanvasHash(imageDataUrl);
+      if (!customPrompt && canvasHash === lastCanvasHashRef.current) {
+        // Same canvas as last analysis, skip
+        setIsAnalyzing(false);
+        setRunState("IDLE");
+        updateStatus("idle", "");
+        return;
+      }
+
+      // Also check elements signature for text-based dedup
+      const elements = excalidrawAPI.getSceneElements();
+      const elementsSignature = generateElementsSignature(elements);
+      if (
+        !customPrompt &&
+        elementsSignature === lastElementsSignatureRef.current
+      ) {
+        setIsAnalyzing(false);
+        setRunState("IDLE");
+        updateStatus("idle", "");
+        return;
+      }
+
+      lastCanvasHashRef.current = canvasHash;
+      lastElementsSignatureRef.current = elementsSignature;
+
+      const requestId = randomId();
+      currentRequestIdRef.current = requestId;
+
+      // Decide whether to use API or local
+      const useAPI = shouldUseAPI();
+      setIsUsingAPI(useAPI);
+      updateStatus(
+        "processing",
+        useAPI ? "Sending to Gemini API..." : "Processing with local model...",
+      );
+
+      if (useAPI) {
+        // Use Gemini API
+        try {
+          // Branch based on output mode
+          if (outputMode === "image") {
+            // Image generation mode
+            updateStatus("processing", "Generating refined diagram...");
+            const result = await generateImageWithGemini(
+              imageDataUrl,
+              customPrompt || undefined,
+            );
+
+            // Check if aborted
+            if (abortControllerRef.current?.signal.aborted) {
+              setIsAnalyzing(false);
+              setRunState("IDLE");
+              return;
+            }
+
+            if (currentRequestIdRef.current !== requestId) {
+              return; // Request was cancelled
+            }
+
+            if (result.success && result.imageData) {
+              setGeneratedImage(result.imageData);
+              updateStatus("complete", "Diagram generated!");
+              // Update usage
+              const apiKeyInfo = getActiveApiKey();
+              if (apiKeyInfo) {
+                setApiUsage(getUsage(apiKeyInfo.isUserKey));
+              }
+              // Start cooldown
+              startCooldown();
+              // Clear status after delay
+              setTimeout(() => updateStatus("idle", ""), 3000);
+            } else {
+              setError(result.error ?? "Failed to generate image");
+              updateStatus("error", result.error || "Image generation failed");
+              setRunState("IDLE");
+            }
+          } else {
+            // Text analysis mode (existing flow)
+            const result = await analyzeWithGemini(
+              imageDataUrl,
+              customPrompt || undefined,
+            );
+
+            // Check if aborted
+            if (abortControllerRef.current?.signal.aborted) {
+              setIsAnalyzing(false);
+              setRunState("IDLE");
+              return;
+            }
+
+            if (currentRequestIdRef.current !== requestId) {
+              return; // Request was cancelled
+            }
+
+            if (result.success) {
+              setAiResponse(result.response ?? null);
+              updateStatus("complete", "Response received!");
+              // Update usage
+              const apiKeyInfo = getActiveApiKey();
+              if (apiKeyInfo) {
+                setApiUsage(getUsage(apiKeyInfo.isUserKey));
+              }
+              // Start cooldown
+              startCooldown();
+              // Clear status after delay
+              setTimeout(() => updateStatus("idle", ""), 3000);
+            } else {
+              // API failed, try local if in auto mode
+              if (aiMode === "auto" && isQwenReady) {
+                updateStatus("processing", "API failed, trying local model...");
+                workerRef.current?.postMessage({
+                  type: "analyze",
+                  image: imageDataUrl,
+                  prompt: customPrompt || buildAIPrompt(),
+                  requestId,
+                } as AIWorkerMessage);
+                return;
+              }
+              setError(result.error ?? null);
+              updateStatus("error", result.error || "API error");
+              setRunState("IDLE");
+            }
+          }
+        } catch (err) {
+          if (abortControllerRef.current?.signal.aborted) {
+            setIsAnalyzing(false);
+            setRunState("IDLE");
+            return;
+          }
+          const errorMsg = err instanceof Error ? err.message : "API error";
+          setError(errorMsg);
+          updateStatus("error", errorMsg);
+          setRunState("IDLE");
+        }
+
+        setIsAnalyzing(false);
+        currentRequestIdRef.current = null;
+      } else {
+        // Use local model
+        if (!isQwenReady && !isModelLoading) {
+          // Initialize models first
+          workerRef.current?.postMessage({ type: "init" } as AIWorkerMessage);
+          setIsModelLoading(true);
+          setIsAnalyzing(false);
+          setRunState("IDLE");
+          return;
+        }
+
+        workerRef.current?.postMessage({
+          type: "analyze",
+          image: imageDataUrl,
+          prompt: customPrompt || buildAIPrompt(),
+          requestId,
+        } as AIWorkerMessage);
+      }
+    },
+    [
+      excalidrawAPI,
+      runState,
+      isModelLoading,
+      isQwenReady,
+      aiMode,
+      outputMode,
+      selectionOnly,
+      shouldUseAPI,
+      updateStatus,
+      startCooldown,
+    ],
+  );
+
+  // ============================================================================
+  // Run with custom prompt (for AI Panel)
+  // ============================================================================
+
+  const runWithPrompt = useCallback(
+    async (prompt: string) => {
+      await analyzeCanvas(prompt);
+    },
+    [analyzeCanvas],
+  );
 
   // ============================================================================
   // Image Generation
@@ -409,12 +594,36 @@ export function useCanvasAI(
   // ============================================================================
 
   const trackActivity = useCallback(() => {
-    if (!aiEnabled) {
+    // Guard: Ignore AI-originated changes
+    if (isApplyingAIRef.current) {
+      // Reset the flag for next onChange
+      isApplyingAIRef.current = false;
       return;
     }
-    if (!settingsRef.current?.aiAutoTrigger) {
+
+    // Don't track if disabled or in cooldown
+    if (runState === "DISABLED" || runState === "COOLDOWN") {
       return;
     }
+
+    // Cancel current request if running
+    if (runState === "RUNNING") {
+      abortControllerRef.current?.abort();
+      workerRef.current?.postMessage({ type: "cancel" } as AIWorkerMessage);
+      currentRequestIdRef.current = null;
+      setIsAnalyzing(false);
+      setPartialResponse(null);
+      updateStatus("idle", "Cancelled - user activity detected");
+    }
+
+    // Only arm if auto-run is enabled
+    if (!autoRunEnabled) {
+      setRunState("IDLE");
+      return;
+    }
+
+    // Transition to ARMED and start/reset inactivity timer
+    setRunState("ARMED");
 
     // Clear existing timer
     if (inactivityTimerRef.current) {
@@ -422,13 +631,16 @@ export function useCanvasAI(
     }
 
     // Set new timer
-    const delay = (settingsRef.current?.aiInactivityDelay || 3) * 1000;
+    const delay =
+      (settingsRef.current?.aiInactivityDelay || 3) * 1000 ||
+      DEFAULT_INACTIVITY_DELAY_MS;
     inactivityTimerRef.current = setTimeout(() => {
-      if (aiEnabled && !isAnalyzingRef.current) {
+      // Only trigger if still armed
+      if (runState === "ARMED" || runState === "IDLE") {
         analyzeCanvas();
       }
     }, delay);
-  }, [aiEnabled, analyzeCanvas]);
+  }, [runState, autoRunEnabled, analyzeCanvas, updateStatus]);
 
   // ============================================================================
   // Actions
@@ -441,15 +653,21 @@ export function useCanvasAI(
   }, []);
 
   const cancelOperation = useCallback(() => {
+    abortControllerRef.current?.abort();
     workerRef.current?.postMessage({ type: "cancel" } as AIWorkerMessage);
     currentRequestIdRef.current = null;
-    isAnalyzingRef.current = false;
     setIsAnalyzing(false);
     setIsGeneratingImage(false);
-  }, []);
+    setPartialResponse(null);
+    setRunState((prev) =>
+      prev === "RUNNING" || prev === "ARMED" ? "IDLE" : prev,
+    );
+    updateStatus("idle", "");
+  }, [updateStatus]);
 
   const clearResponse = useCallback(() => {
     setAiResponse(null);
+    setPartialResponse(null);
     setGeneratedImage(null);
     setError(null);
   }, []);
@@ -486,6 +704,24 @@ export function useCanvasAI(
     } else {
       setApiUsage(null);
     }
+  }, []);
+
+  // Toggle auto-run
+  const setAutoRun = useCallback((enabled: boolean) => {
+    setAutoRunEnabledState(enabled);
+    const settings = loadAISettings();
+    saveAISettings({ ...settings, aiAutoTrigger: enabled });
+    settingsRef.current = { ...settings, aiAutoTrigger: enabled };
+  }, []);
+
+  // Toggle selection-only mode
+  const setSelectionOnly = useCallback((val: boolean) => {
+    setSelectionOnlyState(val);
+  }, []);
+
+  // Set applying AI flag (called by App.tsx before updateScene)
+  const setApplyingAI = useCallback((val: boolean) => {
+    isApplyingAIRef.current = val;
   }, []);
 
   // ============================================================================
@@ -531,5 +767,29 @@ export function useCanvasAI(
     setAIMode,
     setUserGeminiKey,
     refreshApiUsage,
+
+    // New: State Machine & AI Panel
+    runState,
+    runWithPrompt,
+    autoRunEnabled,
+    setAutoRun,
+    partialResponse,
+    selectionOnly,
+    setSelectionOnly,
+    setApplyingAI,
+
+    // Output Mode
+    outputMode,
+    setOutputMode: (mode: AIOutputMode) => setOutputModeState(mode),
+    clearGeneratedImage: () => setGeneratedImage(null),
+    acceptGeneratedImage: () => {
+      // The actual image placement is handled by App.tsx useEffect
+      // This just signals that the image was accepted
+      // generatedImage stays set - App.tsx will consume it and clear after placement
+    },
+    rejectGeneratedImage: () => {
+      // Clear without applying to canvas
+      setGeneratedImage(null);
+    },
   };
 }
