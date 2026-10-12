@@ -137,21 +137,8 @@ import DebugCanvas, {
 } from "./components/DebugCanvas";
 import { useSimulatedCollaborators } from "./debugCollaborators";
 import { AIComponents } from "./components/AI";
-import AISettingsDialog from "./components/AISettingsDialog";
-import IconPenSparkle from "./components/icons/IconPenSparkle";
-import { AIStatusPanel } from "./components/AIStatusPanel";
-import { useCanvasAI, isRateLimited as checkRateLimited } from "./ai";
-import {
-  createAIResponseElement,
-  calculateResponsePosition,
-  findPlaceholderElements,
-  updatePlaceholderWithResponse,
-  loadAISettings,
-} from "./ai/aiUtils";
 import "./index.scss";
 import { AppSidebar } from "./components/AppSidebar";
-import { AIPanel } from "./components/AIPanel";
-import { AISuggestionPanel } from "./components/AISuggestionPanel";
 
 import type { CollabAPI } from "./collab/Collab";
 
@@ -447,12 +434,6 @@ const ExcalidrawWrapper = () => {
     [userToFollow, collabAPI],
   );
 
-  // Smart Canvas AI
-  const [aiEnabled, setAiEnabled] = useState(() => loadAISettings().aiEnabled);
-  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
-  const canvasAI = useCanvasAI(excalidrawAPI, aiEnabled);
-  const [imageAccepted, setImageAccepted] = useState(false);
-
   useHandleLibrary({
     excalidrawAPI,
     adapter: LibraryIndexedDBAdapter,
@@ -476,158 +457,6 @@ const ExcalidrawWrapper = () => {
       forceRefresh((prev) => !prev);
     }
   }, [excalidrawAPI]);
-
-  // Effect to render AI response on canvas
-  useEffect(() => {
-    if (canvasAI.aiResponse && excalidrawAPI && aiEnabled) {
-      // Set guard to prevent onChange from retriggering AI
-      canvasAI.setApplyingAI(true);
-
-      const elements = excalidrawAPI.getSceneElements();
-      const placeholders = findPlaceholderElements(elements);
-
-      if (placeholders.length > 0) {
-        // Update the most recent placeholder with the response
-        const placeholder = placeholders[0];
-        const updatedElement = updatePlaceholderWithResponse(
-          placeholder,
-          canvasAI.aiResponse,
-        );
-
-        // Replace the placeholder element with the updated one
-        const updatedElements = excalidrawAPI
-          .getSceneElementsIncludingDeleted()
-          .map((el) => (el.id === placeholder.id ? updatedElement : el));
-
-        excalidrawAPI.updateScene({
-          elements: updatedElements as any,
-          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-        });
-      } else {
-        // Fallback: Create new element at calculated position
-        const position = calculateResponsePosition(excalidrawAPI);
-        const responseElement = createAIResponseElement(
-          canvasAI.aiResponse,
-          position,
-        );
-
-        excalidrawAPI.updateScene({
-          elements: [
-            ...excalidrawAPI.getSceneElementsIncludingDeleted(),
-            responseElement as any,
-          ],
-          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-        });
-      }
-
-      // Clear the response after adding to canvas
-      canvasAI.clearResponse();
-    }
-  }, [canvasAI.aiResponse, excalidrawAPI, aiEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Effect to render AI-generated images on canvas (only when accepted)
-  useEffect(() => {
-    if (
-      !canvasAI.generatedImage ||
-      !excalidrawAPI ||
-      !aiEnabled ||
-      !imageAccepted
-    ) {
-      return;
-    }
-
-    // Reset acceptance flag
-    setImageAccepted(false);
-
-    // Guard against infinite loops
-    if (canvasAI.setApplyingAI) {
-      canvasAI.setApplyingAI(true);
-    }
-
-    // Create image element from generated image
-    const base64Data = canvasAI.generatedImage;
-    const dataUrl = base64Data.startsWith("data:")
-      ? base64Data
-      : `data:image/png;base64,${base64Data}`;
-
-    // Load image to get dimensions
-    const img = new Image();
-    img.src = dataUrl;
-
-    img.onload = () => {
-      const width = img.width || 800;
-      const height = img.height || 600;
-
-      // Position at viewport center
-      const appState = excalidrawAPI.getAppState();
-      const centerX = appState.scrollX * -1 + appState.width / 2 - width / 2;
-      const centerY = appState.scrollY * -1 + appState.height / 2 - height / 2;
-
-      // Create unique IDs
-      const fileId = `ai-gen-${Date.now()}` as any;
-      const elementId = `ai-img-${Date.now()}`;
-
-      // Add the image file
-      excalidrawAPI.addFiles([
-        {
-          mimeType: "image/png",
-          id: fileId,
-          dataURL: dataUrl as any,
-          created: Date.now(),
-          lastRetrieved: Date.now(),
-        },
-      ]);
-
-      // Create image element
-      const imageElement = {
-        id: elementId,
-        type: "image",
-        x: centerX,
-        y: centerY,
-        width,
-        height,
-        angle: 0,
-        strokeColor: "transparent",
-        backgroundColor: "transparent",
-        fillStyle: "hachure",
-        strokeWidth: 1,
-        strokeStyle: "solid",
-        roughness: 0,
-        opacity: 100,
-        groupIds: [],
-        frameId: null,
-        index: null,
-        roundness: null,
-        seed: Math.floor(Math.random() * 100000),
-        version: 1,
-        versionNonce: Math.floor(Math.random() * 100000),
-        isDeleted: false,
-        boundElements: null,
-        updated: Date.now(),
-        link: null,
-        locked: false,
-        status: "saved",
-        fileId,
-        scale: [1, 1],
-      };
-
-      excalidrawAPI.updateScene({
-        elements: [
-          ...excalidrawAPI.getSceneElementsIncludingDeleted(),
-          imageElement as any,
-        ],
-        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-      });
-
-      // Clear the generated image after adding to canvas
-      canvasAI.clearGeneratedImage();
-    };
-
-    img.onerror = () => {
-      console.error("Failed to load AI-generated image");
-      canvasAI.clearGeneratedImage();
-    };
-  }, [canvasAI.generatedImage, excalidrawAPI, aiEnabled, imageAccepted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ?collaborators=<N> — populate the canvas with N static fake
   // collaborators for exercising avatar/UserList UI without a real
@@ -924,11 +753,6 @@ const ExcalidrawWrapper = () => {
         window.devicePixelRatio,
       );
     }
-
-    // Track activity for Smart Canvas AI
-    if (aiEnabled) {
-      canvasAI.trackActivity();
-    }
   };
 
   const [latestShareableLink, setLatestShareableLink] = useState<string | null>(
@@ -1105,26 +929,6 @@ const ExcalidrawWrapper = () => {
             <div className="excalidraw-ui-top-right">
               {collabError.message && <CollabError collabError={collabError} />}
 
-              {/* AI Button - beside Share */}
-              <button
-                className={`collab-button ai-header-button ${
-                  aiEnabled ? "ai-active" : ""
-                }`}
-                onClick={() => setAiSettingsOpen(true)}
-                title="Canvas AI (Experimental)"
-              >
-                <span className="ai-header-button__icon">
-                  <IconPenSparkle />
-                </span>
-                <span className="ai-header-button__label">AI</span>
-                {canvasAI.isAnalyzing && (
-                  <span className="ai-header-button__pulse" />
-                )}
-              </button>
-
-              {/* AI Status Panel - shows real-time processing status */}
-              <AIStatusPanel status={canvasAI.status} isVisible={aiEnabled} />
-
               {collabAPI && (
                 <LiveCollaborationTrigger
                   isCollaborating={isCollaborating}
@@ -1165,27 +969,6 @@ const ExcalidrawWrapper = () => {
         </OverwriteConfirmDialog>
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
         {excalidrawAPI && <AIComponents excalidrawAPI={excalidrawAPI} />}
-
-        {/* AI Panel - Only visible when AI is enabled */}
-        {aiEnabled && excalidrawAPI && (
-          <AIPanel canvasAI={canvasAI} excalidrawAPI={excalidrawAPI} />
-        )}
-
-        {/* Smart Canvas AI Settings Dialog */}
-        <AISettingsDialog
-          isOpen={aiSettingsOpen}
-          onClose={() => setAiSettingsOpen(false)}
-          onApiKeyChange={() => canvasAI.refreshApiUsage()}
-          onModeChange={(mode) => canvasAI.setAIMode(mode)}
-          onToggleAI={setAiEnabled}
-          isAIEnabled={aiEnabled}
-          isRateLimited={checkRateLimited()}
-          downloadState={canvasAI.downloadState}
-          isQwenReady={canvasAI.isQwenReady}
-          isJanusReady={canvasAI.isJanusReady}
-          isModelLoading={canvasAI.isModelLoading}
-          onInitializeModels={canvasAI.initializeModels}
-        />
 
         <TTDDialogTrigger />
         {isCollaborating && isOffline && (
@@ -1389,21 +1172,6 @@ const ExcalidrawWrapper = () => {
           />
         )}
       </Excalidraw>
-
-      {/* AI Suggestion Preview Panel */}
-      {aiEnabled && canvasAI.outputMode === "image" && (
-        <AISuggestionPanel
-          imageData={canvasAI.generatedImage}
-          isVisible={!!canvasAI.generatedImage}
-          onAccept={() => {
-            setImageAccepted(true);
-            canvasAI.acceptGeneratedImage();
-          }}
-          onReject={() => {
-            canvasAI.rejectGeneratedImage();
-          }}
-        />
-      )}
     </div>
   );
 };

@@ -1,5 +1,3 @@
-import { google } from "@ai-sdk/google";
-import { generateText } from "ai";
 import cors from "cors";
 import debug from "debug";
 import express from "express";
@@ -29,11 +27,18 @@ const app = express();
 const port =
   process.env.PORT || (process.env.NODE_ENV !== "development" ? 80 : 3002); // default port to listen
 
+// CORS_ORIGIN accepts "*" or a comma-separated list of origins
+const corsOrigin =
+  process.env.CORS_ORIGIN && process.env.CORS_ORIGIN !== "*"
+    ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
+    : "*";
+
+app.set("trust proxy", 1);
 app.use(express.static("public"));
-app.use(express.json({ limit: "50mb" }));
+app.use(express.json({ limit: "256kb" }));
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || "*",
+    origin: corsOrigin,
     methods: ["GET", "POST"],
     credentials: true,
   }),
@@ -44,208 +49,126 @@ app.get("/", (req, res) => {
 });
 
 // ============================================================================
-// AI API Routes (Server-side to protect API Key and solve 429 error problem)
+// AI free trial: proxies text-only Gemini requests with the server's key so
+// first-time users can try AI before adding their own key.
 // ============================================================================
 
-const getGeminiKey = () => process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+declare const fetch: (url: string, init?: any) => Promise<any>;
 
-/**
- * Endpoint for image-to-image/text-to-image generation
- * Follows correct approach with server-side system prompt wrapping
- */
-app.post("/api/generate-image", async (req, res) => {
-  try {
-    const apiKey = getGeminiKey();
-    if (!apiKey) {
-      return res
-        .status(500)
-        .json({ success: false, error: "Missing Gemini API Key on server" });
-    }
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+const TRIAL_LIMITS = {
+  device: Number(process.env.AI_TRIAL_PER_DEVICE || 20),
+  ip: Number(process.env.AI_TRIAL_PER_IP || 40),
+  global: Number(process.env.AI_TRIAL_GLOBAL || 400),
+};
+const MAX_TRIAL_REQUEST_CHARS = 40_000;
 
-    const { prompt, image_data } = req.body;
+// ponytail: in-memory counters reset on server restart; persist them
+// (e.g. Appwrite) if the trial gets abused
+let usageDay = "";
+const usage = new Map<string, number>();
 
-    // Validate that we have image data (Selection Only might send null/empty)
-    if (!image_data) {
-      return res.status(400).json({
-        success: false,
-        error:
-          "No image data provided. Make sure to draw something on the canvas first.",
-      });
-    }
+// Gemini free-tier quotas reset at midnight Pacific
+const today = () =>
+  new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
 
-    // Validate prompt
-    if (!prompt?.trim()) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing prompt. Please enter a description.",
-      });
-    }
-
-    // Note: google() reads GOOGLE_GENERATIVE_AI_API_KEY from env automatically
-
-    // Build message content - Image first, then prompt (like ChalkAI)
-    const messageContent: any[] = [];
-
-    // Add reference image - ensure proper data URL format
-    const imageDataUrl = image_data.startsWith("data:")
-      ? image_data
-      : `data:image/png;base64,${image_data}`;
-    messageContent.push({ type: "image", image: imageDataUrl });
-
-    // ChalkAI-style: Wrap user prompt in detailed system instructions
-    messageContent.push({
-      type: "text",
-      text: `Generate a clean, high-quality, professional diagram as a PNG image based on the provided reference image and the user's explanation.
-
-IMPORTANT INTERPRETATION RULE:
-- Treat the reference image as a rough sketch or visual hint, NOT as a final diagram.
-- You are allowed and expected to redraw, correct, and standardize shapes, proportions, and outlines to create a proper textbook-style diagram.
-
-Diagram guidelines:
-- Use a clean white background.
-- Replace all rough, hand-drawn, or uneven outlines with precise, smooth, and well-proportioned shapes.
-- Redraw objects using correct canonical forms (e.g., cylinders, boxes, arrows, tubes) even if the sketch is distorted or incomplete.
-- Do NOT trace the sketch. Reconstruct the diagram clearly and accurately.
-- Use consistent line thickness and clean geometry.
-- Use arrows and connectors to clearly show structure, flow, or relationships.
-- Include and clearly label all entities, components, and relationships mentioned in the user's explanation.
-- If the sketch is ambiguous, resolve it into the most reasonable and standard diagram based on the explanation.
-
-Text handling:
-- Preserve any text or labels from the reference image exactly if they exist.
-- Add missing labels ONLY if they are clearly implied by the user's explanation.
-
-Output requirements:
-- Output only the generated PNG image.
-- Do not include any text, explanations, or captions outside the image.
-
-User explanation:
-${prompt}
-`,
-    });
-
-    console.log("[AI] Generating image with prompt:", prompt.substring(0, 100));
-
-    const { files } = await generateText({
-      model: google("gemini-2.5-flash-image"),
-      messages: [
-        {
-          role: "user",
-          content: messageContent,
-        },
-      ],
-    });
-
-    // Extract image from generated files (same as ChalkAI)
-    const imageFile = files?.find((f) => f.mediaType.startsWith("image/"));
-
-    if (!imageFile) {
-      return res.status(500).json({
-        success: false,
-        error: "No image returned by model. Try a different prompt.",
-      });
-    }
-
-    // Use base64 property directly if available, otherwise convert uint8Array (ChalkAI approach)
-    const base64Image =
-      imageFile.base64 ??
-      (imageFile.uint8Array
-        ? Buffer.from(imageFile.uint8Array).toString("base64")
-        : null);
-
-    if (!base64Image) {
-      return res.status(500).json({
-        success: false,
-        error: "Could not extract image data from model response.",
-      });
-    }
-
-    console.log("[AI] Image generated successfully");
-    res.json({ success: true, image_data: base64Image });
-  } catch (error: any) {
-    console.error("AI Generation Error:", error);
-
-    // Check for rate limit errors
-    const isRateLimit =
-      error.status === 429 ||
-      error.message?.toLowerCase().includes("quota") ||
-      error.message?.toLowerCase().includes("rate");
-
-    res.status(isRateLimit ? 429 : 500).json({
-      success: false,
-      error: error.message || "Failed to generate image",
-      rateLimited: isRateLimit,
-    });
-  }
+const trialKeys = (deviceId: string, ip: string) => ({
+  device: `device:${deviceId}`,
+  ip: `ip:${ip}`,
+  global: "global",
 });
 
-/**
- * Endpoint for canvas analysis (text mode)
- */
-app.post("/api/analyze-canvas", async (req, res) => {
+const getTrialRemaining = (deviceId: string, ip: string) => {
+  if (usageDay !== today()) {
+    usageDay = today();
+    usage.clear();
+  }
+  const keys = trialKeys(deviceId, ip);
+  return Math.max(
+    0,
+    Math.min(
+      TRIAL_LIMITS.device - (usage.get(keys.device) || 0),
+      TRIAL_LIMITS.ip - (usage.get(keys.ip) || 0),
+      TRIAL_LIMITS.global - (usage.get(keys.global) || 0),
+    ),
+  );
+};
+
+const addTrialUsage = (deviceId: string, ip: string, delta: 1 | -1) => {
+  for (const key of Object.values(trialKeys(deviceId, ip))) {
+    usage.set(key, (usage.get(key) || 0) + delta);
+  }
+};
+
+const isValidDeviceId = (deviceId: unknown): deviceId is string =>
+  typeof deviceId === "string" && /^[\w-]{8,64}$/.test(deviceId);
+
+app.get("/api/ai/trial", (req, res) => {
+  const { deviceId } = req.query;
+  if (!isValidDeviceId(deviceId)) {
+    return res.status(400).json({ error: "invalid_device_id" });
+  }
+  res.json({
+    enabled: !!process.env.GEMINI_API_KEY,
+    remaining: getTrialRemaining(deviceId, req.ip),
+    limit: TRIAL_LIMITS.device,
+  });
+});
+
+app.post("/api/ai/trial/generate", async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ error: "trial_disabled" });
+  }
+
+  const { deviceId, request } = req.body || {};
+  if (!isValidDeviceId(deviceId) || !request?.contents) {
+    return res.status(400).json({ error: "invalid_request" });
+  }
+  // the trial is text-only: audio/images must use the user's own key
+  const parts = [request.contents, request.systemInstruction].flat(2);
+  const hasMedia = JSON.stringify(parts).match(/"(inlineData|fileData)"/);
+  if (hasMedia) {
+    return res.status(415).json({ error: "media_not_allowed" });
+  }
+  if (JSON.stringify(request).length > MAX_TRIAL_REQUEST_CHARS) {
+    return res.status(413).json({ error: "request_too_large" });
+  }
+
+  if (getTrialRemaining(deviceId, req.ip) <= 0) {
+    return res.status(429).json({ error: "trial_exhausted" });
+  }
+  addTrialUsage(deviceId, req.ip, 1);
+
   try {
-    const apiKey = getGeminiKey();
-    if (!apiKey) {
-      return res
-        .status(500)
-        .json({ success: false, error: "Missing Gemini API Key on server" });
-    }
-
-    const { prompt, image_data } = req.body;
-
-    // Validate image data
-    if (!image_data) {
-      return res.status(400).json({
-        success: false,
-        error: "No image data provided. Make sure to draw something first.",
-      });
-    }
-
-    const googleProvider = google;
-
-    // Ensure proper data URL format
-    const imageDataUrl = image_data.startsWith("data:")
-      ? image_data
-      : `data:image/png;base64,${image_data}`;
-
-    const messageContent: any[] = [
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
       {
-        type: "image",
-        image: imageDataUrl,
-      },
-      {
-        type: "text",
-        text: prompt || "Analyze this canvas and describe what you see.",
-      },
-    ];
-
-    console.log("[AI] Analyzing canvas...");
-
-    const { text } = await generateText({
-      model: google("gemini-2.5-flash"),
-      messages: [
-        {
-          role: "user",
-          content: messageContent,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
         },
-      ],
-    });
-
-    console.log("[AI] Analysis complete");
-    res.json({ success: true, response: text });
+        body: JSON.stringify({
+          contents: request.contents,
+          systemInstruction: request.systemInstruction,
+          generationConfig: request.generationConfig,
+        }),
+      },
+    );
+    const data = await geminiRes.json();
+    if (!geminiRes.ok) {
+      addTrialUsage(deviceId, req.ip, -1);
+      // the shared free-tier key ran out of quota for everyone
+      const error = geminiRes.status === 429 ? "trial_busy" : "upstream_error";
+      return res.status(geminiRes.status === 429 ? 429 : 502).json({ error });
+    }
+    res.set("X-Trial-Remaining", String(getTrialRemaining(deviceId, req.ip)));
+    res.json(data);
   } catch (error: any) {
-    console.error("AI Analysis Error:", error);
-
-    const isRateLimit =
-      error.status === 429 ||
-      error.message?.toLowerCase().includes("quota") ||
-      error.message?.toLowerCase().includes("rate");
-
-    res.status(isRateLimit ? 429 : 500).json({
-      success: false,
-      error: error.message || "Failed to analyze canvas",
-      rateLimited: isRateLimit,
-    });
+    addTrialUsage(deviceId, req.ip, -1);
+    serverDebug(`trial generate failed: ${error.message}`);
+    res.status(502).json({ error: "upstream_error" });
   }
 });
 
@@ -260,7 +183,7 @@ try {
     transports: ["websocket", "polling"],
     cors: {
       allowedHeaders: ["Content-Type", "Authorization"],
-      origin: process.env.CORS_ORIGIN || "*",
+      origin: corsOrigin,
       credentials: true,
     },
     allowEIO3: true,

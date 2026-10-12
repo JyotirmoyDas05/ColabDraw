@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "@ai-sdk/google": "^3.0.6",
     "@excalidraw/eslint-config": "1.0.1",
     "@excalidraw/prettier-config": "1.0.2",
     "@types/debug": "4.1.5",
@@ -8,8 +7,6 @@
     "@types/node": "14.14.31",
     "@typescript-eslint/eslint-plugin": "4.16.1",
     "@typescript-eslint/parser": "4.16.1",
-    "ai": "^6.0.23",
-    "cors": "^2.8.5",
     "cross-env": "^7.0.3",
     "debug": "4.3.1",
     "dotenv": "^10.0.0",
@@ -38,8 +35,5 @@
     "test:other": "yarn prettier --list-different",
     "test": "yarn test:other && yarn test:code"
   },
-  "version": "1.0.0",
-  "devDependencies": {
-    "@types/cors": "^2.8.19"
-  }
+  "version": "1.0.0"
 }

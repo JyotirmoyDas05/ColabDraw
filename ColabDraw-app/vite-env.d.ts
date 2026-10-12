@@ -25,7 +25,6 @@ interface ImportMetaEnv {
   VITE_APP_APPWRITE_BUCKET_ID: string;
 
   // Smart Canvas AI - Gemini API Key (default key with 15 req/day limit per user)
-  VITE_APP_GEMINI_API_KEY: string;
 
   // whether to disable live reload / HMR. Usuaully what you want to do when
   // debugging Service Workers.
