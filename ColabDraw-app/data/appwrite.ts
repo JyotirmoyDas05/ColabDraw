@@ -1,5 +1,5 @@
 import { reconcileElements } from "@excalidraw/excalidraw";
-import { MIME_TYPES } from "@excalidraw/common";
+import { MIME_TYPES, toBrandedType } from "@excalidraw/common";
 import { decompressData } from "@excalidraw/excalidraw/data/encode";
 import {
   encryptData,
@@ -247,7 +247,7 @@ export const saveToAppwrite = async (
 
     AppwriteSceneVersionCache.set(socket, storedElements);
 
-    return storedElements;
+    return toBrandedType<RemoteExcalidrawElement[]>(storedElements);
   } catch (error: any) {
     // Document doesn't exist, create it
     if (error.code === 404) {
@@ -270,7 +270,7 @@ export const saveToAppwrite = async (
 
       AppwriteSceneVersionCache.set(socket, storedElements);
 
-      return storedElements;
+      return toBrandedType<RemoteExcalidrawElement[]>(storedElements);
     }
 
     throw error;

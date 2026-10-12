@@ -7,7 +7,11 @@ import { pointFrom, pointRotateRads } from "@excalidraw/math";
 
 import type { Radians } from "@excalidraw/math";
 
-import type { InteractiveCanvasAppState, Zoom } from "../../ColabDraw/types";
+import type {
+  InteractiveCanvasAppState,
+  Zoom,
+} from "@excalidraw/excalidraw/types";
+import type { Bounds } from "@excalidraw/common";
 
 import { getElementAbsoluteCoords } from "./bounds";
 import {
@@ -17,7 +21,6 @@ import {
   isLinearElement,
 } from "./typeChecks";
 
-import type { Bounds } from "./bounds";
 import type {
   ElementsMap,
   ExcalidrawElement,

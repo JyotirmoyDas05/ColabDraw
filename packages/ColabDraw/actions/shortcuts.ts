@@ -44,18 +44,17 @@ export type ShortcutName =
       | "zoomToFit"
       | "zoomToFitSelectionInViewport"
       | "zoomToFitSelection"
-      | "toggleEraserTool"
-      | "toggleHandTool"
-      | "setFrameAsActiveTool"
       | "saveFileToDisk"
       | "saveToActiveFile"
       | "toggleShortcuts"
       | "wrapSelectionInFrame"
+      | "toggleWrap"
     >
   | "saveScene"
   | "imageExport"
   | "commandPalette"
-  | "searchMenu";
+  | "searchMenu"
+  | "toolLock";
 
 const shortcutMap: Record<ShortcutName, string[]> = {
   toggleTheme: [getShortcutKey("Shift+Alt+D")],
@@ -109,14 +108,13 @@ const shortcutMap: Record<ShortcutName, string[]> = {
   zoomToFitSelection: [getShortcutKey("Shift+3")],
   zoomToFit: [getShortcutKey("Shift+1")],
   zoomToFitSelectionInViewport: [getShortcutKey("Shift+2")],
-  toggleEraserTool: [getShortcutKey("E")],
-  toggleHandTool: [getShortcutKey("H")],
-  setFrameAsActiveTool: [getShortcutKey("F")],
   saveFileToDisk: [getShortcutKey("CtrlOrCmd+S")],
   saveToActiveFile: [getShortcutKey("CtrlOrCmd+S")],
   toggleShortcuts: [getShortcutKey("?")],
   searchMenu: [getShortcutKey("CtrlOrCmd+F")],
   wrapSelectionInFrame: [],
+  toggleWrap: [getShortcutKey("W")],
+  toolLock: [getShortcutKey("Q")],
 };
 
 export const getShortcutFromShortcutName = (name: ShortcutName, idx = 0) => {

@@ -39,10 +39,10 @@ import type {
 import type { MaybePromise } from "@excalidraw/common/utility-types";
 
 import { appJotaiStore, atom } from "../app-jotai";
-
 import { SAVE_TO_LOCAL_STORAGE_TIMEOUT, STORAGE_KEYS } from "../app_constants";
 
 import { FileManager } from "./FileManager";
+import { FileStatusStore } from "./fileStatusStore";
 import { Locker } from "./Locker";
 import { updateBrowserStateVersion } from "./tabSync";
 
@@ -167,6 +167,7 @@ export class LocalData {
   // ---------------------------------------------------------------------------
 
   static fileStorage = new LocalFileManager({
+    onFileStatusChange: FileStatusStore.updateStatuses.bind(FileStatusStore),
     getFiles(ids) {
       return getMany(ids, filesStore).then(
         async (filesData: (BinaryFileData | undefined)[]) => {
