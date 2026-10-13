@@ -149,6 +149,9 @@ app.post("/api/ai/trial/generate", async (req, res) => {
   try {
     let geminiRes: any = null;
     for (const model of GEMINI_MODELS) {
+      // AbortSignal.timeout isn't in this project's typings
+      const stall = new AbortController();
+      const stallTimer = setTimeout(() => stall.abort(), GEMINI_STALL_MS);
       geminiRes = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
@@ -163,9 +166,11 @@ app.post("/api/ai/trial/generate", async (req, res) => {
             generationConfig: request.generationConfig,
             tools: Array.isArray(request.tools) ? request.tools : undefined,
           }),
-          signal: AbortSignal.timeout(GEMINI_STALL_MS),
+          signal: stall.signal,
         },
-      ).catch(() => null);
+      )
+        .catch(() => null)
+        .finally(() => clearTimeout(stallTimer));
       if (geminiRes && geminiRes.status !== 503 && geminiRes.status !== 500) {
         break;
       }
