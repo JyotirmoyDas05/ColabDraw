@@ -7,8 +7,37 @@ const TRIAL_URL = `${import.meta.env.VITE_APP_WS_SERVER_URL}/api/ai/trial`;
 
 const API_KEY_STORAGE_KEY = "colabdraw-gemini-api-key";
 const DEVICE_ID_STORAGE_KEY = "colabdraw-device-id";
+const SETTINGS_STORAGE_KEY = "colabdraw-ai-settings";
 
-export type GeminiPart = { text: string };
+export type AISettings = {
+  /** "nano" runs Chrome's built-in Gemini Nano on this device */
+  engine: "gemini" | "nano";
+  /** "auto" picks on-device browser speech, else the Whisper model */
+  speech: "auto" | "whisper" | "browser";
+  /** BCP 47 tag, empty for the browser language */
+  speechLang: string;
+  /** send voice commands as soon as you stop talking */
+  autoSend: boolean;
+};
+
+const DEFAULT_SETTINGS: AISettings = {
+  engine: "gemini",
+  speech: "auto",
+  speechLang: "",
+  autoSend: true,
+};
+
+export const getAISettings = (): AISettings => ({
+  ...DEFAULT_SETTINGS,
+  ...safelyParseJSON(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}"),
+});
+
+export const setAISettings = (settings: AISettings) =>
+  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+
+export type GeminiPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } };
 export type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
 export type GeminiRequest = {
   contents: GeminiContent[];
@@ -28,6 +57,7 @@ export type AIErrorCode =
   | "trial_disabled"
   | "invalid_key"
   | "quota_exceeded" // the user's own key hit its free-tier limit
+  | "nano_unavailable"
   | "network";
 
 export class AIError extends Error {
@@ -152,9 +182,98 @@ const generateWithTrial = async (
   };
 };
 
+// Chrome's built-in AI (Prompt API), feature-detected
+declare const LanguageModel: any;
+
+const NANO_OPTIONS = {
+  expectedInputs: [{ type: "text", languages: ["en"] }],
+  expectedOutputs: [{ type: "text", languages: ["en"] }],
+};
+
+export const getNanoAvailability = async (): Promise<
+  "unavailable" | "downloadable" | "downloading" | "available"
+> => {
+  try {
+    return typeof LanguageModel === "undefined"
+      ? "unavailable"
+      : await LanguageModel.availability(NANO_OPTIONS);
+  } catch {
+    return "unavailable";
+  }
+};
+
+/** Must run from a click: Chrome only starts the model download on user activation. */
+export const downloadNano = async (onProgress: (fraction: number) => void) => {
+  const session = await LanguageModel.create({
+    ...NANO_OPTIONS,
+    monitor: (monitor: EventTarget) =>
+      monitor.addEventListener("downloadprogress", (event: any) =>
+        onProgress(event.loaded),
+      ),
+  });
+  session.destroy();
+};
+
+/** Gemini's schema dialect uses upper-case types; the Prompt API wants JSON Schema */
+const toJSONSchema = (schema: any): any =>
+  Array.isArray(schema)
+    ? schema.map(toJSONSchema)
+    : schema && typeof schema === "object"
+    ? Object.fromEntries(
+        Object.entries(schema).map(([key, value]) => [
+          key,
+          key === "type" && typeof value === "string"
+            ? value.toLowerCase()
+            : toJSONSchema(value),
+        ]),
+      )
+    : schema;
+
+const partsToText = (parts: GeminiPart[]) =>
+  parts.map((part) => ("text" in part ? part.text : "")).join("\n");
+
+const generateWithNano = async (
+  request: GeminiRequest,
+  signal?: AbortSignal,
+) => {
+  if ((await getNanoAvailability()) === "unavailable") {
+    throw new AIError("nano_unavailable");
+  }
+  const history = request.contents.slice(0, -1);
+  const last = request.contents[request.contents.length - 1];
+  const session = await LanguageModel.create({
+    ...NANO_OPTIONS,
+    signal,
+    initialPrompts: [
+      ...(request.systemInstruction
+        ? [
+            {
+              role: "system",
+              content: partsToText(request.systemInstruction.parts),
+            },
+          ]
+        : []),
+      ...history.map((content) => ({
+        role: content.role === "model" ? "assistant" : "user",
+        content: partsToText(content.parts),
+      })),
+    ],
+  });
+  try {
+    const schema = request.generationConfig?.responseSchema;
+    return await session.prompt(partsToText(last.parts), {
+      signal,
+      ...(schema ? { responseConstraint: toJSONSchema(schema) } : null),
+    });
+  } finally {
+    session.destroy();
+  }
+};
+
 /**
- * Runs a Gemini request with the user's own key (streamed, direct from the
- * browser) or, without a key, through the server's rate-limited free trial.
+ * Runs a Gemini request on-device (Gemini Nano, when chosen), with the user's
+ * own key (streamed, direct from the browser) or, without a key, through the
+ * server's rate-limited free trial.
  */
 export const generate = async (
   request: GeminiRequest,
@@ -164,6 +283,11 @@ export const generate = async (
   }: { signal?: AbortSignal; onChunk?: (delta: string) => void } = {},
 ): Promise<{ text: string; trial: TrialStatus | null }> => {
   try {
+    if (getAISettings().engine === "nano") {
+      const text = await generateWithNano(request, signal);
+      onChunk?.(text);
+      return { text, trial: null };
+    }
     const apiKey = getUserApiKey();
     if (apiKey) {
       const text = await generateWithApiKey(apiKey, request, signal, onChunk);

@@ -33,3 +33,34 @@
     }
   }
 }
+
+.excalidraw .AIKeyDialog__preferences {
+  align-items: stretch;
+  padding-top: 1rem;
+  border-top: 1px solid var(--default-border-color);
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  select {
+    padding: 0.5rem;
+    border: 1px solid var(--default-border-color);
+    border-radius: var(--border-radius-md);
+    background-color: var(--input-bg-color, transparent);
+    color: inherit;
+    font: inherit;
+    font-weight: 400;
+  }
+
+  .AIKeyDialog__checkbox {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 400;
+  }
+}

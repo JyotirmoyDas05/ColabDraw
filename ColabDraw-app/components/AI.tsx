@@ -53,6 +53,7 @@ const ERROR_MESSAGES: Record<AIErrorCode, string> = {
   trial_disabled: "The free AI trial isn't available right now.",
   invalid_key: "Your Gemini key was rejected. Check it in AI settings.",
   quota_exceeded: "Your Gemini key hit its free daily limit.",
+  nano_unavailable: "Gemini Nano isn't available in this browser.",
   network: "Couldn't reach the AI. Check your connection and try again.",
 };
 

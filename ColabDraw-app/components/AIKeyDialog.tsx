@@ -6,8 +6,12 @@ import { useEffect, useState } from "react";
 import { useAtom } from "../app-jotai";
 import {
   AIError,
+  downloadNano,
+  getAISettings,
+  getNanoAvailability,
   getTrialStatus,
   getUserApiKey,
+  setAISettings,
   setUserApiKey,
   validateApiKey,
 } from "../ai/aiClient";
@@ -15,7 +19,118 @@ import { aiKeyDialogOpenAtom, aiTrialAtom } from "../ai/aiState";
 
 import "./AIKeyDialog.scss";
 
+import type { AISettings } from "../ai/aiClient";
+
 const KEY_PAGE_URL = "https://aistudio.google.com/apikey";
+
+const LANGUAGES = [
+  ["", "Browser language"],
+  ["en-US", "English (US)"],
+  ["en-GB", "English (UK)"],
+  ["en-IN", "English (India)"],
+  ["hi-IN", "Hindi"],
+  ["bn-IN", "Bengali"],
+  ["es-ES", "Spanish"],
+  ["fr-FR", "French"],
+  ["de-DE", "German"],
+  ["pt-BR", "Portuguese"],
+  ["ja-JP", "Japanese"],
+  ["zh-CN", "Chinese"],
+] as const;
+
+const AIPreferences = () => {
+  const [settings, setSettings] = useState(getAISettings);
+  const [nano, setNano] = useState<string>("unavailable");
+  const [nanoProgress, setNanoProgress] = useState<number | null>(null);
+
+  useEffect(() => {
+    getNanoAvailability().then(setNano);
+  }, []);
+
+  const update = (patch: Partial<AISettings>) => {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    setAISettings(next);
+  };
+
+  return (
+    <section className="AIKeyDialog__section AIKeyDialog__preferences">
+      <label>
+        AI model
+        <select
+          value={settings.engine}
+          onChange={(event) =>
+            update({ engine: event.target.value as AISettings["engine"] })
+          }
+        >
+          <option value="gemini">Gemini (cloud, best results)</option>
+          <option value="nano" disabled={nano === "unavailable"}>
+            Gemini Nano (on this device
+            {nano === "unavailable" ? ", needs desktop Chrome" : ""})
+          </option>
+        </select>
+      </label>
+      {settings.engine === "nano" && nano !== "available" && (
+        <div>
+          <FilledButton
+            variant="outlined"
+            label={
+              nanoProgress === null
+                ? "Download Gemini Nano"
+                : `Downloading… ${Math.round(nanoProgress * 100)}%`
+            }
+            status={nanoProgress === null ? null : "loading"}
+            onClick={async () => {
+              setNanoProgress(0);
+              try {
+                await downloadNano(setNanoProgress);
+                setNano("available");
+              } finally {
+                setNanoProgress(null);
+              }
+            }}
+          />
+        </div>
+      )}
+      <label>
+        Voice input
+        <select
+          value={settings.speech}
+          onChange={(event) =>
+            update({ speech: event.target.value as AISettings["speech"] })
+          }
+        >
+          <option value="auto">Automatic (always on this device)</option>
+          <option value="whisper">
+            Whisper model (on this device, one-time download)
+          </option>
+          <option value="browser">Browser speech (may use the cloud)</option>
+        </select>
+      </label>
+      <label>
+        Speech language
+        <select
+          value={settings.speechLang}
+          onChange={(event) => update({ speechLang: event.target.value })}
+        >
+          {LANGUAGES.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="AIKeyDialog__checkbox">
+        <input
+          type="checkbox"
+          checked={settings.autoSend}
+          onChange={(event) => update({ autoSend: event.target.checked })}
+        />
+        Send voice commands when I stop talking
+      </label>
+    </section>
+  );
+};
 
 const AIKeyDialogContent = ({ onClose }: { onClose: () => void }) => {
   const [trial, setTrial] = useAtom(aiTrialAtom);
@@ -126,6 +241,7 @@ const AIKeyDialogContent = ({ onClose }: { onClose: () => void }) => {
           </section>
         </>
       )}
+      <AIPreferences />
       <p className="AIKeyDialog__muted">
         Your key is stored only in this browser and never sent to ColabDraw's
         servers.
