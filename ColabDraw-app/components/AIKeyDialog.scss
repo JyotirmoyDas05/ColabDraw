@@ -1,0 +1,83 @@
+.excalidraw {
+  .AIKeyDialog {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+
+    p {
+      margin: 0;
+      line-height: 1.5;
+    }
+
+    &__section {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    &__steps {
+      margin: 0;
+      padding-inline-start: 1.25rem;
+      line-height: 1.7;
+    }
+
+    &__muted {
+      color: var(--color-gray-60);
+      font-size: 0.875rem;
+    }
+
+    // upstream's leading-icon rule (.ExcTextField svg) also grabs the
+    // show/hide key button's eye icon and pins it outside the button
+    .ExcTextField__input button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      background: none;
+
+      svg {
+        position: static;
+        transform: none;
+      }
+    }
+
+    &__error {
+      color: var(--color-danger);
+      font-size: 0.875rem;
+    }
+  }
+}
+
+.excalidraw .AIKeyDialog__preferences {
+  align-items: stretch;
+  padding-top: 1rem;
+  border-top: 1px solid var(--default-border-color);
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  select {
+    padding: 0.5rem;
+    border: 1px solid var(--default-border-color);
+    border-radius: var(--border-radius-md);
+    background-color: var(--input-bg-color, transparent);
+    color: inherit;
+    font: inherit;
+    font-weight: 400;
+  }
+
+  .AIKeyDialog__checkbox {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 400;
+  }
+}

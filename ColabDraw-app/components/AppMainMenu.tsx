@@ -1,4 +1,4 @@
-import { eyeIcon } from "@excalidraw/excalidraw/components/icons";
+import { brainIcon, eyeIcon } from "@excalidraw/excalidraw/components/icons";
 import { MainMenu } from "@excalidraw/excalidraw/index";
 import React from "react";
 
@@ -6,7 +6,9 @@ import { isDevEnv } from "@excalidraw/common";
 
 import type { Theme } from "@excalidraw/element/types";
 
+import { useSetAtom } from "../app-jotai";
 import { LanguageList } from "../app-language/LanguageList";
+import { aiKeyDialogOpenAtom } from "../ai/aiState";
 
 import { saveDebugState } from "./DebugCanvas";
 
@@ -17,6 +19,7 @@ export const AppMainMenu: React.FC<{
   theme: Theme | "system";
   refresh: () => void;
 }> = React.memo((props) => {
+  const openAISettings = useSetAtom(aiKeyDialogOpenAtom);
   return (
     <MainMenu>
       <MainMenu.DefaultItems.LoadScene />
@@ -54,6 +57,9 @@ export const AppMainMenu: React.FC<{
       )}
       <MainMenu.Separator />
       <MainMenu.DefaultItems.Preferences />
+      <MainMenu.Item icon={brainIcon} onSelect={() => openAISettings(true)}>
+        AI settings
+      </MainMenu.Item>
       <MainMenu.DefaultItems.ToggleTheme allowSystemTheme theme={props.theme} />
       <MainMenu.ItemCustom>
         <LanguageList style={{ width: "100%" }} />

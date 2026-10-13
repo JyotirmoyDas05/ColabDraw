@@ -1,0 +1,294 @@
+.excalidraw {
+  .ai-buddy-anchor {
+    position: relative;
+  }
+
+  .ai-assistant {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    z-index: var(--zIndex-layerUI, 4);
+    display: flex;
+    flex-direction: column;
+    width: min(22rem, calc(100vw - 2rem));
+    max-height: min(32rem, calc(100vh - 6rem));
+    border-radius: var(--border-radius-lg);
+    background-color: var(--island-bg-color);
+    box-shadow: var(--shadow-island);
+    color: var(--text-primary-color);
+    font-size: 0.875rem;
+    pointer-events: all;
+    overflow: hidden;
+
+    &__header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.625rem 0.5rem 0.625rem 0.75rem;
+      border-bottom: 1px solid var(--default-border-color);
+    }
+
+    &__title {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      line-height: 1.2;
+
+      span {
+        color: var(--color-gray-60);
+        font-size: 0.75rem;
+      }
+    }
+
+    &__icon-button {
+      display: flex;
+      flex: none;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      padding: 0.375rem;
+      border: none;
+      border-radius: var(--border-radius-md);
+      background: none;
+      color: inherit;
+      cursor: pointer;
+
+      svg {
+        width: 1.125rem;
+        height: 1.125rem;
+      }
+
+      &:hover:not(:disabled) {
+        background-color: var(--button-hover-bg);
+      }
+
+      &:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+
+      &--active {
+        background-color: var(--color-primary);
+        color: var(--color-surface-lowest, #fff);
+        animation: ai-assistant-pulse 1.2s ease-in-out infinite;
+
+        &:hover:not(:disabled) {
+          background-color: var(--color-primary-darker);
+        }
+      }
+    }
+
+    &__send:not(:disabled) {
+      color: var(--color-primary);
+    }
+
+    &__messages {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: 0.5rem;
+      min-height: 6rem;
+      padding: 0.75rem;
+      overflow-y: auto;
+    }
+
+    &__empty {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.375rem;
+
+      p {
+        margin: 0 0 0.25rem;
+        color: var(--color-gray-60);
+        line-height: 1.5;
+      }
+    }
+
+    &__chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.375rem 0.625rem;
+      border: 1px solid var(--default-border-color);
+      border-radius: 1rem;
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: start;
+      cursor: pointer;
+
+      svg {
+        width: 1rem;
+        height: 1rem;
+      }
+
+      &:hover {
+        border-color: var(--color-primary);
+        color: var(--color-primary);
+      }
+    }
+
+    &__message {
+      max-width: 85%;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.875rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+
+      p {
+        margin: 0;
+      }
+
+      &--user {
+        align-self: flex-end;
+        border-bottom-right-radius: 0.25rem;
+        background-color: var(--color-primary);
+        color: var(--color-surface-lowest, #fff);
+      }
+
+      &--model {
+        align-self: flex-start;
+        border-bottom-left-radius: 0.25rem;
+        background-color: var(--color-surface-low, var(--button-gray-1));
+      }
+
+      &--error {
+        background-color: var(--color-danger-background, #fff0f0);
+        color: var(--color-danger-text, var(--color-danger));
+      }
+    }
+
+    &__note {
+      display: block;
+      margin-top: 0.25rem;
+      color: var(--color-gray-60);
+      font-size: 0.75rem;
+    }
+
+    &__link {
+      margin-top: 0.375rem;
+      padding: 0;
+      border: none;
+      background: none;
+      color: var(--color-primary);
+      font: inherit;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+
+    &__typing {
+      display: flex;
+      gap: 0.25rem;
+
+      span {
+        width: 0.375rem;
+        height: 0.375rem;
+        border-radius: 50%;
+        background-color: var(--color-gray-60);
+        animation: ai-assistant-typing 1s ease-in-out infinite;
+
+        &:nth-child(2) {
+          animation-delay: 0.15s;
+        }
+
+        &:nth-child(3) {
+          animation-delay: 0.3s;
+        }
+      }
+    }
+
+    &__speech {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0 0.75rem 0.375rem;
+      color: var(--color-gray-60);
+      font-size: 0.75rem;
+    }
+
+    &__badge {
+      padding: 0.0625rem 0.5rem;
+      border-radius: 1rem;
+      background-color: var(--color-success-background, #e6fcf5);
+      color: var(--color-success-text, #087f5b);
+      font-weight: 600;
+
+      &--cloud {
+        background-color: var(--color-warning-background, #fff9db);
+        color: var(--color-warning-text, #e67700);
+      }
+    }
+
+    &__input {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      padding: 0.5rem;
+      border-top: 1px solid var(--default-border-color);
+
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.5rem;
+        border: none;
+        background: none;
+        color: inherit;
+        font: inherit;
+        resize: none;
+        outline: none;
+      }
+    }
+
+    &__actions {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    &__live {
+      margin-inline-end: auto;
+      padding: 0.25rem 0.75rem;
+      border: 1px solid var(--default-border-color);
+      border-radius: 1rem;
+      background: none;
+      color: inherit;
+      font: inherit;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+
+      &:hover {
+        border-color: var(--color-primary);
+      }
+
+      &--on {
+        border-color: var(--color-danger);
+        color: var(--color-danger);
+      }
+    }
+  }
+
+  @keyframes ai-assistant-pulse {
+    50% {
+      box-shadow: 0 0 0 0.25rem var(--color-primary-light);
+    }
+  }
+
+  @keyframes ai-assistant-typing {
+    50% {
+      opacity: 0.3;
+      transform: translateY(-0.125rem);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ai-assistant__icon-button--active,
+    .ai-assistant__typing span {
+      animation: none;
+    }
+  }
+}

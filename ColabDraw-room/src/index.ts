@@ -1,3 +1,4 @@
+import cors from "cors";
 import debug from "debug";
 import express from "express";
 import http from "http";
@@ -26,10 +27,170 @@ const app = express();
 const port =
   process.env.PORT || (process.env.NODE_ENV !== "development" ? 80 : 3002); // default port to listen
 
+// CORS_ORIGIN accepts "*" or a comma-separated list of origins
+const corsOrigin =
+  process.env.CORS_ORIGIN && process.env.CORS_ORIGIN !== "*"
+    ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
+    : "*";
+
+app.set("trust proxy", 1);
 app.use(express.static("public"));
+app.use(express.json({ limit: "256kb" }));
+app.use(
+  cors({
+    origin: corsOrigin,
+    methods: ["GET", "POST"],
+    credentials: true,
+  }),
+);
 
 app.get("/", (req, res) => {
   res.send("Excalidraw collaboration server is up :)");
+});
+
+// ============================================================================
+// AI free trial: proxies text-only Gemini requests with the server's key so
+// first-time users can try AI before adding their own key.
+// ============================================================================
+
+declare const fetch: (url: string, init?: any) => Promise<any>;
+
+// tried in order when a model is overloaded (503) or stalls
+const GEMINI_MODELS = (
+  process.env.GEMINI_MODELS || "gemini-3.5-flash-lite,gemini-3.1-flash-lite"
+)
+  .split(",")
+  .map((model) => model.trim());
+const GEMINI_STALL_MS = 20000;
+const TRIAL_LIMITS = {
+  device: Number(process.env.AI_TRIAL_PER_DEVICE || 20),
+  ip: Number(process.env.AI_TRIAL_PER_IP || 40),
+  global: Number(process.env.AI_TRIAL_GLOBAL || 400),
+};
+const MAX_TRIAL_REQUEST_CHARS = 40_000;
+
+// ponytail: in-memory counters reset on server restart; persist them
+// (e.g. Appwrite) if the trial gets abused
+let usageDay = "";
+const usage = new Map<string, number>();
+
+// Gemini free-tier quotas reset at midnight Pacific
+const today = () =>
+  new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+
+const trialKeys = (deviceId: string, ip: string) => ({
+  device: `device:${deviceId}`,
+  ip: `ip:${ip}`,
+  global: "global",
+});
+
+const getTrialRemaining = (deviceId: string, ip: string) => {
+  if (usageDay !== today()) {
+    usageDay = today();
+    usage.clear();
+  }
+  const keys = trialKeys(deviceId, ip);
+  return Math.max(
+    0,
+    Math.min(
+      TRIAL_LIMITS.device - (usage.get(keys.device) || 0),
+      TRIAL_LIMITS.ip - (usage.get(keys.ip) || 0),
+      TRIAL_LIMITS.global - (usage.get(keys.global) || 0),
+    ),
+  );
+};
+
+const addTrialUsage = (deviceId: string, ip: string, delta: 1 | -1) => {
+  for (const key of Object.values(trialKeys(deviceId, ip))) {
+    usage.set(key, (usage.get(key) || 0) + delta);
+  }
+};
+
+const isValidDeviceId = (deviceId: unknown): deviceId is string =>
+  typeof deviceId === "string" && /^[\w-]{8,64}$/.test(deviceId);
+
+app.get("/api/ai/trial", (req, res) => {
+  const { deviceId } = req.query;
+  if (!isValidDeviceId(deviceId)) {
+    return res.status(400).json({ error: "invalid_device_id" });
+  }
+  res.json({
+    enabled: !!process.env.GEMINI_API_KEY,
+    remaining: getTrialRemaining(deviceId, req.ip),
+    limit: TRIAL_LIMITS.device,
+  });
+});
+
+app.post("/api/ai/trial/generate", async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ error: "trial_disabled" });
+  }
+
+  const { deviceId, request } = req.body || {};
+  if (!isValidDeviceId(deviceId) || !request?.contents) {
+    return res.status(400).json({ error: "invalid_request" });
+  }
+  // the trial is text-only: audio/images must use the user's own key
+  const parts = [request.contents, request.systemInstruction].flat(2);
+  const hasMedia = JSON.stringify(parts).match(/"(inlineData|fileData)"/);
+  if (hasMedia) {
+    return res.status(415).json({ error: "media_not_allowed" });
+  }
+  if (JSON.stringify(request).length > MAX_TRIAL_REQUEST_CHARS) {
+    return res.status(413).json({ error: "request_too_large" });
+  }
+
+  if (getTrialRemaining(deviceId, req.ip) <= 0) {
+    return res.status(429).json({ error: "trial_exhausted" });
+  }
+  addTrialUsage(deviceId, req.ip, 1);
+
+  try {
+    let geminiRes: any = null;
+    for (const model of GEMINI_MODELS) {
+      geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          body: JSON.stringify({
+            contents: request.contents,
+            systemInstruction: request.systemInstruction,
+            generationConfig: request.generationConfig,
+            tools: Array.isArray(request.tools) ? request.tools : undefined,
+          }),
+          signal: AbortSignal.timeout(GEMINI_STALL_MS),
+        },
+      ).catch(() => null);
+      if (geminiRes && geminiRes.status !== 503 && geminiRes.status !== 500) {
+        break;
+      }
+    }
+    if (!geminiRes || geminiRes.status === 503 || geminiRes.status === 500) {
+      addTrialUsage(deviceId, req.ip, -1);
+      return res.status(429).json({ error: "trial_busy" });
+    }
+    const data = await geminiRes.json();
+    if (!geminiRes.ok) {
+      addTrialUsage(deviceId, req.ip, -1);
+      // the shared free-tier key ran out of quota for everyone
+      const error = geminiRes.status === 429 ? "trial_busy" : "upstream_error";
+      return res.status(geminiRes.status === 429 ? 429 : 502).json({ error });
+    }
+    res.json({
+      response: data,
+      remaining: getTrialRemaining(deviceId, req.ip),
+      limit: TRIAL_LIMITS.device,
+    });
+  } catch (error: any) {
+    addTrialUsage(deviceId, req.ip, -1);
+    serverDebug(`trial generate failed: ${error.message}`);
+    res.status(502).json({ error: "upstream_error" });
+  }
 });
 
 const server = http.createServer(app);
@@ -43,7 +204,7 @@ try {
     transports: ["websocket", "polling"],
     cors: {
       allowedHeaders: ["Content-Type", "Authorization"],
-      origin: process.env.CORS_ORIGIN || "*",
+      origin: corsOrigin,
       credentials: true,
     },
     allowEIO3: true,
