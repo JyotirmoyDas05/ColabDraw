@@ -1,4 +1,6 @@
-import { CANVAS_RESPONSE_SCHEMA } from "./canvasAgent";
+import { CANVAS_FUNCTIONS } from "./canvasAgent";
+
+import type { FunctionCall } from "./aiClient";
 
 const LIVE_MODEL = "models/gemini-3.8-live";
 const LIVE_URL =
@@ -17,16 +19,7 @@ const TOOLS = [
         description:
           "Returns the board as it is now (selection or what's on screen). Call it before editing if the user may have changed the board.",
       },
-      {
-        name: "update_canvas",
-        description:
-          "Applies operations to the board as one undo step. Use ids from the latest read_canvas.",
-        parameters: {
-          type: "OBJECT",
-          properties: { ops: CANVAS_RESPONSE_SCHEMA.properties.ops },
-          required: ["ops"],
-        },
-      },
+      ...CANVAS_FUNCTIONS,
     ],
   },
 ];
@@ -90,7 +83,7 @@ export const startLiveSession = async ({
   onState,
   onLevel,
   onTranscript,
-  onToolCall,
+  onToolCalls,
   onError,
 }: {
   apiKey: string;
@@ -98,7 +91,8 @@ export const startLiveSession = async ({
   onState: (state: LiveState) => void;
   onLevel: (level: number) => void;
   onTranscript: (role: "user" | "model", text: string) => void;
-  onToolCall: (name: string, args: any) => Promise<object>;
+  /** all calls of one model turn, answered in order */
+  onToolCalls: (calls: FunctionCall[]) => Promise<object[]>;
   onError: (message: string) => void;
 }): Promise<LiveSession> => {
   onState("connecting");
@@ -211,17 +205,24 @@ export const startLiveSession = async ({
       return;
     }
     if (message.toolCall) {
-      const functionResponses = [];
-      for (const call of message.toolCall.functionCalls ?? []) {
-        let response: object;
-        try {
-          response = await onToolCall(call.name, call.args ?? {});
-        } catch (error: any) {
-          response = { error: String(error?.message ?? error) };
-        }
-        functionResponses.push({ id: call.id, name: call.name, response });
+      const calls: (FunctionCall & { id: string })[] = (
+        message.toolCall.functionCalls ?? []
+      ).map((call: any) => ({ ...call, args: call.args ?? {} }));
+      let responses: object[];
+      try {
+        responses = await onToolCalls(calls);
+      } catch (error: any) {
+        responses = calls.map(() => ({ error: String(error?.message) }));
       }
-      send({ toolResponse: { functionResponses } });
+      send({
+        toolResponse: {
+          functionResponses: calls.map((call, index) => ({
+            id: call.id,
+            name: call.name,
+            response: responses[index],
+          })),
+        },
+      });
       return;
     }
     const content = message.serverContent;

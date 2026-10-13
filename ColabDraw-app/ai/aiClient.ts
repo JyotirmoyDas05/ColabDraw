@@ -2,6 +2,9 @@ import { parseSSEStream } from "@excalidraw/excalidraw";
 import { safelyParseJSON } from "@excalidraw/common";
 
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
+// tried in order when a model is overloaded (503) or stalls
+const GEMINI_MODELS = [GEMINI_MODEL, "gemini-3.1-flash-lite"];
+const STALL_MS = 20000;
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const TRIAL_URL = `${import.meta.env.VITE_APP_WS_SERVER_URL}/api/ai/trial`;
 
@@ -39,10 +42,25 @@ export type GeminiPart =
   | { text: string }
   | { inlineData: { mimeType: string; data: string } };
 export type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
+export type FunctionDeclaration = {
+  name: string;
+  description: string;
+  parameters: object;
+};
+
 export type GeminiRequest = {
   contents: GeminiContent[];
   systemInstruction?: { parts: GeminiPart[] };
   generationConfig?: Record<string, unknown>;
+  tools?: { functionDeclarations: FunctionDeclaration[] }[];
+};
+
+export type FunctionCall = { name: string; args: Record<string, any> };
+
+export type GenerateResult = {
+  text: string;
+  calls: FunctionCall[];
+  trial: TrialStatus | null;
 };
 
 export type TrialStatus = {
@@ -58,6 +76,7 @@ export type AIErrorCode =
   | "invalid_key"
   | "quota_exceeded" // the user's own key hit its free-tier limit
   | "nano_unavailable"
+  | "model_busy" // every Gemini model we tried was overloaded
   | "network";
 
 export class AIError extends Error {
@@ -86,10 +105,21 @@ const getDeviceId = () => {
   return deviceId;
 };
 
+const getParts = (response: any): any[] =>
+  response?.candidates?.[0]?.content?.parts ?? [];
+
 const getText = (response: any): string =>
-  response?.candidates?.[0]?.content?.parts
-    ?.map((part: { text?: string }) => part.text ?? "")
-    .join("") ?? "";
+  getParts(response)
+    .map((part) => part.text ?? "")
+    .join("");
+
+const getCalls = (response: any): FunctionCall[] =>
+  getParts(response)
+    .filter((part) => part.functionCall)
+    .map((part) => ({
+      name: part.functionCall.name,
+      args: part.functionCall.args ?? {},
+    }));
 
 const toGeminiError = async (res: Response) => {
   const body = await res.text();
@@ -121,36 +151,66 @@ export const getTrialStatus = async (): Promise<TrialStatus | null> => {
   }
 };
 
-const generateWithApiKey = async (
+const openStream = async (
   apiKey: string,
+  model: string,
   request: GeminiRequest,
   signal?: AbortSignal,
-  onChunk?: (delta: string) => void,
 ) => {
-  const res = await fetch(
-    `${GEMINI_URL}/${GEMINI_MODEL}:streamGenerateContent?alt=sse`,
-    {
+  // overloaded models sometimes never answer, so give up on headers after a while
+  const stall = new AbortController();
+  const timer = setTimeout(() => stall.abort(), STALL_MS);
+  try {
+    return await fetch(`${GEMINI_URL}/${model}:streamGenerateContent?alt=sse`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-goog-api-key": apiKey,
       },
       body: JSON.stringify(request),
-      signal,
-    },
-  );
+      signal: signal ? AbortSignal.any([signal, stall.signal]) : stall.signal,
+    });
+  } catch (error: any) {
+    if (stall.signal.aborted && !signal?.aborted) {
+      return null;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const generateWithApiKey = async (
+  apiKey: string,
+  request: GeminiRequest,
+  signal?: AbortSignal,
+  onChunk?: (delta: string) => void,
+) => {
+  let res: Response | null = null;
+  for (const model of GEMINI_MODELS) {
+    res = await openStream(apiKey, model, request, signal);
+    if (res && res.status !== 503 && res.status !== 500) {
+      break;
+    }
+  }
+  if (!res || res.status === 503 || res.status === 500) {
+    throw new AIError("model_busy");
+  }
   if (!res.ok || !res.body) {
     throw await toGeminiError(res);
   }
   let text = "";
+  const calls: FunctionCall[] = [];
   for await (const data of parseSSEStream(res.body.getReader())) {
-    const delta = getText(safelyParseJSON(data));
+    const chunk = safelyParseJSON(data);
+    const delta = getText(chunk);
+    calls.push(...getCalls(chunk));
     if (delta) {
       text += delta;
       onChunk?.(delta);
     }
   }
-  return text;
+  return { text, calls };
 };
 
 const generateWithTrial = async (
@@ -174,6 +234,7 @@ const generateWithTrial = async (
   }
   return {
     text: getText(data.response),
+    calls: getCalls(data.response),
     trial: {
       enabled: true,
       remaining: data.remaining,
@@ -260,11 +321,44 @@ const generateWithNano = async (
     ],
   });
   try {
-    const schema = request.generationConfig?.responseSchema;
-    return await session.prompt(partsToText(last.parts), {
+    const functions = request.tools?.flatMap(
+      (tool) => tool.functionDeclarations,
+    );
+    if (!functions?.length) {
+      return {
+        text: await session.prompt(partsToText(last.parts), { signal }),
+        calls: [],
+      };
+    }
+    // no function calling on-device: constrain the output to the same calls instead
+    const raw = await session.prompt(partsToText(last.parts), {
       signal,
-      ...(schema ? { responseConstraint: toJSONSchema(schema) } : null),
+      responseConstraint: {
+        type: "object",
+        properties: {
+          reply: { type: "string" },
+          calls: {
+            type: "array",
+            items: {
+              anyOf: functions.map((fn) => ({
+                type: "object",
+                properties: {
+                  name: { const: fn.name },
+                  args: toJSONSchema(fn.parameters),
+                },
+                required: ["name", "args"],
+              })),
+            },
+          },
+        },
+        required: ["reply", "calls"],
+      },
     });
+    const json = safelyParseJSON(raw);
+    return {
+      text: String(json?.reply ?? raw),
+      calls: Array.isArray(json?.calls) ? (json.calls as FunctionCall[]) : [],
+    };
   } finally {
     session.destroy();
   }
@@ -281,21 +375,21 @@ export const generate = async (
     signal,
     onChunk,
   }: { signal?: AbortSignal; onChunk?: (delta: string) => void } = {},
-): Promise<{ text: string; trial: TrialStatus | null }> => {
+): Promise<GenerateResult> => {
   try {
     if (getAISettings().engine === "nano") {
-      const text = await generateWithNano(request, signal);
-      onChunk?.(text);
-      return { text, trial: null };
+      const result = await generateWithNano(request, signal);
+      onChunk?.(result.text);
+      return { ...result, trial: null };
     }
     const apiKey = getUserApiKey();
     if (apiKey) {
-      const text = await generateWithApiKey(apiKey, request, signal, onChunk);
-      return { text, trial: null };
+      const result = await generateWithApiKey(apiKey, request, signal, onChunk);
+      return { ...result, trial: null };
     }
-    const { text, trial } = await generateWithTrial(request, signal);
-    onChunk?.(text);
-    return { text, trial };
+    const result = await generateWithTrial(request, signal);
+    onChunk?.(result.text);
+    return result;
   } catch (error: any) {
     if (error instanceof AIError || error?.name === "AbortError") {
       throw error;

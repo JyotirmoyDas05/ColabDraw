@@ -27,6 +27,23 @@
       font-size: 0.875rem;
     }
 
+    // upstream's leading-icon rule (.ExcTextField svg) also grabs the
+    // show/hide key button's eye icon and pins it outside the button
+    .ExcTextField__input button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      background: none;
+
+      svg {
+        position: static;
+        transform: none;
+      }
+    }
+
     &__error {
       color: var(--color-danger);
       font-size: 0.875rem;

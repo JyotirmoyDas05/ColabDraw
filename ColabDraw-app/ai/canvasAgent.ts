@@ -36,7 +36,7 @@ import type {
 
 import { LibraryIndexedDBAdapter } from "../data/LocalData";
 
-import type { GeminiPart } from "./aiClient";
+import type { FunctionCall, GeminiPart } from "./aiClient";
 
 const COLORS = [
   "black",
@@ -74,70 +74,159 @@ export type CanvasOp = {
 
 export type CanvasAgentResponse = { reply: string; ops: CanvasOp[] };
 
-const S = (extra: object = {}) => ({ type: "STRING", ...extra });
+const S = (description: string, extra: object = {}) => ({
+  type: "STRING",
+  description,
+  ...extra,
+});
 
-/** Gemini response schema (OpenAPI dialect). Flat on purpose: small models fill flat objects reliably. */
-export const CANVAS_RESPONSE_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    reply: S(),
-    ops: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          op: S({
-            enum: [
-              "add",
-              "connect",
-              "update",
-              "delete",
-              "frame",
-              "mermaid",
-              "library",
-            ],
-          }),
-          id: S(),
-          shape: S({
-            enum: ["rectangle", "ellipse", "diamond", "sticky", "text"],
-          }),
-          label: S(),
-          near: S(),
-          side: S({ enum: ["right", "left", "above", "below"] }),
-          from: S(),
-          to: S(),
-          color: S({ enum: [...COLORS] }),
-          fill: S({ enum: ["hachure", "cross-hatch", "solid", "none"] }),
-          stroke: S({ enum: ["solid", "dashed", "dotted"] }),
-          ids: { type: "ARRAY", items: S() },
-          code: S(),
-          name: S(),
-        },
-        required: ["op"],
-      },
-    },
-  },
-  required: ["reply", "ops"],
+const PLACEMENT = {
+  near: S("Id of the element to place it next to"),
+  side: S("Which side of near", {
+    enum: ["right", "left", "above", "below"],
+  }),
 };
 
-export const CANVAS_SYSTEM_PROMPT = `You are the assistant inside ColabDraw, a hand-drawn whiteboard built on Excalidraw. You see the board as a list of elements and change it by returning operations. You never use pixel coordinates.
+const COLOR = S("Meaningful color, e.g. red for errors, green for success", {
+  enum: [...COLORS],
+});
+const FILL = S("Fill style; omit to match the user's style", {
+  enum: ["hachure", "cross-hatch", "solid", "none"],
+});
+const STYLE = S("Line style", { enum: ["solid", "dashed", "dotted"] });
 
-Each user message ends with a CANVAS section. Elements have short ids (e1, e2...). Use those ids to refer to existing elements. Give new elements your own ids (n1, n2...) so later ops in the same reply can refer to them.
+/** One small function per action: models call these far more reliably than they fill one big schema. */
+export const CANVAS_FUNCTIONS = [
+  {
+    name: "add_element",
+    description: "Add a shape, sticky note or text to the board.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        id: S("Your new id for it (n1, n2...), so later calls can use it"),
+        shape: S(
+          "rectangle: process or component. ellipse: start/end or actor. diamond: decision. sticky: note or an answer written on the board. text: title or free text.",
+          { enum: ["rectangle", "ellipse", "diamond", "sticky", "text"] },
+        ),
+        label: S("Its text, under six words for shapes"),
+        ...PLACEMENT,
+        color: COLOR,
+        fill: FILL,
+      },
+      required: ["id", "shape", "label"],
+    },
+  },
+  {
+    name: "connect",
+    description: "Draw an arrow from one element to another.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        from: S("Id where the arrow starts"),
+        to: S("Id where the arrow ends"),
+        label: S("Optional text on the arrow"),
+        style: STYLE,
+        color: COLOR,
+      },
+      required: ["from", "to"],
+    },
+  },
+  {
+    name: "update_element",
+    description:
+      "Change an existing element's text, color or style, or move it next to another element.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        id: S("Id of the element to change"),
+        label: S("New text"),
+        color: COLOR,
+        fill: FILL,
+        style: STYLE,
+        ...PLACEMENT,
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "delete_elements",
+    description: "Remove elements from the board.",
+    parameters: {
+      type: "OBJECT",
+      properties: { ids: { type: "ARRAY", items: S("Element id") } },
+      required: ["ids"],
+    },
+  },
+  {
+    name: "create_frame",
+    description: "Group elements into a named frame (a section of the board).",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        ids: { type: "ARRAY", items: S("Element id") },
+        name: S("Frame title"),
+      },
+      required: ["ids", "name"],
+    },
+  },
+  {
+    name: "draw_mermaid",
+    description:
+      "Draw a complete new diagram from Mermaid code (flowchart, sequenceDiagram or classDiagram) in an empty spot. Use this for any new diagram, flow or process with four or more steps; it lays it out cleanly.",
+    parameters: {
+      type: "OBJECT",
+      properties: { code: S("Mermaid source, no code fences") },
+      required: ["code"],
+    },
+  },
+  {
+    name: "insert_library_item",
+    description:
+      "Insert one of the user's library items (names under Library).",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        name: S("Exact library item name"),
+        id: S("Your new id for it (n1, n2...)"),
+        ...PLACEMENT,
+      },
+      required: ["name"],
+    },
+  },
+];
 
-Return JSON: {"reply": string, "ops": [...]}
-- reply: one or two friendly sentences, spoken aloud in voice mode. For questions ("explain this", "what is wrong here", "solve this") put the full answer in reply and return no ops, unless the user asks you to write it on the board.
-- ops, applied in order as a single undo step:
-  - add: new element. shape is rectangle (process/component), ellipse (start/end, actor), diamond (decision), sticky (note, comment, answer written on the board), or text (title, free text). label is its text. Place it with near (an id) and side (right/left/above/below). Always give near when the board has related elements.
-  - connect: arrow from "from" to "to" (ids), optional label, stroke dashed/dotted for optional or async flows.
-  - update: change element id: label, color, fill, stroke. With near and side it moves the element there.
-  - delete: remove element id.
-  - frame: put ids into a named frame (label is the frame name). Use for grouping a section.
-  - mermaid: code is a full Mermaid flowchart/sequence/class diagram. Use this for a brand-new diagram of five or more nodes. It is drawn in an empty spot.
-  - library: insert the user's library item called name (only names listed under Library), near/side like add.
-- color is one of ${COLORS.join(
-  ", ",
-)}. Omit color and fill to match the user's current style. Use color to mean something (e.g. red for errors, green for success), not decoration.
-- Keep labels short (under six words). Only touch what the user asked about. If the request is ambiguous, make a sensible choice.`;
+export const functionCallToOps = ({ name, args }: FunctionCall): CanvasOp[] => {
+  const style = args.style as CanvasOp["stroke"];
+  switch (name) {
+    case "add_element":
+      return [{ op: "add", ...args }];
+    case "connect":
+      return [{ op: "connect", ...args, stroke: style }];
+    case "update_element":
+      return [{ op: "update", ...args, stroke: style }];
+    case "delete_elements":
+      return (args.ids ?? []).map((id: string) => ({ op: "delete", id }));
+    case "create_frame":
+      return [{ op: "frame", ids: args.ids, label: args.name }];
+    case "draw_mermaid":
+      return [{ op: "mermaid", code: args.code }];
+    case "insert_library_item":
+      return [{ op: "library", ...args }];
+    default:
+      return [];
+  }
+};
+
+export const CANVAS_SYSTEM_PROMPT = `You are the assistant inside ColabDraw, a hand-drawn whiteboard built on Excalidraw. You see the board as a list of elements and change it by calling functions. You never use pixel coordinates.
+
+Each user message ends with a CANVAS section. Elements have short ids (e1, e2...); use them to refer to existing elements. Give new elements your own ids (n1, n2...) so later calls can connect to them. All calls in one reply are applied together as a single undo step.
+
+- Always reply with one or two friendly sentences of text as well; in voice mode they are spoken aloud.
+- Questions ("explain this", "what's wrong here", "solve this"): answer in text and call nothing, unless the user asks you to write it on the board (then add a sticky note).
+- New diagrams, flows or processes of four or more steps: call draw_mermaid once. Small changes to what's on the board: add_element, connect, update_element, delete_elements, create_frame.
+- Place new elements with near and side next to related ones.
+- Omit color and fill to match the user's current style; use color only when asked or when it carries meaning.
+- Keep labels short. Only touch what the user asked about. If the request is ambiguous, make a sensible choice.`;
 
 const round = (n: number) => Math.round(n);
 
@@ -347,13 +436,20 @@ const styleFor = (appState: AppState, op: CanvasOp) => {
 };
 
 const sizeFor = (shape: CanvasOp["shape"], label = "") => {
-  const width = Math.min(Math.max(60 + label.length * 9, 140), 280);
+  // wide enough that the longest word never breaks mid-word
+  const longestWord = Math.max(
+    ...label.split(/\s+/).map((word) => word.length),
+  );
+  const width = Math.min(
+    Math.max(60 + label.length * 9, 40 + longestWord * 13, 140),
+    280,
+  );
   switch (shape) {
     case "ellipse":
       return { w: width + 30, h: 90 };
     case "diamond":
       // a diamond's text area is about half its width
-      return { w: Math.round(width * 1.6), h: 130 };
+      return { w: Math.round(width * 1.8), h: 140 };
     case "sticky":
       return { w: DEFAULT_STICKY_NOTE_SIZE, h: DEFAULT_STICKY_NOTE_SIZE };
     case "text":
@@ -519,7 +615,14 @@ export const applyCanvasOps = async (
     fontSize: appState.currentItemFontSize,
   };
 
-  for (const op of ops) {
+  // models often batch deletes/updates as one op with an ids list
+  const expandedOps = ops.flatMap((op) =>
+    (op.op === "delete" || op.op === "update") && !op.id && op.ids
+      ? op.ids.map((id) => ({ ...op, id }))
+      : [op],
+  );
+
+  for (const op of expandedOps) {
     switch (op.op) {
       case "add": {
         const id = randomId();

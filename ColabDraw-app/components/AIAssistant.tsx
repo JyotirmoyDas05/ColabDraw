@@ -6,7 +6,6 @@ import {
   microphoneIcon,
   settingsIcon,
 } from "@excalidraw/excalidraw/components/icons";
-import { safelyParseJSON } from "@excalidraw/common";
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 
@@ -28,8 +27,9 @@ import {
   aiTrialAtom,
 } from "../ai/aiState";
 import {
-  CANVAS_RESPONSE_SCHEMA,
+  CANVAS_FUNCTIONS,
   CANVAS_SYSTEM_PROMPT,
+  functionCallToOps,
   applyCanvasOps,
   buildCanvasContext,
   snapshotElements,
@@ -42,7 +42,7 @@ import { AIBuddy } from "./AIBuddy/AIBuddy";
 import "./AIAssistant.scss";
 
 import type { AIErrorCode, GeminiContent } from "../ai/aiClient";
-import type { ApplyResult, CanvasAgentResponse } from "../ai/canvasAgent";
+import type { ApplyResult } from "../ai/canvasAgent";
 import type { LiveSession } from "../ai/live";
 import type { ListeningSession, SpeechEngine } from "../ai/speech";
 
@@ -71,8 +71,18 @@ const ERROR_TEXT: Record<AIErrorCode, string> = {
   invalid_key: "Your Gemini key was rejected.",
   quota_exceeded: "Your Gemini key hit its free daily limit.",
   nano_unavailable: "Gemini Nano isn't available in this browser.",
+  model_busy: "Gemini is overloaded right now. Try again in a minute.",
   network: "Couldn't reach the AI. Check your connection and try again.",
 };
+
+// errors a (different) key fixes
+const KEY_ERRORS: AIErrorCode[] = [
+  "trial_exhausted",
+  "trial_busy",
+  "trial_disabled",
+  "invalid_key",
+  "quota_exceeded",
+];
 
 const describeResult = ({ added, changed, deleted }: ApplyResult) =>
   [
@@ -82,16 +92,6 @@ const describeResult = ({ added, changed, deleted }: ApplyResult) =>
   ]
     .filter(Boolean)
     .join(", ");
-
-const parseResponse = (text: string): CanvasAgentResponse => {
-  const json =
-    safelyParseJSON(text) ??
-    safelyParseJSON(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
-  return {
-    reply: typeof json?.reply === "string" ? json.reply : text,
-    ops: Array.isArray(json?.ops) ? json.ops : [],
-  };
-};
 
 export const AIAssistant = ({
   excalidrawAPI,
@@ -172,7 +172,11 @@ export const AIAssistant = ({
           await snapshotElements(excalidrawAPI, context.visualElements),
         );
       }
-      const { text: raw, trial: nextTrial } = await generate(
+      const {
+        text,
+        calls,
+        trial: nextTrial,
+      } = await generate(
         {
           systemInstruction: { parts: [{ text: CANVAS_SYSTEM_PROMPT }] },
           contents: [
@@ -184,18 +188,18 @@ export const AIAssistant = ({
             ),
             { role: "user", parts },
           ],
-          generationConfig: {
-            temperature: 0.3,
-            responseMimeType: "application/json",
-            responseSchema: CANVAS_RESPONSE_SCHEMA,
-          },
+          tools: [{ functionDeclarations: CANVAS_FUNCTIONS }],
+          generationConfig: { temperature: 0.3 },
         },
         { signal: controller.signal },
       );
       if (nextTrial) {
         setTrial(nextTrial);
       }
-      const response = parseResponse(raw);
+      const response = {
+        reply: text.trim() || (calls.length ? "Done." : "I'm not sure."),
+        ops: calls.flatMap(functionCallToOps),
+      };
       let note: string | undefined;
       if (response.ops.length) {
         setStatus("drawing");
@@ -320,7 +324,7 @@ export const AIAssistant = ({
     try {
       liveRef.current = await startLiveSession({
         apiKey,
-        systemPrompt: `${CANVAS_SYSTEM_PROMPT}\n\nYou are in a live voice conversation. Speak briefly and naturally. Edit the board with update_canvas instead of describing ops aloud.\n\nThe board when the conversation started:\n${context.text}`,
+        systemPrompt: `${CANVAS_SYSTEM_PROMPT}\n\nYou are in a live voice conversation. Speak briefly and naturally. Edit the board by calling the functions instead of describing changes aloud.\n\nThe board when the conversation started:\n${context.text}`,
         onState: (state) => {
           if (state === "closed") {
             liveRef.current = null;
@@ -344,18 +348,16 @@ export const AIAssistant = ({
             return [...prev, { role, text: text.trimStart() }];
           });
         },
-        onToolCall: async (name, args) => {
-          if (name === "read_canvas") {
+        onToolCalls: async (calls) => {
+          if (calls.some((call) => call.name === "read_canvas")) {
             const fresh = await buildCanvasContext(excalidrawAPI);
             liveAliasesRef.current = fresh.aliases;
-            return { canvas: fresh.text };
           }
-          if (name === "update_canvas") {
-            const result = await applyCanvasOps(
-              excalidrawAPI,
-              args.ops ?? [],
-              liveAliasesRef.current,
-            );
+          const ops = calls.flatMap(functionCallToOps);
+          const result = ops.length
+            ? await applyCanvasOps(excalidrawAPI, ops, liveAliasesRef.current)
+            : null;
+          if (result) {
             lastRole = null;
             setMessages((prev) => [
               ...prev,
@@ -367,9 +369,13 @@ export const AIAssistant = ({
                 } · Ctrl+Z to undo`,
               },
             ]);
-            return { ok: true, ...result };
           }
-          return { error: `unknown function ${name}` };
+          const canvas =
+            calls.some((call) => call.name === "read_canvas") &&
+            (await buildCanvasContext(excalidrawAPI)).text;
+          return calls.map((call) =>
+            call.name === "read_canvas" ? { canvas } : { ok: true },
+          );
         },
         onError: (message) =>
           setMessages((prev) => [
@@ -496,20 +502,18 @@ export const AIAssistant = ({
               {message.note && (
                 <span className="ai-assistant__note">{message.note}</span>
               )}
-              {message.error &&
-                message.error !== "network" &&
-                message.error !== "nano_unavailable" && (
-                  <button
-                    type="button"
-                    className="ai-assistant__link"
-                    onClick={() => openKeyDialog(true)}
-                  >
-                    {message.error === "quota_exceeded" ||
-                    message.error === "invalid_key"
-                      ? "Open AI settings"
-                      : "Add your own free key"}
-                  </button>
-                )}
+              {message.error && KEY_ERRORS.includes(message.error) && (
+                <button
+                  type="button"
+                  className="ai-assistant__link"
+                  onClick={() => openKeyDialog(true)}
+                >
+                  {message.error === "quota_exceeded" ||
+                  message.error === "invalid_key"
+                    ? "Open AI settings"
+                    : "Add your own free key"}
+                </button>
+              )}
             </div>
           ))
         )}

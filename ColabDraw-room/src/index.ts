@@ -55,7 +55,13 @@ app.get("/", (req, res) => {
 
 declare const fetch: (url: string, init?: any) => Promise<any>;
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+// tried in order when a model is overloaded (503) or stalls
+const GEMINI_MODELS = (
+  process.env.GEMINI_MODELS || "gemini-3.5-flash-lite,gemini-3.1-flash-lite"
+)
+  .split(",")
+  .map((model) => model.trim());
+const GEMINI_STALL_MS = 20000;
 const TRIAL_LIMITS = {
   device: Number(process.env.AI_TRIAL_PER_DEVICE || 20),
   ip: Number(process.env.AI_TRIAL_PER_IP || 40),
@@ -141,21 +147,33 @@ app.post("/api/ai/trial/generate", async (req, res) => {
   addTrialUsage(deviceId, req.ip, 1);
 
   try {
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
+    let geminiRes: any = null;
+    for (const model of GEMINI_MODELS) {
+      geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          body: JSON.stringify({
+            contents: request.contents,
+            systemInstruction: request.systemInstruction,
+            generationConfig: request.generationConfig,
+            tools: Array.isArray(request.tools) ? request.tools : undefined,
+          }),
+          signal: AbortSignal.timeout(GEMINI_STALL_MS),
         },
-        body: JSON.stringify({
-          contents: request.contents,
-          systemInstruction: request.systemInstruction,
-          generationConfig: request.generationConfig,
-        }),
-      },
-    );
+      ).catch(() => null);
+      if (geminiRes && geminiRes.status !== 503 && geminiRes.status !== 500) {
+        break;
+      }
+    }
+    if (!geminiRes || geminiRes.status === 503 || geminiRes.status === 500) {
+      addTrialUsage(deviceId, req.ip, -1);
+      return res.status(429).json({ error: "trial_busy" });
+    }
     const data = await geminiRes.json();
     if (!geminiRes.ok) {
       addTrialUsage(deviceId, req.ip, -1);
