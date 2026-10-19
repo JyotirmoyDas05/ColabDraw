@@ -41,7 +41,15 @@ import type {
 
 import { LibraryIndexedDBAdapter } from "../data/LocalData";
 
+import {
+  describeLibraryItems,
+  findLibraryItem,
+  onlineLibraryContext,
+  resolveOnlineItem,
+} from "./libraryItems";
+
 import type { FunctionCall, GeminiPart } from "./aiClient";
+import type { NamedLibraryItem } from "./libraryItems";
 
 // ---------------------------------------------------------------------------
 // vocabulary: the whiteboard's own styling options, by name
@@ -170,6 +178,8 @@ export type CanvasOp = {
   position?: "front" | "back";
   grid?: boolean;
   /** also draw an arrow from the `near` element to this new one */
+  /** online library (libraries.excalidraw.com) the item comes from */
+  library?: string;
   link?: boolean;
   linkLabel?: string;
   linkArrowhead?: ArrowheadName;
@@ -430,7 +440,10 @@ export const CANVAS_FUNCTIONS = [
     parameters: {
       type: "OBJECT",
       properties: {
-        name: S("Exact library item name"),
+        name: S("Library item name"),
+        library: S(
+          "Name of an online library from CANVAS (not installed yet); omit for the user's own library",
+        ),
         id: S("Your new id for it (n1, n2...)"),
         ...PLACEMENT,
         ...LINK,
@@ -493,7 +506,7 @@ HOW TO ANSWER:
 MAKING GOOD, DISTINCT DIAGRAMS:
 - Use the vocabulary: rectangle = component, ellipse = start/end or actor, diamond = decision, sticky = note/annotation, text = title/label, frames = titled sections, groups = things that belong together.
 - Color with meaning (green success/done, red error/danger, blue services, yellow notes/warnings, violet data, orange external), not decoration; keep to 3-4 colors. Use fill patterns, thickness, font and size to show hierarchy: a large "display" or "hand-drawn" title, bold outlines for the main path, dashed lines for optional or async flows, a different arrowhead for a different relation (diamond for composition, cardinality heads for database (ER) relations, circle for events).
-- Add a title and a short legend or sticky-note annotation when it helps. Wrap sections in frames. Use library items when one fits (icons, symbols).
+- Add a title and a short legend or sticky-note annotation when it helps. Wrap sections in frames. Use library items when one fits (icons, symbols). If CANVAS lists Online libraries that fit what the user asked for, call insert_library_item with library set to that library's name and name set to one of its items; it is saved to their library automatically.
 - Omit style options to match the user's current style; only override when asked or when it carries meaning.
 - Keep labels short. Only touch what the user asked about. If the request is ambiguous, make a sensible choice.`;
 
@@ -543,45 +556,13 @@ const keyOf = <T extends Record<string, unknown>>(
 ): keyof T | undefined =>
   (Object.keys(table) as (keyof T)[]).find((key) => table[key] === value);
 
-const LIBRARY_ITEM_LIMIT = 60;
 const CONTEXT_ELEMENT_LIMIT = 80;
 
-type NamedLibraryItem = {
-  name: string;
-  description: string;
-  item: LibraryItem;
-};
-
-/** Library items with a usable name (the saved one, else its text) and a short description. */
-const loadLibrary = async (): Promise<NamedLibraryItem[]> => {
-  const items = ((await LibraryIndexedDBAdapter.load())?.libraryItems ??
-    []) as LibraryItem[];
-  const used = new Set<string>();
-  return items.slice(0, LIBRARY_ITEM_LIMIT).map((item, index) => {
-    const texts = item.elements
-      .filter((element) => element.type === "text")
-      .map((element) => (element as any).text.replace(/\s+/g, " ").trim())
-      .filter(Boolean);
-    const counts: Record<string, number> = {};
-    for (const element of item.elements) {
-      if (!(element.type === "text" && (element as any).containerId)) {
-        counts[element.type] = (counts[element.type] ?? 0) + 1;
-      }
-    }
-    let name = item.name?.trim() || texts[0] || `item ${index + 1}`;
-    while (used.has(name.toLowerCase())) {
-      name = `${name} (${index + 1})`;
-    }
-    used.add(name.toLowerCase());
-    const parts = Object.entries(counts).map(([type, n]) =>
-      n > 1 ? `${n} ${type}s` : type,
-    );
-    const description = `${parts.join(", ")}${
-      texts.length ? `; text: ${texts.slice(0, 3).join(" / ")}` : ""
-    }`;
-    return { name, description: description.slice(0, 120), item };
-  });
-};
+const loadLibrary = async (): Promise<NamedLibraryItem[]> =>
+  describeLibraryItems(
+    ((await LibraryIndexedDBAdapter.load())?.libraryItems ??
+      []) as LibraryItem[],
+  );
 
 export type CanvasContext = {
   text: string;
@@ -673,6 +654,8 @@ const describeElement = (
 /** Describes the selection (or what's on screen) as compact text for the model. */
 export const buildCanvasContext = async (
   api: ExcalidrawImperativeAPI,
+  /** the user's request, used to look for matching online libraries */
+  userText?: string,
 ): Promise<CanvasContext> => {
   const appState = api.getAppState();
   const elements = api.getSceneElements();
@@ -715,6 +698,7 @@ export const buildCanvasContext = async (
 
   const hiddenCount = selected.length ? 0 : elements.length - visible.length;
   const library = await loadLibrary();
+  const online = userText ? await onlineLibraryContext(userText) : "";
   const sloppiness = keyOf(SLOPPINESS, appState.currentItemRoughness);
 
   const text = [
@@ -737,6 +721,7 @@ export const buildCanvasContext = async (
           .map(({ name, description }) => `- "${name}" (${description})`)
           .join("\n")}`
       : "",
+    online,
   ]
     .filter(Boolean)
     .join("\n");
@@ -982,6 +967,8 @@ export type ApplyResult = {
   added: number;
   changed: number;
   deleted: number;
+  /** online library items saved to the user's library */
+  libraryAdded: number;
   newElementIds: string[];
 };
 
@@ -999,6 +986,7 @@ export const applyCanvasOps = async (
     added: 0,
     changed: 0,
     deleted: 0,
+    libraryAdded: 0,
     newElementIds: [],
   };
 
@@ -1694,12 +1682,21 @@ export const applyCanvasOps = async (
         break;
       }
       case "library": {
-        const wanted = op.name?.trim().toLowerCase() ?? "";
-        const library = await loadLibrary();
-        const match =
-          library.find((entry) => entry.name.toLowerCase() === wanted) ??
-          library.find((entry) => entry.name.toLowerCase().includes(wanted)) ??
-          library.find((entry) => wanted.includes(entry.name.toLowerCase()));
+        let match = op.library
+          ? undefined
+          : findLibraryItem(await loadLibrary(), op.name ?? "");
+        if (!match) {
+          // not installed: take it from libraries.excalidraw.com and keep it
+          const online = await resolveOnlineItem(op.library, op.name);
+          if (online) {
+            match = online.entry;
+            await api.updateLibrary({
+              libraryItems: [{ ...online.entry.item, name: online.entry.name }],
+              merge: true,
+            });
+            result.libraryAdded++;
+          }
+        }
         if (!match) {
           break;
         }

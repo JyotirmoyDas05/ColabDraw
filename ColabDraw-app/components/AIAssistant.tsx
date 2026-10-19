@@ -84,11 +84,17 @@ const KEY_ERRORS: AIErrorCode[] = [
   "quota_exceeded",
 ];
 
-const describeResult = ({ added, changed, deleted }: ApplyResult) =>
+const describeResult = ({
+  added,
+  changed,
+  deleted,
+  libraryAdded,
+}: ApplyResult) =>
   [
     added && `added ${added}`,
     changed && `changed ${changed}`,
     deleted && `removed ${deleted}`,
+    libraryAdded && `saved ${libraryAdded} to your library`,
   ]
     .filter(Boolean)
     .join(", ");
@@ -158,7 +164,7 @@ export const AIAssistant = ({
     abortRef.current = controller;
 
     try {
-      const context = await buildCanvasContext(excalidrawAPI);
+      const context = await buildCanvasContext(excalidrawAPI, prompt);
       const parts: GeminiContent["parts"] = [
         { text: `${prompt}\n\n${context.text}` },
       ];
