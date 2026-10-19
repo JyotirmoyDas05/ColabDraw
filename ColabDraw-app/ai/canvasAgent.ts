@@ -1,6 +1,8 @@
 import {
   COLOR_PALETTE,
   DEFAULT_STICKY_NOTE_SIZE,
+  FONT_FAMILY,
+  FONT_SIZES,
   ROUNDNESS,
   STROKE_WIDTH,
   randomId,
@@ -8,7 +10,9 @@ import {
 import {
   CaptureUpdateAction,
   Scene,
+  alignElements,
   convertToExcalidrawElements,
+  distributeElements,
   duplicateElements,
   fixBindingsAfterDeletion,
   getBoundTextElement,
@@ -18,6 +22,7 @@ import {
   isFrameLikeElement,
   newElementWith,
   newTextElement,
+  positionElementsOnGrid,
   redrawTextBoundingBox,
   updateBoundElements,
 } from "@excalidraw/element";
@@ -36,10 +41,23 @@ import type {
 
 import { LibraryIndexedDBAdapter } from "../data/LocalData";
 
+import {
+  describeLibraryItems,
+  findLibraryItem,
+  onlineLibraryContext,
+  resolveOnlineItem,
+} from "./libraryItems";
+
 import type { FunctionCall, GeminiPart } from "./aiClient";
+import type { NamedLibraryItem } from "./libraryItems";
+
+// ---------------------------------------------------------------------------
+// vocabulary: the whiteboard's own styling options, by name
+// ---------------------------------------------------------------------------
 
 const COLORS = [
   "black",
+  "white",
   "gray",
   "red",
   "pink",
@@ -55,78 +73,245 @@ const COLORS = [
 ] as const;
 type ColorName = typeof COLORS[number];
 
+const TONES = { light: 1, medium: 2, strong: 3 } as const;
+const SIZES = { small: 0.7, medium: 1, large: 1.4, huge: 2 } as const;
+const THICKNESS = { thin: "thin", medium: "medium", bold: "bold" } as const;
+const SLOPPINESS = { architect: 0, artist: 1, cartoonist: 2 } as const;
+const FONTS = {
+  "hand-drawn": FONT_FAMILY.Excalifont,
+  normal: FONT_FAMILY.Nunito,
+  code: FONT_FAMILY.Cascadia,
+  comic: FONT_FAMILY["Comic Shanns"],
+  display: FONT_FAMILY["Lilita One"],
+} as const;
+const FONT_SIZE_NAMES = {
+  small: FONT_SIZES.sm,
+  medium: FONT_SIZES.md,
+  large: FONT_SIZES.lg,
+  xl: FONT_SIZES.xl,
+} as const;
+const ARROWHEADS = [
+  "none",
+  "arrow",
+  "bar",
+  "circle",
+  "circle_outline",
+  "triangle",
+  "triangle_outline",
+  "diamond",
+  "diamond_outline",
+  // entity-relationship cardinality heads
+  "cardinality_one",
+  "cardinality_many",
+  "cardinality_one_or_many",
+  "cardinality_exactly_one",
+  "cardinality_zero_or_one",
+  "cardinality_zero_or_many",
+] as const;
+
+const FILL_STYLES = ["hachure", "cross-hatch", "solid", "none"] as const;
+const LINE_STYLES = ["solid", "dashed", "dotted"] as const;
+const SIDES = ["right", "left", "above", "below"] as const;
+type Side = typeof SIDES[number];
+type ArrowheadName = typeof ARROWHEADS[number];
+
+const ARRANGEMENTS = [
+  "align_left",
+  "align_center",
+  "align_right",
+  "align_top",
+  "align_middle",
+  "align_bottom",
+  "distribute_horizontally",
+  "distribute_vertically",
+  "row",
+  "column",
+  "grid",
+] as const;
+
 export type CanvasOp = {
-  op: "add" | "connect" | "update" | "delete" | "frame" | "mermaid" | "library";
+  op:
+    | "add"
+    | "connect"
+    | "update"
+    | "delete"
+    | "frame"
+    | "mermaid"
+    | "library"
+    | "group"
+    | "arrange"
+    | "duplicate"
+    | "reorder"
+    | "canvas";
   id?: string;
-  shape?: "rectangle" | "ellipse" | "diamond" | "sticky" | "text";
+  shape?: "rectangle" | "ellipse" | "diamond" | "sticky" | "text" | "line";
   label?: string;
   near?: string;
-  side?: "right" | "left" | "above" | "below";
+  side?: Side;
   from?: string;
   to?: string;
   color?: ColorName;
-  fill?: "hachure" | "cross-hatch" | "solid" | "none";
-  stroke?: "solid" | "dashed" | "dotted";
+  background?: ColorName | "transparent";
+  tone?: keyof typeof TONES;
+  fill?: typeof FILL_STYLES[number];
+  /** line style: solid, dashed or dotted */
+  stroke?: typeof LINE_STYLES[number];
+  thickness?: keyof typeof THICKNESS;
+  sloppiness?: keyof typeof SLOPPINESS;
+  rounded?: boolean;
+  opacity?: number;
+  font?: keyof typeof FONTS;
+  fontSize?: keyof typeof FONT_SIZE_NAMES;
+  textAlign?: "left" | "center" | "right";
+  size?: keyof typeof SIZES;
+  stretch?: "wide" | "tall" | "square";
+  angle?: number;
+  arrowType?: "sharp" | "curved" | "elbow";
+  startArrowhead?: ArrowheadName;
+  endArrowhead?: ArrowheadName;
   ids?: string[];
+  replaces?: string[];
   code?: string;
   name?: string;
+  how?: typeof ARRANGEMENTS[number];
+  count?: number;
+  position?: "front" | "back";
+  grid?: boolean;
+  /** also draw an arrow from the `near` element to this new one */
+  /** online library (libraries.excalidraw.com) the item comes from */
+  library?: string;
+  link?: boolean;
+  linkLabel?: string;
+  linkArrowhead?: ArrowheadName;
 };
 
 export type CanvasAgentResponse = { reply: string; ops: CanvasOp[] };
+
+// ---------------------------------------------------------------------------
+// function declarations the model calls
+// ---------------------------------------------------------------------------
 
 const S = (description: string, extra: object = {}) => ({
   type: "STRING",
   description,
   ...extra,
 });
+const N = (description: string) => ({ type: "NUMBER", description });
+const B = (description: string) => ({ type: "BOOLEAN", description });
+const IDS = (description: string) => ({
+  type: "ARRAY",
+  items: S("Element id"),
+  description,
+});
 
 const PLACEMENT = {
   near: S("Id of the element to place it next to"),
-  side: S("Which side of near", {
-    enum: ["right", "left", "above", "below"],
+  side: S("Which side of near", { enum: [...SIDES] }),
+};
+
+/** one call instead of add + connect */
+const LINK = {
+  link: B("Also draw an arrow from the near element to this new one"),
+  linkLabel: S("Text on that arrow"),
+  linkArrowhead: S("Head at the new element's end of that arrow", {
+    enum: [...ARROWHEADS],
   }),
 };
 
-const COLOR = S("Meaningful color, e.g. red for errors, green for success", {
-  enum: [...COLORS],
-});
-const FILL = S("Fill style; omit to match the user's style", {
-  enum: ["hachure", "cross-hatch", "solid", "none"],
-});
-const STYLE = S("Line style", { enum: ["solid", "dashed", "dotted"] });
+const SHAPE_STYLE = {
+  color: S(
+    "Tints the whole shape: outline in the strong shade, fill in a light shade. Pick meaningful colors (red errors, green success, blue services, yellow notes...).",
+    { enum: [...COLORS] },
+  ),
+  background: S("Fill color on its own, independent of the outline color", {
+    enum: [...COLORS, "transparent"],
+  }),
+  tone: S("How strong the fill is (default light)", {
+    enum: Object.keys(TONES),
+  }),
+  fill: S("Fill pattern: hachure and cross-hatch are hand-drawn", {
+    enum: [...FILL_STYLES],
+  }),
+  style: S("Outline style", { enum: [...LINE_STYLES] }),
+  thickness: S("Outline thickness", { enum: Object.keys(THICKNESS) }),
+  sloppiness: S(
+    "architect = clean lines, artist = slightly wobbly, cartoonist = very hand-drawn",
+    { enum: Object.keys(SLOPPINESS) },
+  ),
+  rounded: B("Rounded corners"),
+  opacity: N("0 (invisible) to 100"),
+  angle: N("Rotation in degrees"),
+};
+
+const TEXT_STYLE = {
+  font: S(
+    "hand-drawn (default), normal (clean sans), code (monospace), comic, display (chunky headlines)",
+    { enum: Object.keys(FONTS) },
+  ),
+  fontSize: S("Text size", { enum: Object.keys(FONT_SIZE_NAMES) }),
+  textAlign: S("Text alignment", { enum: ["left", "center", "right"] }),
+};
+
+const SIZE = {
+  size: S("Overall size relative to normal (text: scales the font)", {
+    enum: Object.keys(SIZES),
+  }),
+  stretch: S("Make it wider, taller or square", {
+    enum: ["wide", "tall", "square"],
+  }),
+};
+
+const ARROW_STYLE = {
+  arrowType: S("sharp (straight), curved or elbow (right angles)", {
+    enum: ["sharp", "curved", "elbow"],
+  }),
+  startArrowhead: S("Head at the start of the arrow", {
+    enum: [...ARROWHEADS],
+  }),
+  endArrowhead: S("Head at the end of the arrow", { enum: [...ARROWHEADS] }),
+};
 
 /** One small function per action: models call these far more reliably than they fill one big schema. */
 export const CANVAS_FUNCTIONS = [
   {
     name: "add_element",
-    description: "Add a shape, sticky note or text to the board.",
+    description:
+      "Add a shape, sticky note, text or plain line to the board, styled like the whiteboard's own tools.",
     parameters: {
       type: "OBJECT",
       properties: {
         id: S("Your new id for it (n1, n2...), so later calls can use it"),
         shape: S(
-          "rectangle: process or component. ellipse: start/end or actor. diamond: decision. sticky: note or an answer written on the board. text: title or free text.",
-          { enum: ["rectangle", "ellipse", "diamond", "sticky", "text"] },
+          "rectangle: process or component. ellipse: start/end or actor. diamond: decision. sticky: note, comment or an answer written on the board. text: title or free text. line: a divider.",
+          {
+            enum: ["rectangle", "ellipse", "diamond", "sticky", "text", "line"],
+          },
         ),
         label: S("Its text, under six words for shapes"),
         ...PLACEMENT,
-        color: COLOR,
-        fill: FILL,
+        ...LINK,
+        ...SIZE,
+        ...SHAPE_STYLE,
+        ...TEXT_STYLE,
       },
-      required: ["id", "shape", "label"],
+      required: ["id", "shape"],
     },
   },
   {
     name: "connect",
-    description: "Draw an arrow from one element to another.",
+    description: "Draw an arrow (or a plain line) from one element to another.",
     parameters: {
       type: "OBJECT",
       properties: {
         from: S("Id where the arrow starts"),
         to: S("Id where the arrow ends"),
         label: S("Optional text on the arrow"),
-        style: STYLE,
-        color: COLOR,
+        color: SHAPE_STYLE.color,
+        style: SHAPE_STYLE.style,
+        thickness: SHAPE_STYLE.thickness,
+        sloppiness: SHAPE_STYLE.sloppiness,
+        ...ARROW_STYLE,
+        ...TEXT_STYLE,
       },
       required: ["from", "to"],
     },
@@ -134,16 +319,17 @@ export const CANVAS_FUNCTIONS = [
   {
     name: "update_element",
     description:
-      "Change an existing element's text, color or style, or move it next to another element.",
+      "Change an EXISTING element in place: text, colors, fill, outline, size, font, rotation, arrow style, or move it next to another element. Use this instead of drawing again whenever the user asks to change something already on the board.",
     parameters: {
       type: "OBJECT",
       properties: {
-        id: S("Id of the element to change"),
+        id: S("Id of the element to change (e1, e2...)"),
         label: S("New text"),
-        color: COLOR,
-        fill: FILL,
-        style: STYLE,
         ...PLACEMENT,
+        ...SIZE,
+        ...SHAPE_STYLE,
+        ...TEXT_STYLE,
+        ...ARROW_STYLE,
       },
       required: ["id"],
     },
@@ -153,42 +339,115 @@ export const CANVAS_FUNCTIONS = [
     description: "Remove elements from the board.",
     parameters: {
       type: "OBJECT",
-      properties: { ids: { type: "ARRAY", items: S("Element id") } },
+      properties: { ids: IDS("Elements to remove") },
       required: ["ids"],
     },
   },
   {
     name: "create_frame",
-    description: "Group elements into a named frame (a section of the board).",
+    description: "Group elements into a named frame (a titled section).",
+    parameters: {
+      type: "OBJECT",
+      properties: { ids: IDS("Elements inside the frame"), name: S("Title") },
+      required: ["ids", "name"],
+    },
+  },
+  {
+    name: "group_elements",
+    description: "Group elements so they select and move together.",
+    parameters: {
+      type: "OBJECT",
+      properties: { ids: IDS("Elements to group") },
+      required: ["ids"],
+    },
+  },
+  {
+    name: "arrange_elements",
+    description:
+      "Tidy existing elements: align them, distribute them evenly, or lay them out as a row, column or grid.",
     parameters: {
       type: "OBJECT",
       properties: {
-        ids: { type: "ARRAY", items: S("Element id") },
-        name: S("Frame title"),
+        ids: IDS("Elements to arrange"),
+        how: S("Arrangement", { enum: [...ARRANGEMENTS] }),
       },
-      required: ["ids", "name"],
+      required: ["ids", "how"],
+    },
+  },
+  {
+    name: "duplicate_elements",
+    description:
+      "Copy elements (with the arrows between them) and place the copy next to something.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        ids: IDS("Elements to copy"),
+        count: N("How many copies (default 1)"),
+        id: S("Your id for the first copied element"),
+        ...PLACEMENT,
+      },
+      required: ["ids"],
+    },
+  },
+  {
+    name: "reorder_elements",
+    description: "Bring elements to the front or send them behind others.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        ids: IDS("Elements to reorder"),
+        position: S("front or back", { enum: ["front", "back"] }),
+      },
+      required: ["ids", "position"],
+    },
+  },
+  {
+    name: "set_canvas",
+    description: "Change the whiteboard background color or show the grid.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        background: S("Board background (a light tint)", {
+          enum: [...COLORS],
+        }),
+        grid: B("Show the dotted grid"),
+      },
     },
   },
   {
     name: "draw_mermaid",
     description:
-      "Draw a complete new diagram from Mermaid code (flowchart, sequenceDiagram or classDiagram) in an empty spot. Use this for any new diagram, flow or process with four or more steps; it lays it out cleanly.",
+      "Draw a complete diagram from Mermaid code (flowchart, sequenceDiagram or classDiagram), laid out automatically. Use it for a brand-new diagram of four or more steps, or to rebuild an existing diagram from scratch (then list what it replaces). Never use it to tweak a diagram that is already on the board.",
     parameters: {
       type: "OBJECT",
-      properties: { code: S("Mermaid source, no code fences") },
+      properties: {
+        code: S("Mermaid source, no code fences"),
+        replaces: IDS(
+          'ONLY when the user asked to redo, rebuild or restructure the diagram already on the board: the ids of that diagram; they are deleted and the new one takes their place. Never set it for a new, unrelated diagram. ["all"] means everything listed in CANVAS.',
+        ),
+        color: SHAPE_STYLE.color,
+        fill: SHAPE_STYLE.fill,
+        thickness: SHAPE_STYLE.thickness,
+        sloppiness: SHAPE_STYLE.sloppiness,
+      },
       required: ["code"],
     },
   },
   {
     name: "insert_library_item",
     description:
-      "Insert one of the user's library items (names under Library).",
+      "Insert one of the user's saved library items (listed under Library in CANVAS) such as icons, symbols or ready-made components.",
     parameters: {
       type: "OBJECT",
       properties: {
-        name: S("Exact library item name"),
+        name: S("Library item name"),
+        library: S(
+          "Name of an online library from CANVAS (not installed yet); omit for the user's own library",
+        ),
         id: S("Your new id for it (n1, n2...)"),
         ...PLACEMENT,
+        ...LINK,
+        size: SIZE.size,
       },
       required: ["name"],
     },
@@ -196,37 +455,64 @@ export const CANVAS_FUNCTIONS = [
 ];
 
 export const functionCallToOps = ({ name, args }: FunctionCall): CanvasOp[] => {
-  const style = args.style as CanvasOp["stroke"];
+  const { style, ...rest } = args;
+  const withStyle = { ...rest, stroke: style } as Partial<CanvasOp>;
   switch (name) {
     case "add_element":
-      return [{ op: "add", ...args }];
+      return [{ op: "add", ...withStyle }];
     case "connect":
-      return [{ op: "connect", ...args, stroke: style }];
+      return [{ op: "connect", ...withStyle }];
     case "update_element":
-      return [{ op: "update", ...args, stroke: style }];
+      return [{ op: "update", ...withStyle }];
     case "delete_elements":
       return (args.ids ?? []).map((id: string) => ({ op: "delete", id }));
     case "create_frame":
       return [{ op: "frame", ids: args.ids, label: args.name }];
+    case "group_elements":
+      return [{ op: "group", ids: args.ids }];
+    case "arrange_elements":
+      return [{ op: "arrange", ids: args.ids, how: args.how }];
+    case "duplicate_elements":
+      return [{ op: "duplicate", ...rest }];
+    case "reorder_elements":
+      return [{ op: "reorder", ids: args.ids, position: args.position }];
+    case "set_canvas":
+      return [{ op: "canvas", ...rest }];
     case "draw_mermaid":
-      return [{ op: "mermaid", code: args.code }];
+      return [{ op: "mermaid", ...withStyle }];
     case "insert_library_item":
-      return [{ op: "library", ...args }];
+      return [{ op: "library", ...rest }];
     default:
       return [];
   }
 };
 
-export const CANVAS_SYSTEM_PROMPT = `You are the assistant inside ColabDraw, a hand-drawn whiteboard built on Excalidraw. You see the board as a list of elements and change it by calling functions. You never use pixel coordinates.
+export const CANVAS_SYSTEM_PROMPT = `You are the assistant inside ColabDraw, a hand-drawn whiteboard built on Excalidraw. You see the board as a list of elements and change it by calling functions that use the whiteboard's own tools: shapes, sticky notes, text, arrows, frames, groups, fonts, colors, fills and the user's library. You never use pixel coordinates.
 
-Each user message ends with a CANVAS section. Elements have short ids (e1, e2...); use them to refer to existing elements. Give new elements your own ids (n1, n2...) so later calls can connect to them. All calls in one reply are applied together as a single undo step.
+Each user message ends with a CANVAS section listing what is selected (or on screen) with ids (e1, e2...), text, colors and styles. Use those ids to refer to existing elements. Give new elements your own ids (n1, n2...) so later calls can connect to them. All calls in one reply are applied together as one undo step.
 
+EDITING VS CREATING (most important):
+- If the CANVAS already shows elements related to the request, CHANGE THOSE. "Make it blue", "rename X", "add a step after Y", "remove Z", "make it bigger", "use dashed arrows", "tidy this up", "change the font": use update_element, add_element + connect, delete_elements, arrange_elements. Never draw a second copy of something that is already there.
+- If the user wants an existing diagram restructured or rebuilt ("redo this", "rebuild it top-down", "start over with this layout"), call draw_mermaid ONCE with replaces listing exactly the element ids of that diagram; the old drawing is removed.
+- A request for a NEW diagram about something else ("draw a ... diagram of X") must never delete anything: call draw_mermaid WITHOUT replaces; it is placed in free space next to the existing work. Use replaces only when the user is clearly talking about what is already on the board.
+- Do every part of the request: if it says add something and connect it, call both add (or insert) and connect.
+- Elements are only visible if listed in CANVAS. If the user refers to something you cannot see, say so briefly.
+
+HOW TO ANSWER:
 - Always reply with one or two friendly sentences of text as well; in voice mode they are spoken aloud.
-- Questions ("explain this", "what's wrong here", "solve this"): answer in text and call nothing, unless the user asks you to write it on the board (then add a sticky note).
-- New diagrams, flows or processes of four or more steps: call draw_mermaid once. Small changes to what's on the board: add_element, connect, update_element, delete_elements, create_frame.
-- Place new elements with near and side next to related ones.
-- Omit color and fill to match the user's current style; use color only when asked or when it carries meaning.
+- Questions ("explain this", "what's wrong here", "solve this"): answer in text and call nothing, unless asked to write it on the board (then add a sticky note).
+- Brand-new diagram, flow or process of four or more steps on an empty area: draw_mermaid once. Small additions: add_element and connect.
+
+MAKING GOOD, DISTINCT DIAGRAMS:
+- Use the vocabulary: rectangle = component, ellipse = start/end or actor, diamond = decision, sticky = note/annotation, text = title/label, frames = titled sections, groups = things that belong together.
+- Color with meaning (green success/done, red error/danger, blue services, yellow notes/warnings, violet data, orange external), not decoration; keep to 3-4 colors. Use fill patterns, thickness, font and size to show hierarchy: a large "display" or "hand-drawn" title, bold outlines for the main path, dashed lines for optional or async flows, a different arrowhead for a different relation (diamond for composition, cardinality heads for database (ER) relations, circle for events).
+- Add a title and a short legend or sticky-note annotation when it helps. Wrap sections in frames. Use library items when one fits (icons, symbols). If CANVAS lists Online libraries that fit what the user asked for, call insert_library_item with library set to that library's name and name set to one of its items; it is saved to their library automatically.
+- Omit style options to match the user's current style; only override when asked or when it carries meaning.
 - Keep labels short. Only touch what the user asked about. If the request is ambiguous, make a sensible choice.`;
+
+// ---------------------------------------------------------------------------
+// reading the board
+// ---------------------------------------------------------------------------
 
 const round = (n: number) => Math.round(n);
 
@@ -264,11 +550,19 @@ const labelOf = (
   return getBoundTextElement(element, elementsMap as any)?.originalText ?? "";
 };
 
-const LIBRARY_NAME_LIMIT = 40;
+const keyOf = <T extends Record<string, unknown>>(
+  table: T,
+  value: unknown,
+): keyof T | undefined =>
+  (Object.keys(table) as (keyof T)[]).find((key) => table[key] === value);
+
 const CONTEXT_ELEMENT_LIMIT = 80;
 
-const loadLibrary = async (): Promise<LibraryItem[]> =>
-  ((await LibraryIndexedDBAdapter.load())?.libraryItems ?? []) as LibraryItem[];
+const loadLibrary = async (): Promise<NamedLibraryItem[]> =>
+  describeLibraryItems(
+    ((await LibraryIndexedDBAdapter.load())?.libraryItems ??
+      []) as LibraryItem[],
+  );
 
 export type CanvasContext = {
   text: string;
@@ -278,9 +572,90 @@ export type CanvasContext = {
   visualElements: NonDeletedExcalidrawElement[];
 };
 
+const describeElement = (
+  element: ExcalidrawElement,
+  alias: string,
+  aliasOf: Map<string, string>,
+  elementsMap: Map<string, ExcalidrawElement>,
+) => {
+  const label = labelOf(element, elementsMap);
+  const stroke = colorNameOf(element.strokeColor);
+  const background =
+    element.backgroundColor === "transparent"
+      ? null
+      : colorNameOf(element.backgroundColor) ?? "custom";
+  const parts: (string | false | null | undefined)[] = [
+    alias,
+    element.type === "freedraw" ? "hand-drawing" : element.type,
+    label && JSON.stringify(label),
+  ];
+  if (isArrowElement(element)) {
+    const from = element.startBinding?.elementId;
+    const to = element.endBinding?.elementId;
+    // a bound shape that isn't listed (not selected) is named by its text instead
+    const endpoint = (id: string | undefined) => {
+      if (!id) {
+        return "nothing";
+      }
+      const target = elementsMap.get(id);
+      return (
+        aliasOf.get(id) ??
+        (target
+          ? JSON.stringify(labelOf(target, elementsMap) || target.type)
+          : "nothing")
+      );
+    };
+    parts.push(
+      `from ${endpoint(from)} to ${endpoint(to)}`,
+      element.elbowed ? "elbow" : element.roundness ? "curved" : null,
+      element.startArrowhead && `start-${element.startArrowhead}`,
+      element.endArrowhead && element.endArrowhead !== "arrow"
+        ? `end-${element.endArrowhead}`
+        : !element.endArrowhead && "no-head",
+    );
+  } else {
+    parts.push(
+      `at (${round(element.x)},${round(element.y)}) size ${round(
+        element.width,
+      )}x${round(element.height)}`,
+    );
+  }
+  if (element.type === "text") {
+    const font = keyOf(FONTS, element.fontFamily);
+    parts.push(
+      `${round(element.fontSize)}px`,
+      font && font !== "hand-drawn" ? font : null,
+    );
+  }
+  parts.push(
+    stroke && stroke !== "black" ? `${stroke} outline` : null,
+    background ? `${background} fill` : null,
+    background && element.fillStyle !== "solid" ? `${element.fillStyle}` : null,
+    element.strokeStyle !== "solid" ? element.strokeStyle : null,
+    element.strokeWidth > 2 ? "bold" : element.strokeWidth < 2 ? "thin" : null,
+    element.roughness !== SLOPPINESS.artist
+      ? keyOf(SLOPPINESS, element.roughness)
+      : null,
+    element.roundness &&
+      (element.type === "rectangle" || element.type === "diamond")
+      ? "rounded"
+      : null,
+    element.opacity < 100 ? `${element.opacity}% opacity` : null,
+    element.angle ? `rotated ${round((element.angle * 180) / Math.PI)}°` : null,
+    element.groupIds.length ? "grouped" : null,
+    element.locked ? "locked" : null,
+    element.frameId && aliasOf.has(element.frameId)
+      ? `in ${aliasOf.get(element.frameId)}`
+      : null,
+  );
+  return parts.filter(Boolean).join(" ");
+};
+
 /** Describes the selection (or what's on screen) as compact text for the model. */
 export const buildCanvasContext = async (
   api: ExcalidrawImperativeAPI,
+  /** the user's request, used to look for matching online libraries */
+  userText?: string,
 ): Promise<CanvasContext> => {
   const appState = api.getAppState();
   const elements = api.getSceneElements();
@@ -299,8 +674,10 @@ export const buildCanvasContext = async (
   );
 
   // bound labels are described through their container
-  const described = (selected.length ? selected : visible)
-    .filter((element) => !(element.type === "text" && element.containerId))
+  const pool = (selected.length ? selected : visible).filter(
+    (element) => !(element.type === "text" && element.containerId),
+  );
+  const described = [...pool]
     .sort(
       (a, b) =>
         Math.hypot(a.x - center.x, a.y - center.y) -
@@ -315,59 +692,36 @@ export const buildCanvasContext = async (
     aliasOf.set(element.id, `e${index + 1}`);
   });
 
-  const lines = described.map((element) => {
-    const alias = aliasOf.get(element.id);
-    const label = labelOf(element, elementsMap);
-    const color = colorNameOf(element.strokeColor);
-    const parts = [
-      alias,
-      element.type === "freedraw" ? "hand-drawing" : element.type,
-      label && JSON.stringify(label),
-    ];
-    if (isArrowElement(element)) {
-      const from = element.startBinding?.elementId;
-      const to = element.endBinding?.elementId;
-      parts.push(
-        `from ${(from && aliasOf.get(from)) ?? "nothing"} to ${
-          (to && aliasOf.get(to)) ?? "nothing"
-        }`,
-      );
-    } else {
-      parts.push(
-        `at (${round(element.x)},${round(element.y)}) size ${round(
-          element.width,
-        )}x${round(element.height)}`,
-      );
-    }
-    if (color && color !== "black") {
-      parts.push(color);
-    }
-    if (element.frameId && aliasOf.has(element.frameId)) {
-      parts.push(`in ${aliasOf.get(element.frameId)}`);
-    }
-    return parts.filter(Boolean).join(" ");
-  });
+  const lines = described.map((element) =>
+    describeElement(element, aliasOf.get(element.id)!, aliasOf, elementsMap),
+  );
 
-  const library = (await loadLibrary())
-    .map((item) => item.name)
-    .filter(Boolean)
-    .slice(0, LIBRARY_NAME_LIMIT);
+  const hiddenCount = selected.length ? 0 : elements.length - visible.length;
+  const library = await loadLibrary();
+  const online = userText ? await onlineLibraryContext(userText) : "";
+  const sloppiness = keyOf(SLOPPINESS, appState.currentItemRoughness);
 
   const text = [
     "CANVAS",
     selected.length
       ? `The user selected ${selected.length} element(s); "this" means the selection.`
       : "Nothing is selected; these are the elements on screen.",
+    pool.length > described.length
+      ? `(showing the ${described.length} nearest of ${pool.length})`
+      : "",
     lines.length ? lines.join("\n") : "(the visible board is empty)",
+    hiddenCount ? `(${hiddenCount} more elements are off screen)` : "",
     `Current style: ${appState.currentItemFillStyle} fill, ${
-      ["architect", "artist", "cartoonist"][appState.currentItemRoughness] ??
-      "artist"
+      sloppiness ?? "artist"
     } sloppiness, ${
       colorNameOf(appState.currentItemStrokeColor) ?? "custom"
     } ink.`,
     library.length
-      ? `Library: ${library.map((name) => `"${name}"`).join(", ")}`
+      ? `Library:\n${library
+          .map(({ name, description }) => `- "${name}" (${description})`)
+          .join("\n")}`
       : "",
+    online,
   ]
     .filter(Boolean)
     .join("\n");
@@ -402,40 +756,120 @@ export const snapshotElements = async (
 };
 
 // ---------------------------------------------------------------------------
-// applying ops
+// styling
 // ---------------------------------------------------------------------------
 
 // room for an arrow label between neighbours
 const GAP = 140;
 
-const shadesOf = (color: ColorName) => {
+/** shade 0 (lightest) to 4 (strongest) of a palette color */
+const shadeOf = (color: ColorName, index: number): string => {
   const shades = COLOR_PALETTE[color];
-  return Array.isArray(shades)
-    ? shades
-    : [COLOR_PALETTE.gray[1], "", "", "", shades];
+  if (Array.isArray(shades)) {
+    return shades[index];
+  }
+  if (color === "black") {
+    return [
+      COLOR_PALETTE.gray[0],
+      COLOR_PALETTE.gray[1],
+      COLOR_PALETTE.gray[2],
+      COLOR_PALETTE.gray[3],
+      COLOR_PALETTE.black,
+    ][index];
+  }
+  return COLOR_PALETTE.white;
 };
 
-const styleFor = (appState: AppState, op: CanvasOp) => {
-  const shades = op.color ? shadesOf(op.color) : null;
-  const backgroundColor =
-    op.fill === "none"
-      ? "transparent"
-      : shades
-      ? shades[1]
-      : appState.currentItemBackgroundColor;
-  return {
-    strokeColor: shades ? shades[4] : appState.currentItemStrokeColor,
-    backgroundColor,
-    fillStyle:
-      op.fill && op.fill !== "none" ? op.fill : appState.currentItemFillStyle,
-    strokeWidth: STROKE_WIDTH[appState.currentItemStrokeWidthKey],
-    strokeStyle: op.stroke ?? appState.currentItemStrokeStyle,
-    roughness: appState.currentItemRoughness,
-    opacity: appState.currentItemOpacity,
-  };
+const roundnessFor = (type: string, rounded: boolean) => {
+  if (!rounded) {
+    return null;
+  }
+  switch (type) {
+    case "rectangle":
+      return { type: ROUNDNESS.ADAPTIVE_RADIUS };
+    case "diamond":
+    case "arrow":
+    case "line":
+      return { type: ROUNDNESS.PROPORTIONAL_RADIUS };
+    default:
+      return null;
+  }
 };
 
-const sizeFor = (shape: CanvasOp["shape"], label = "") => {
+/**
+ * Only the style fields the model actually asked for, as element updates.
+ * `tintsFill`: a bare `color` also tints the fill (shapes), as in one-click palettes.
+ */
+const explicitStyle = (op: CanvasOp, type: string, tintsFill: boolean) => {
+  const tone = TONES[op.tone ?? "light"];
+  const patch: Record<string, unknown> = {};
+  if (op.color) {
+    patch.strokeColor = shadeOf(op.color, 4);
+    if (tintsFill && !op.background && op.fill !== "none") {
+      patch.backgroundColor = shadeOf(op.color, tone);
+    }
+  }
+  if (op.background) {
+    patch.backgroundColor =
+      op.background === "transparent"
+        ? "transparent"
+        : shadeOf(op.background, tone);
+  }
+  if (op.fill === "none") {
+    patch.backgroundColor = "transparent";
+  } else if (op.fill) {
+    patch.fillStyle = op.fill;
+  }
+  if (op.stroke) {
+    patch.strokeStyle = op.stroke;
+  }
+  if (op.thickness) {
+    patch.strokeWidth = STROKE_WIDTH[THICKNESS[op.thickness]];
+  }
+  if (op.sloppiness) {
+    patch.roughness = SLOPPINESS[op.sloppiness];
+  }
+  if (op.opacity !== undefined && Number.isFinite(op.opacity)) {
+    patch.opacity = Math.min(100, Math.max(0, op.opacity));
+  }
+  if (op.angle !== undefined && Number.isFinite(op.angle)) {
+    patch.angle = (op.angle * Math.PI) / 180;
+  }
+  if (op.rounded !== undefined) {
+    patch.roundness = roundnessFor(type, op.rounded);
+  }
+  return patch;
+};
+
+const explicitFont = (op: CanvasOp) => {
+  const patch: Record<string, unknown> = {};
+  if (op.font) {
+    patch.fontFamily = FONTS[op.font];
+  }
+  if (op.fontSize) {
+    patch.fontSize = FONT_SIZE_NAMES[op.fontSize];
+  }
+  if (op.textAlign) {
+    patch.textAlign = op.textAlign;
+  }
+  return patch;
+};
+
+const arrowheadOf = (name: ArrowheadName | undefined) =>
+  name === "none" ? null : name;
+
+const defaultStyle = (appState: AppState, type: string) => ({
+  strokeColor: appState.currentItemStrokeColor,
+  backgroundColor: appState.currentItemBackgroundColor,
+  fillStyle: appState.currentItemFillStyle,
+  strokeWidth: STROKE_WIDTH[appState.currentItemStrokeWidthKey],
+  strokeStyle: appState.currentItemStrokeStyle,
+  roughness: appState.currentItemRoughness,
+  opacity: appState.currentItemOpacity,
+  roundness: roundnessFor(type, appState.currentItemRoundness === "round"),
+});
+
+const sizeFor = (op: CanvasOp, label = "") => {
   // wide enough that the longest word never breaks mid-word
   const longestWord = Math.max(
     ...label.split(/\s+/).map((word) => word.length),
@@ -444,20 +878,44 @@ const sizeFor = (shape: CanvasOp["shape"], label = "") => {
     Math.max(60 + label.length * 9, 40 + longestWord * 13, 140),
     280,
   );
-  switch (shape) {
+  const k = SIZES[op.size ?? "medium"];
+  let w: number;
+  let h: number;
+  switch (op.shape) {
     case "ellipse":
-      return { w: width + 30, h: 90 };
+      [w, h] = [width + 30, 90];
+      break;
     case "diamond":
       // a diamond's text area is about half its width
-      return { w: Math.round(width * 1.8), h: 140 };
+      [w, h] = [Math.round(width * 1.8), 140];
+      break;
     case "sticky":
-      return { w: DEFAULT_STICKY_NOTE_SIZE, h: DEFAULT_STICKY_NOTE_SIZE };
+      [w, h] = [DEFAULT_STICKY_NOTE_SIZE, DEFAULT_STICKY_NOTE_SIZE];
+      break;
     case "text":
-      return { w: Math.max(label.length * 11, 40), h: 30 };
+      [w, h] = [Math.max(label.length * 11, 40), 30];
+      break;
+    case "line":
+      [w, h] = [200, 0];
+      break;
     default:
-      return { w: width, h: 80 };
+      [w, h] = [width, 80];
   }
+  w *= k;
+  h *= k;
+  if (op.stretch === "wide") {
+    w *= 1.5;
+  } else if (op.stretch === "tall") {
+    h *= 1.6;
+  } else if (op.stretch === "square") {
+    w = h = Math.max(w, h);
+  }
+  return { w: round(w), h: round(h) };
 };
+
+// ---------------------------------------------------------------------------
+// geometry
+// ---------------------------------------------------------------------------
 
 const overlaps = (a: Box, b: Box) =>
   a.x < b.x + b.w + 20 &&
@@ -501,10 +959,16 @@ const edgePoint = (box: Box, dx: number, dy: number) => {
   return { x: cx + dx * t, y: cy + dy * t };
 };
 
+// ---------------------------------------------------------------------------
+// applying ops
+// ---------------------------------------------------------------------------
+
 export type ApplyResult = {
   added: number;
   changed: number;
   deleted: number;
+  /** online library items saved to the user's library */
+  libraryAdded: number;
   newElementIds: string[];
 };
 
@@ -522,6 +986,7 @@ export const applyCanvasOps = async (
     added: 0,
     changed: 0,
     deleted: 0,
+    libraryAdded: 0,
     newElementIds: [],
   };
 
@@ -532,15 +997,19 @@ export const applyCanvasOps = async (
     const element = id ? scene.getNonDeletedElement(id) : null;
     return element ?? null;
   };
+  const existingAll = (refs?: string[]) =>
+    (refs ?? [])
+      .map((ref) => existing(ref))
+      .filter(Boolean) as NonDeletedExcalidrawElement[];
 
   const [vx1, vy1, vx2, vy2] = getVisibleSceneBounds(appState);
-  const occupied: Box[] = scene
+  let occupied: (Box & { id?: string })[] = scene
     .getNonDeletedElements()
     .filter(
       (element) =>
         element.x < vx2 + 400 && element.x + element.width > vx1 - 400,
     )
-    .map(boxOf);
+    .map((element) => ({ ...boxOf(element), id: element.id }));
   const newBoxes = new Map<string, Box>();
   const selectedIds = Object.keys(appState.selectedElementIds);
   let lastPlaced: Box | null = null;
@@ -559,7 +1028,10 @@ export const applyCanvasOps = async (
 
   const isFree = (box: Box) => !occupied.some((other) => overlaps(box, other));
 
-  const place = (size: { w: number; h: number }, op: CanvasOp): Box => {
+  const place = (
+    size: { w: number; h: number },
+    op: Pick<CanvasOp, "near" | "side">,
+  ): Box => {
     const side = op.side ?? "right";
     let anchor = boxOfRef(op.near) ?? lastPlaced;
     if (!anchor && selectedIds.length) {
@@ -590,6 +1062,9 @@ export const applyCanvasOps = async (
   const proxies = new Map<string, ExcalidrawElementSkeleton>();
   const toDelete: ExcalidrawElement[] = [];
   const extraElements: ExcalidrawElement[] = [];
+  const toFront = new Set<string>();
+  const toBack = new Set<string>();
+  const nextAppState: Partial<AppState> = {};
 
   const proxyFor = (element: ExcalidrawElement) => {
     if (!proxies.has(element.id)) {
@@ -610,9 +1085,84 @@ export const applyCanvasOps = async (
     }
   };
 
-  const fontProps = {
+  const boundTextOf = (element: ExcalidrawElement) =>
+    getBoundTextElement(element, scene.getNonDeletedElementsMap());
+
+  /** let later calls refer to an inserted group by its main shape, so arrows can bind to it */
+  const registerInserted = (
+    refId: string | undefined,
+    placed: readonly ExcalidrawElement[],
+  ) => {
+    const bindable = placed.filter((element) =>
+      ["rectangle", "ellipse", "diamond"].includes(element.type),
+    );
+    const main = [...(bindable.length ? bindable : placed)].sort(
+      (a, b) => b.width * b.height - a.width * a.height,
+    )[0];
+    if (refId && main) {
+      ids.set(refId, main.id);
+      newBoxes.set(main.id, boxOf(main));
+    }
+  };
+
+  /** an element with its bound label, so deletes/moves/groups keep them together */
+  const withLabel = (elements: readonly ExcalidrawElement[]) =>
+    elements.flatMap((element) => {
+      const text = boundTextOf(element);
+      return text ? [element, text] : [element];
+    });
+
+  const moveBy = (
+    element: NonDeletedExcalidrawElement,
+    dx: number,
+    dy: number,
+  ) => {
+    scene.mutateElement(element, { x: element.x + dx, y: element.y + dy });
+    const text = boundTextOf(element);
+    if (text) {
+      scene.mutateElement(text, { x: text.x + dx, y: text.y + dy });
+    }
+    updateBoundElements(element, scene);
+  };
+
+  const fontDefaults = {
     fontFamily: appState.currentItemFontFamily,
     fontSize: appState.currentItemFontSize,
+  };
+  /** font props for a new text or label, with the model's overrides */
+  const fontFor = (op: CanvasOp, scale = 1) => {
+    const merged = { ...fontDefaults, ...explicitFont(op) } as {
+      fontFamily: number;
+      fontSize: number;
+      textAlign?: string;
+    };
+    return {
+      ...merged,
+      fontSize: op.fontSize
+        ? merged.fontSize
+        : Math.max(8, round(merged.fontSize * scale)),
+    };
+  };
+
+  /** style an existing text-like element and its label, then refit */
+  const applyFont = (element: ExcalidrawElement, op: CanvasOp, scale = 1) => {
+    const text =
+      element.type === "text" ? element : (boundTextOf(element) as any);
+    if (!text) {
+      return;
+    }
+    const patch = explicitFont(op);
+    if (scale !== 1 && !op.fontSize) {
+      (patch as any).fontSize = Math.max(8, round(text.fontSize * scale));
+    }
+    if (Object.keys(patch).length) {
+      scene.mutateElement(text, patch);
+      redrawTextBoundingBox(
+        text,
+        element.type === "text" ? null : element,
+        scene,
+      );
+    }
   };
 
   // models often batch deletes/updates as one op with an ids list
@@ -622,17 +1172,115 @@ export const applyCanvasOps = async (
       : [op],
   );
 
+  // the converter can only bind arrows to new rectangles, ellipses and diamonds
+  const bindable = (id: string) => {
+    const pending = skeletons.find((skeleton) => skeleton.id === id);
+    return (
+      !pending || ["rectangle", "ellipse", "diamond"].includes(pending.type)
+    );
+  };
+
+  const doConnect = (op: CanvasOp, base: Record<string, unknown> = {}) => {
+    const fromId = resolve(op.from);
+    const toId = resolve(op.to);
+    const fromBox = boxOfRef(op.from);
+    const toBox = boxOfRef(op.to);
+    if (!fromId || !toId || !fromBox || !toBox || fromId === toId) {
+      return;
+    }
+    for (const ref of [op.from, op.to]) {
+      const refId = resolve(ref);
+      const element =
+        existing(ref) ?? extraElements.find((extra) => extra.id === refId);
+      if (element) {
+        proxyFor(element);
+      }
+    }
+    const dx = toBox.x + toBox.w / 2 - (fromBox.x + fromBox.w / 2);
+    const dy = toBox.y + toBox.h / 2 - (fromBox.y + fromBox.h / 2);
+    const start = edgePoint(fromBox, dx, dy);
+    const end = edgePoint(toBox, -dx, -dy);
+    const style = {
+      ...defaultStyle(appState, "arrow"),
+      ...base,
+      ...explicitStyle(op, "arrow", false),
+    };
+    const arrowType =
+      op.arrowType ??
+      (appState.currentItemArrowType === "round"
+        ? "curved"
+        : appState.currentItemArrowType);
+    skeletons.push({
+      type: "arrow",
+      id: randomId(),
+      x: start.x,
+      y: start.y,
+      width: end.x - start.x,
+      height: end.y - start.y,
+      strokeColor: style.strokeColor,
+      strokeWidth: style.strokeWidth,
+      strokeStyle: style.strokeStyle,
+      roughness: style.roughness,
+      opacity: style.opacity,
+      roundness: arrowType === "curved" ? roundnessFor("arrow", true) : null,
+      elbowed: arrowType === "elbow",
+      startArrowhead:
+        op.startArrowhead !== undefined
+          ? arrowheadOf(op.startArrowhead)
+          : appState.currentItemStartArrowhead,
+      endArrowhead:
+        op.endArrowhead !== undefined
+          ? arrowheadOf(op.endArrowhead)
+          : appState.currentItemEndArrowhead ?? "arrow",
+      start: bindable(fromId) ? { id: fromId } : undefined,
+      end: bindable(toId) ? { id: toId } : undefined,
+      label: op.label ? { text: op.label, ...fontFor(op) } : undefined,
+    } as ExcalidrawElementSkeleton);
+    result.added++;
+  };
+
+  // arrows and frames are built after everything else has moved, so they bind to final positions
+  const deferred: (() => void)[] = [];
+  const connect = (op: CanvasOp, base: Record<string, unknown> = {}) => {
+    deferred.push(() => doConnect(op, base));
+  };
+
+  const linkToNear = (op: CanvasOp, alias: string) => {
+    if (op.link && op.near) {
+      connect({
+        op: "connect",
+        from: op.near,
+        to: alias,
+        label: op.linkLabel,
+        endArrowhead: op.linkArrowhead,
+      });
+    }
+  };
+
   for (const op of expandedOps) {
     switch (op.op) {
       case "add": {
         const id = randomId();
-        if (op.id) {
-          ids.set(op.id, id);
-        }
+        const alias = op.id ?? `__n${id}`;
+        ids.set(alias, id);
+        linkToNear(op, alias);
         const shape = op.shape ?? "rectangle";
-        const box = place(sizeFor(shape, op.label), op);
+        const textScale = SIZES[op.size ?? "medium"];
+        const box = place(sizeFor({ ...op, shape }, op.label), op);
         newBoxes.set(id, box);
-        const style = styleFor(appState, op);
+        const type = shape === "sticky" ? "rectangle" : shape;
+        const style = {
+          ...defaultStyle(appState, type),
+          ...explicitStyle(op, type, true),
+        };
+        const font = fontFor(op, textScale);
+        const label = op.label
+          ? {
+              text: op.label,
+              ...font,
+              ...(op.textAlign ? { textAlign: op.textAlign } : null),
+            }
+          : undefined;
         if (shape === "text") {
           skeletons.push({
             type: "text",
@@ -640,10 +1288,11 @@ export const applyCanvasOps = async (
             x: box.x,
             y: box.y,
             text: op.label ?? "",
-            ...fontProps,
+            ...font,
             strokeColor: style.strokeColor,
             opacity: style.opacity,
-          });
+            angle: (style as { angle?: number }).angle ?? 0,
+          } as ExcalidrawElementSkeleton);
         } else if (shape === "sticky") {
           skeletons.push({
             type: "stickynote",
@@ -652,8 +1301,29 @@ export const applyCanvasOps = async (
             y: box.y,
             width: box.w,
             height: box.h,
-            ...(op.color ? { backgroundColor: shadesOf(op.color)[1] } : null),
-            label: op.label ? { text: op.label, ...fontProps } : undefined,
+            ...(op.color || op.background
+              ? { backgroundColor: style.backgroundColor }
+              : null),
+            ...(op.opacity !== undefined ? { opacity: style.opacity } : null),
+            ...(op.angle !== undefined
+              ? { angle: (style as { angle?: number }).angle }
+              : null),
+            label,
+          } as ExcalidrawElementSkeleton);
+        } else if (shape === "line") {
+          skeletons.push({
+            type: "line",
+            id,
+            x: box.x,
+            y: box.y,
+            width: box.w,
+            height: box.h,
+            strokeColor: style.strokeColor,
+            strokeWidth: style.strokeWidth,
+            strokeStyle: style.strokeStyle,
+            roughness: style.roughness,
+            opacity: style.opacity,
+            angle: (style as { angle?: number }).angle ?? 0,
           } as ExcalidrawElementSkeleton);
         } else {
           skeletons.push({
@@ -664,57 +1334,14 @@ export const applyCanvasOps = async (
             width: box.w,
             height: box.h,
             ...style,
-            roundness:
-              shape === "rectangle" && appState.currentItemRoundness === "round"
-                ? { type: ROUNDNESS.ADAPTIVE_RADIUS }
-                : shape === "diamond" &&
-                  appState.currentItemRoundness === "round"
-                ? { type: ROUNDNESS.PROPORTIONAL_RADIUS }
-                : null,
-            label: op.label ? { text: op.label, ...fontProps } : undefined,
+            label,
           } as ExcalidrawElementSkeleton);
         }
         result.added++;
         break;
       }
       case "connect": {
-        const fromId = resolve(op.from);
-        const toId = resolve(op.to);
-        const fromBox = boxOfRef(op.from);
-        const toBox = boxOfRef(op.to);
-        if (!fromId || !toId || !fromBox || !toBox || fromId === toId) {
-          break;
-        }
-        for (const ref of [op.from, op.to]) {
-          const element = existing(ref);
-          if (element) {
-            proxyFor(element);
-          }
-        }
-        const dx = toBox.x + toBox.w / 2 - (fromBox.x + fromBox.w / 2);
-        const dy = toBox.y + toBox.h / 2 - (fromBox.y + fromBox.h / 2);
-        const start = edgePoint(fromBox, dx, dy);
-        const end = edgePoint(toBox, -dx, -dy);
-        const style = styleFor(appState, { ...op, fill: undefined });
-        skeletons.push({
-          type: "arrow",
-          id: randomId(),
-          x: start.x,
-          y: start.y,
-          width: end.x - start.x,
-          height: end.y - start.y,
-          strokeColor: style.strokeColor,
-          strokeWidth: style.strokeWidth,
-          strokeStyle: style.strokeStyle,
-          roughness: style.roughness,
-          opacity: style.opacity,
-          startArrowhead: appState.currentItemStartArrowhead,
-          endArrowhead: appState.currentItemEndArrowhead ?? "arrow",
-          start: { id: fromId },
-          end: { id: toId },
-          label: op.label ? { text: op.label, ...fontProps } : undefined,
-        } as ExcalidrawElementSkeleton);
-        result.added++;
+        connect(op);
         break;
       }
       case "update": {
@@ -725,35 +1352,110 @@ export const applyCanvasOps = async (
             if (pending.type === "text") {
               pending.text = op.label;
             } else {
-              pending.label = { text: op.label, ...fontProps };
+              pending.label = {
+                ...(pending.label ?? fontFor(op)),
+                text: op.label,
+              };
             }
           }
-          if (op.color || op.fill || op.stroke) {
-            Object.assign(pending, styleFor(appState, op));
-          }
+          Object.assign(pending, explicitStyle(op, pending.type, true));
           break;
         }
         const element = existing(op.id);
         if (!element) {
           break;
         }
-        if (op.color || op.fill || op.stroke) {
-          const style = styleFor(appState, op);
-          scene.mutateElement(element, {
-            ...(op.color ? { strokeColor: style.strokeColor } : null),
-            ...(op.color || op.fill
-              ? { backgroundColor: style.backgroundColor }
-              : null),
-            ...(op.fill && op.fill !== "none" ? { fillStyle: op.fill } : null),
-            ...(op.stroke ? { strokeStyle: op.stroke } : null),
-          });
-          const boundText = getBoundTextElement(
-            element,
-            scene.getNonDeletedElementsMap(),
-          );
-          if (boundText && op.color) {
-            scene.mutateElement(boundText, { strokeColor: style.strokeColor });
+        const isArrow = isArrowElement(element);
+        // an existing arrow can't be switched to elbow in place: redraw it between the same elements
+        if (isArrow && op.arrowType === "elbow" && !element.elbowed) {
+          const startId = element.startBinding?.elementId;
+          const endId = element.endBinding?.elementId;
+          if (startId && endId) {
+            const label = boundTextOf(element)?.originalText;
+            ids.set(`@${startId}`, startId);
+            ids.set(`@${endId}`, endId);
+            toDelete.push(...withLabel([element]));
+            connect(
+              {
+                ...op,
+                op: "connect",
+                from: `@${startId}`,
+                to: `@${endId}`,
+                label: op.label ?? label,
+                startArrowhead:
+                  op.startArrowhead ?? element.startArrowhead ?? "none",
+                endArrowhead: op.endArrowhead ?? element.endArrowhead ?? "none",
+              },
+              {
+                strokeColor: element.strokeColor,
+                strokeWidth: element.strokeWidth,
+                strokeStyle: element.strokeStyle,
+                roughness: element.roughness,
+                opacity: element.opacity,
+              },
+            );
+            result.changed++;
+            break;
           }
+        }
+        const patch = explicitStyle(op, element.type, !isArrow);
+        // an arrow's curvature is its own setting, not a corner radius
+        if (isArrow && op.arrowType && op.arrowType !== "elbow") {
+          patch.roundness =
+            op.arrowType === "curved" ? roundnessFor("arrow", true) : null;
+        }
+        if (isArrow) {
+          if (op.startArrowhead !== undefined) {
+            patch.startArrowhead = arrowheadOf(op.startArrowhead);
+          }
+          if (op.endArrowhead !== undefined) {
+            patch.endArrowhead = arrowheadOf(op.endArrowhead);
+          }
+        }
+        if (element.type === "text") {
+          // text color is its stroke; fills don't apply
+          delete patch.backgroundColor;
+        }
+        if (Object.keys(patch).length) {
+          scene.mutateElement(element, patch as any);
+          const text = boundTextOf(element);
+          if (text && op.color) {
+            scene.mutateElement(text, {
+              strokeColor: patch.strokeColor as string,
+            });
+          }
+        }
+        // size: scale around the center
+        if (op.size || op.stretch) {
+          if (element.type === "text") {
+            applyFont(element, op, SIZES[op.size ?? "medium"]);
+          } else if (!isArrow) {
+            const base = { w: element.width, h: element.height };
+            const k = SIZES[op.size ?? "medium"];
+            let w = base.w * k;
+            let h = base.h * k;
+            if (op.stretch === "wide") {
+              w *= 1.5;
+            } else if (op.stretch === "tall") {
+              h *= 1.6;
+            } else if (op.stretch === "square") {
+              w = h = Math.max(w, h);
+            }
+            scene.mutateElement(element, {
+              x: element.x - (w - base.w) / 2,
+              y: element.y - (h - base.h) / 2,
+              width: w,
+              height: h,
+            });
+            const text = boundTextOf(element);
+            if (text) {
+              redrawTextBoundingBox(text, element, scene);
+            }
+            updateBoundElements(element, scene);
+          }
+        }
+        if (op.font || op.fontSize || op.textAlign) {
+          applyFont(element, op);
         }
         if (op.label !== undefined) {
           if (isFrameLikeElement(element)) {
@@ -765,16 +1467,13 @@ export const applyCanvasOps = async (
             });
             redrawTextBoundingBox(element, null, scene);
           } else {
-            let boundText = getBoundTextElement(
-              element,
-              scene.getNonDeletedElementsMap(),
-            );
+            let boundText = boundTextOf(element);
             if (!boundText) {
               const text = newTextElement({
                 x: element.x,
                 y: element.y,
                 text: op.label,
-                ...fontProps,
+                ...fontFor(op),
                 textAlign: "center",
                 verticalAlign: "middle",
                 containerId: element.id,
@@ -796,17 +1495,9 @@ export const applyCanvasOps = async (
             redrawTextBoundingBox(boundText!, element, scene);
           }
         }
-        if (op.near && !isArrowElement(element)) {
+        if (op.near && !isArrow) {
           const target = place({ w: element.width, h: element.height }, op);
-          scene.mutateElement(element, { x: target.x, y: target.y });
-          const boundText = getBoundTextElement(
-            element,
-            scene.getNonDeletedElementsMap(),
-          );
-          if (boundText) {
-            redrawTextBoundingBox(boundText, element, scene);
-          }
-          updateBoundElements(element, scene);
+          moveBy(element, target.x - element.x, target.y - element.y);
         }
         result.changed++;
         break;
@@ -816,79 +1507,273 @@ export const applyCanvasOps = async (
         if (!element) {
           break;
         }
-        const boundText = getBoundTextElement(
-          element,
-          scene.getNonDeletedElementsMap(),
-        );
-        toDelete.push(element, ...(boundText ? [boundText] : []));
+        toDelete.push(...withLabel([element]));
         result.deleted++;
         break;
       }
       case "frame": {
-        const children = (op.ids ?? [])
-          .map((ref) => {
-            const element = existing(ref);
-            if (element) {
-              proxyFor(element);
-            }
-            return resolve(ref);
-          })
-          .filter(Boolean) as string[];
-        if (children.length) {
-          frames.push({
-            type: "frame",
-            id: randomId(),
-            children,
-            name: op.label,
-          });
-          result.added++;
+        deferred.push(() => {
+          const children = (op.ids ?? [])
+            .map((ref) => {
+              const element = existing(ref);
+              if (element) {
+                proxyFor(element);
+              }
+              return resolve(ref);
+            })
+            .filter(Boolean) as string[];
+          if (children.length) {
+            frames.push({
+              type: "frame",
+              id: randomId(),
+              children,
+              name: op.label,
+            });
+            result.added++;
+          }
+        });
+        break;
+      }
+      case "group": {
+        const members = withLabel(existingAll(op.ids));
+        if (members.length > 1) {
+          const groupId = randomId();
+          for (const member of members) {
+            scene.mutateElement(member, {
+              groupIds: [...member.groupIds, groupId],
+            });
+          }
+          result.changed++;
         }
         break;
       }
-      case "library": {
-        const item = (await loadLibrary()).find(
-          (libraryItem) =>
-            libraryItem.name?.toLowerCase() === op.name?.toLowerCase(),
+      case "arrange": {
+        const members = existingAll(op.ids).filter(
+          (element) => !isArrowElement(element),
         );
-        if (!item) {
+        if (members.length < 2) {
+          break;
+        }
+        const how = op.how ?? "grid";
+        const [x1, y1, x2, y2] = getCommonBounds(withLabel(members));
+        if (how.startsWith("align_")) {
+          const [axis, position] = {
+            align_left: ["x", "start"],
+            align_center: ["x", "center"],
+            align_right: ["x", "end"],
+            align_top: ["y", "start"],
+            align_middle: ["y", "center"],
+            align_bottom: ["y", "end"],
+          }[how as "align_left"] as ["x" | "y", "start" | "center" | "end"];
+          alignElements(members, { axis, position }, scene, appState);
+        } else if (how.startsWith("distribute_")) {
+          distributeElements(
+            members,
+            scene.getNonDeletedElementsMap(),
+            {
+              space: "between",
+              axis: how === "distribute_horizontally" ? "x" : "y",
+            },
+            appState,
+            scene,
+          );
+        } else if (how === "row" || how === "column") {
+          const horizontal = how === "row";
+          const sorted = [...members].sort((a, b) =>
+            horizontal ? a.x - b.x : a.y - b.y,
+          );
+          const crossCenter = horizontal ? (y1 + y2) / 2 : (x1 + x2) / 2;
+          let cursor = horizontal ? x1 : y1;
+          for (const element of sorted) {
+            const size = horizontal ? element.width : element.height;
+            const cross = horizontal ? element.height : element.width;
+            const targetX = horizontal ? cursor : crossCenter - cross / 2;
+            const targetY = horizontal ? crossCenter - cross / 2 : cursor;
+            moveBy(element, targetX - element.x, targetY - element.y);
+            cursor += size + 80;
+          }
+        } else {
+          const units = members.map((element) => withLabel([element]));
+          const placed = positionElementsOnGrid(
+            units,
+            (x1 + x2) / 2,
+            (y1 + y2) / 2,
+            80,
+          );
+          for (const moved of placed) {
+            if (moved.type === "text" && (moved as any).containerId) {
+              continue;
+            }
+            const original = scene.getNonDeletedElement(moved.id);
+            if (original) {
+              moveBy(original, moved.x - original.x, moved.y - original.y);
+            }
+          }
+        }
+        result.changed++;
+        break;
+      }
+      case "duplicate": {
+        const members = withLabel(existingAll(op.ids));
+        if (!members.length) {
+          break;
+        }
+        const memberIds = new Set(members.map((element) => element.id));
+        // keep the arrows that run between the copied elements
+        const arrows = scene
+          .getNonDeletedElements()
+          .filter(
+            (element) =>
+              isArrowElement(element) &&
+              element.startBinding &&
+              element.endBinding &&
+              memberIds.has(element.startBinding.elementId) &&
+              memberIds.has(element.endBinding.elementId),
+          );
+        const source = [...members, ...withLabel(arrows)];
+        const [x1, y1, x2, y2] = getCommonBounds(source);
+        let anchor = op.near ? op : { near: undefined, side: op.side };
+        for (
+          let copy = 0;
+          copy < Math.min(Math.max(op.count ?? 1, 1), 8);
+          copy++
+        ) {
+          const { duplicatedElements } = duplicateElements({
+            type: "everything",
+            elements: source,
+            randomizeSeed: true,
+          });
+          const box = place({ w: x2 - x1, h: y2 - y1 }, anchor);
+          anchor = { near: undefined, side: op.side };
+          const placed = duplicatedElements.map((element) => ({
+            ...element,
+            x: element.x - x1 + box.x,
+            y: element.y - y1 + box.y,
+          }));
+          extraElements.push(...placed);
+          if (copy === 0) {
+            registerInserted(op.id, placed);
+          }
+          result.added += duplicatedElements.filter(
+            (element) => !(element.type === "text" && element.containerId),
+          ).length;
+        }
+        break;
+      }
+      case "reorder": {
+        const members = withLabel(existingAll(op.ids));
+        for (const member of members) {
+          (op.position === "back" ? toBack : toFront).add(member.id);
+        }
+        result.changed += members.length ? 1 : 0;
+        break;
+      }
+      case "canvas": {
+        if (op.background) {
+          nextAppState.viewBackgroundColor = shadeOf(
+            op.background as ColorName,
+            0,
+          );
+        }
+        if (op.grid !== undefined) {
+          nextAppState.gridModeEnabled = op.grid;
+        }
+        result.changed++;
+        break;
+      }
+      case "library": {
+        let match = op.library
+          ? undefined
+          : findLibraryItem(await loadLibrary(), op.name ?? "");
+        if (!match) {
+          // not installed: take it from libraries.excalidraw.com and keep it
+          const online = await resolveOnlineItem(op.library, op.name);
+          if (online) {
+            match = online.entry;
+            await api.updateLibrary({
+              libraryItems: [{ ...online.entry.item, name: online.entry.name }],
+              merge: true,
+            });
+            result.libraryAdded++;
+          }
+        }
+        if (!match) {
           break;
         }
         const { duplicatedElements } = duplicateElements({
           type: "everything",
-          elements: item.elements,
+          elements: match.item.elements,
           randomizeSeed: true,
         });
         const [x1, y1, x2, y2] = getCommonBounds(duplicatedElements);
-        const box = place({ w: x2 - x1, h: y2 - y1 }, op);
+        const k = SIZES[op.size ?? "medium"];
+        const box = place({ w: (x2 - x1) * k, h: (y2 - y1) * k }, op);
+        const placed: ExcalidrawElement[] = [];
         for (const element of duplicatedElements) {
-          extraElements.push({
+          placed.push({
             ...element,
-            x: element.x - x1 + box.x,
-            y: element.y - y1 + box.y,
-          });
+            x: (element.x - x1) * k + box.x,
+            y: (element.y - y1) * k + box.y,
+            width: element.width * k,
+            height: element.height * k,
+            ...(element.type === "text"
+              ? { fontSize: (element as any).fontSize * k }
+              : null),
+            ...("points" in element
+              ? {
+                  points: (element as any).points.map(([px, py]: number[]) => [
+                    px * k,
+                    py * k,
+                  ]),
+                }
+              : null),
+          } as ExcalidrawElement);
         }
-        if (op.id && duplicatedElements[0]) {
-          ids.set(op.id, duplicatedElements[0].id);
-          newBoxes.set(duplicatedElements[0].id, box);
-        }
+        extraElements.push(...placed);
+        const alias = op.id ?? `__lib${randomId()}`;
+        registerInserted(alias, placed);
+        linkToNear(op, alias);
         result.added++;
         break;
       }
       case "mermaid": {
-        const mermaidElements = await mermaidToElements(
-          api,
-          op.code ?? "",
-          appState,
-        );
+        const mermaidElements = await mermaidToElements(api, op, appState);
         if (!mermaidElements.length) {
           break;
         }
         const [x1, y1, x2, y2] = getCommonBounds(mermaidElements);
-        // mermaid diagrams go to free space, never on top of the user's work
-        const box = place(
-          { w: x2 - x1, h: y2 - y1 },
-          { ...op, near: undefined },
-        );
+        const size = { w: x2 - x1, h: y2 - y1 };
+        let box: Box;
+        const replaced = (
+          op.replaces?.includes("all")
+            ? [...aliases.values()].map((id) => scene.getNonDeletedElement(id))
+            : (op.replaces ?? []).map((ref) => existing(ref))
+        ).filter(Boolean) as NonDeletedExcalidrawElement[];
+        if (replaced.length) {
+          // take the old drawing's place
+          const targets = withLabel(replaced);
+          const [rx1, ry1, rx2, ry2] = getCommonBounds(targets);
+          const old = new Set(targets.map((element) => element.id));
+          toDelete.push(
+            ...targets.filter((element) => !toDelete.includes(element)),
+          );
+          result.deleted += replaced.filter(
+            (element) => !(element.type === "text" && element.containerId),
+          ).length;
+          occupied = occupied.filter(
+            (entry) => !entry.id || !old.has(entry.id),
+          );
+          box = {
+            x: (rx1 + rx2) / 2 - size.w / 2,
+            y: (ry1 + ry2) / 2 - size.h / 2,
+            ...size,
+          };
+          occupied.push(box);
+          lastPlaced = box;
+        } else {
+          // a new diagram goes to free space, never on top of the user's work
+          box = place(size, { near: undefined, side: op.side });
+        }
         for (const element of mermaidElements) {
           extraElements.push({
             ...element,
@@ -902,6 +1787,10 @@ export const applyCanvasOps = async (
         break;
       }
     }
+  }
+
+  for (const run of deferred) {
+    run();
   }
 
   if (toDelete.length) {
@@ -921,6 +1810,17 @@ export const applyCanvasOps = async (
     // copy the new arrow bindings and frame membership onto the real element
     const real = scene.getNonDeletedElement(element.id);
     if (!real) {
+      // an inserted library item or copy: patch it in the pending list
+      const index = extraElements.findIndex((extra) => extra.id === element.id);
+      if (index >= 0) {
+        extraElements[index] = {
+          ...extraElements[index],
+          boundElements: [
+            ...(extraElements[index].boundElements ?? []),
+            ...(element.boundElements ?? []),
+          ],
+        } as ExcalidrawElement;
+      }
       continue;
     }
     const known = new Set((real.boundElements ?? []).map((b) => b.id));
@@ -931,9 +1831,7 @@ export const applyCanvasOps = async (
         : null),
       ...(element.frameId ? { frameId: element.frameId } : null),
     });
-    const boundText = element.frameId
-      ? getBoundTextElement(real, scene.getNonDeletedElementsMap())
-      : null;
+    const boundText = element.frameId ? boundTextOf(real) : null;
     if (boundText) {
       scene.mutateElement(boundText, { frameId: element.frameId });
     }
@@ -945,23 +1843,34 @@ export const applyCanvasOps = async (
     .map((element) => element.id);
 
   const deletedIds = new Set(toDelete.map((element) => element.id));
+  let merged = [
+    ...scene
+      .getElementsIncludingDeleted()
+      .map((element) =>
+        deletedIds.has(element.id)
+          ? newElementWith(element, { isDeleted: true })
+          : element,
+      ),
+    ...newElements,
+  ];
+  if (toFront.size || toBack.size) {
+    merged = [
+      ...merged.filter((element) => toBack.has(element.id)),
+      ...merged.filter(
+        (element) => !toBack.has(element.id) && !toFront.has(element.id),
+      ),
+      ...merged.filter((element) => toFront.has(element.id)),
+    ];
+  }
+  if (result.newElementIds.length) {
+    nextAppState.selectedElementIds = Object.fromEntries(
+      result.newElementIds.map((id) => [id, true]),
+    );
+  }
   api.updateScene({
-    elements: [
-      ...scene
-        .getElementsIncludingDeleted()
-        .map((element) =>
-          deletedIds.has(element.id)
-            ? newElementWith(element, { isDeleted: true })
-            : element,
-        ),
-      ...newElements,
-    ],
-    appState: result.newElementIds.length
-      ? {
-          selectedElementIds: Object.fromEntries(
-            result.newElementIds.map((id) => [id, true]),
-          ),
-        }
+    elements: merged,
+    appState: Object.keys(nextAppState).length
+      ? (nextAppState as AppState)
       : undefined,
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   });
@@ -984,13 +1893,13 @@ export const applyCanvasOps = async (
 
 const mermaidToElements = async (
   api: ExcalidrawImperativeAPI,
-  code: string,
+  op: CanvasOp,
   appState: AppState,
 ): Promise<ExcalidrawElement[]> => {
   const { parseMermaidToExcalidraw } = await import(
     "@excalidraw/mermaid-to-excalidraw"
   );
-  const definition = code
+  const definition = (op.code ?? "")
     .trim()
     .replace(/^```(?:mermaid)?\s*/i, "")
     .replace(/\s*```$/, "");
@@ -1004,11 +1913,29 @@ const mermaidToElements = async (
       return [];
     }
   }
-  // the user's sloppiness; fonts stay as measured by the parser
-  const styled = parsed.elements.map((skeleton: any) => ({
-    ...skeleton,
-    roughness: appState.currentItemRoughness,
-  }));
+  // the requested (or current) look; fonts stay as measured by the parser
+  const style = explicitStyle(
+    { ...op, rounded: undefined, angle: undefined },
+    "rectangle",
+    true,
+  );
+  const { backgroundColor, fillStyle, ...lineStyle } = style;
+  const styled = parsed.elements.map((skeleton: any) => {
+    const roughness = appState.currentItemRoughness;
+    if (skeleton.type === "text") {
+      return { ...skeleton, roughness };
+    }
+    const label =
+      skeleton.label && style.strokeColor
+        ? { label: { ...skeleton.label, strokeColor: style.strokeColor } }
+        : null;
+    if (skeleton.type === "arrow" || skeleton.type === "line") {
+      return { ...skeleton, roughness, ...lineStyle, ...label };
+    }
+    return { ...skeleton, roughness, ...style, ...label };
+  });
+  void backgroundColor;
+  void fillStyle;
   // non-flowchart types come back as an image
   if (parsed.files) {
     api.addFiles(Object.values(parsed.files));

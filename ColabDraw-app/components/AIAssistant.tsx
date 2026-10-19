@@ -84,11 +84,17 @@ const KEY_ERRORS: AIErrorCode[] = [
   "quota_exceeded",
 ];
 
-const describeResult = ({ added, changed, deleted }: ApplyResult) =>
+const describeResult = ({
+  added,
+  changed,
+  deleted,
+  libraryAdded,
+}: ApplyResult) =>
   [
     added && `added ${added}`,
     changed && `changed ${changed}`,
     deleted && `removed ${deleted}`,
+    libraryAdded && `saved ${libraryAdded} to your library`,
   ]
     .filter(Boolean)
     .join(", ");
@@ -158,7 +164,7 @@ export const AIAssistant = ({
     abortRef.current = controller;
 
     try {
-      const context = await buildCanvasContext(excalidrawAPI);
+      const context = await buildCanvasContext(excalidrawAPI, prompt);
       const parts: GeminiContent["parts"] = [
         { text: `${prompt}\n\n${context.text}` },
       ];
@@ -203,13 +209,28 @@ export const AIAssistant = ({
       let note: string | undefined;
       if (response.ops.length) {
         setStatus("drawing");
-        const result = await applyCanvasOps(
-          excalidrawAPI,
-          response.ops,
-          context.aliases,
-        );
-        const summary = describeResult(result);
-        note = summary ? `${summary} · Ctrl+Z to undo` : undefined;
+        try {
+          const result = await applyCanvasOps(
+            excalidrawAPI,
+            response.ops,
+            context.aliases,
+          );
+          const summary = describeResult(result);
+          note = summary ? `${summary} · Ctrl+Z to undo` : undefined;
+        } catch (applyError) {
+          // the AI answered; the board just couldn't take that change
+          console.error(applyError);
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "model",
+              text: "I couldn't apply that to the board. Try rephrasing, or ask for a smaller change.",
+              error: "network",
+            },
+          ]);
+          setStatus("error");
+          return;
+        }
       }
       setMessages((prev) => [
         ...prev,
