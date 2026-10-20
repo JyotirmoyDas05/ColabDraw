@@ -1,0 +1,41 @@
+.excalidraw {
+  .ai-visualizer {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    // closed until active: the strip opens with a springy overshoot
+    width: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateX(1rem);
+    transition: width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+      opacity 0.3s ease, transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+    &--active {
+      width: var(--ai-visualizer-width, 4rem);
+      opacity: 1;
+      transform: none;
+    }
+
+    &__bar {
+      flex: none;
+      width: 4px;
+      height: 4px;
+      border-radius: 999px;
+      background-color: var(--color-primary);
+      transition: height 75ms ease-out;
+    }
+
+    &--model &__bar {
+      background-color: var(--color-success, #2f9e44);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ai-visualizer {
+      transition: none;
+      transform: none;
+    }
+  }
+}

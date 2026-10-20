@@ -1,9 +1,11 @@
 import {
   ArrowRightIcon,
   CloseIcon,
-  TrashIcon,
+  PlusIcon,
+  chevronDownIcon,
   mermaidLogoIcon,
   microphoneIcon,
+  playerStopFilledIcon,
   settingsIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import clsx from "clsx";
@@ -34,28 +36,26 @@ import {
   buildCanvasContext,
   snapshotElements,
 } from "../ai/canvasAgent";
+import { createMessage, useChatHistory } from "../ai/chatHistory";
+import { searchOnlineLibraries } from "../ai/libraryItems";
 import { startLiveSession } from "../ai/live";
 import { isOnDevice, startListening } from "../ai/speech";
 
 import { AIBuddy } from "./AIBuddy/AIBuddy";
+import { AIChatMessage } from "./AIChatMessage";
+import { AIHistoryMenu } from "./AIHistoryMenu";
+import { AIVoiceVisualizer } from "./AIVoiceVisualizer";
 
 import "./AIAssistant.scss";
 
 import type { AIErrorCode, GeminiContent } from "../ai/aiClient";
 import type { ApplyResult } from "../ai/canvasAgent";
-import type { LiveSession } from "../ai/live";
+import type { LiveSession, LiveState } from "../ai/live";
 import type { ListeningSession, SpeechEngine } from "../ai/speech";
 
-type Message = {
-  role: "user" | "model";
-  text: string;
-  note?: string;
-  error?: AIErrorCode;
-};
-
 const HISTORY_LIMIT = 8;
-// a press longer than this is hold-to-talk; shorter toggles listening
-const HOLD_MS = 350;
+// how far from the bottom still counts as "following" the conversation
+const FOLLOW_PX = 80;
 
 const SUGGESTIONS = [
   "Explain what's on the board",
@@ -84,6 +84,14 @@ const KEY_ERRORS: AIErrorCode[] = [
   "quota_exceeded",
 ];
 
+const LIVE_LABELS: Record<LiveState, string> = {
+  connecting: "Connecting…",
+  listening: "Listening",
+  speaking: "Speaking",
+  working: "Working on the board",
+  closed: "",
+};
+
 const describeResult = ({
   added,
   changed,
@@ -99,6 +107,9 @@ const describeResult = ({
     .filter(Boolean)
     .join(", ");
 
+const formatTime = (seconds: number) =>
+  `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
 export const AIAssistant = ({
   excalidrawAPI,
 }: {
@@ -111,18 +122,30 @@ export const AIAssistant = ({
   const setLevel = useSetAtom(aiLevelAtom);
   const openKeyDialog = useSetAtom(aiKeyDialogOpenAtom);
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const {
+    messages,
+    setMessages,
+    chats,
+    activeId,
+    newChat,
+    openChat,
+    deleteChat,
+  } = useChatHistory();
   const [input, setInput] = useState("");
   const [speechEngine, setSpeechEngine] = useState<SpeechEngine | null>(null);
   const [speechStatus, setSpeechStatus] = useState("");
-  const [isLive, setIsLive] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [liveState, setLiveState] = useState<LiveState | null>(null);
+  const [isFollowing, setIsFollowing] = useState(true);
 
+  const isLive = liveState !== null;
   const listeningRef = useRef<ListeningSession | null>(null);
-  const pressStartRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const liveRef = useRef<LiveSession | null>(null);
   const liveAliasesRef = useRef<Map<string, string>>(new Map());
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const followingRef = useRef(true);
   // voice callbacks outlive the render that created them
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -136,9 +159,28 @@ export const AIAssistant = ({
     }
   }, [isOpen, hasOwnKey, setTrial]);
 
+  const scrollToEnd = (smooth = false) => {
+    const scroller = scrollerRef.current;
+    scroller?.scrollTo({
+      top: scroller.scrollHeight,
+      behavior: smooth ? "smooth" : "auto",
+    });
+  };
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messages]);
+    if (followingRef.current) {
+      scrollToEnd();
+    }
+  }, [messages, isBusy, isOpen]);
+
+  useEffect(() => {
+    if (!isRecording) {
+      return;
+    }
+    setElapsed(0);
+    const timer = setInterval(() => setElapsed((seconds) => seconds + 1), 1000);
+    return () => clearInterval(timer);
+  }, [isRecording]);
 
   useEffect(
     () => () => {
@@ -155,10 +197,11 @@ export const AIAssistant = ({
       return;
     }
     setInput("");
+    followingRef.current = true;
     const history = messagesRef.current
       .filter((message) => !message.error && message.text)
       .slice(-HISTORY_LIMIT);
-    setMessages((prev) => [...prev, { role: "user", text: prompt }]);
+    setMessages((prev) => [...prev, createMessage("user", prompt)]);
     setStatus("thinking");
     const controller = new AbortController();
     abortRef.current = controller;
@@ -179,7 +222,7 @@ export const AIAssistant = ({
         );
       }
       const {
-        text,
+        text: answer,
         calls,
         trial: nextTrial,
       } = await generate(
@@ -203,7 +246,7 @@ export const AIAssistant = ({
         setTrial(nextTrial);
       }
       const response = {
-        reply: text.trim() || (calls.length ? "Done." : "I'm not sure."),
+        reply: answer.trim() || (calls.length ? "Done." : "I'm not sure."),
         ops: calls.flatMap(functionCallToOps),
       };
       let note: string | undefined;
@@ -222,11 +265,11 @@ export const AIAssistant = ({
           console.error(applyError);
           setMessages((prev) => [
             ...prev,
-            {
-              role: "model",
-              text: "I couldn't apply that to the board. Try rephrasing, or ask for a smaller change.",
-              error: "network",
-            },
+            createMessage(
+              "model",
+              "I couldn't apply that to the board. Try rephrasing, or ask for a smaller change.",
+              { error: "network" },
+            ),
           ]);
           setStatus("error");
           return;
@@ -234,7 +277,7 @@ export const AIAssistant = ({
       }
       setMessages((prev) => [
         ...prev,
-        { role: "model", text: response.reply, note },
+        createMessage("model", response.reply, { note }),
       ]);
       setStatus("done");
     } catch (error: any) {
@@ -247,11 +290,37 @@ export const AIAssistant = ({
         error instanceof AIError ? error.code : "network";
       setMessages((prev) => [
         ...prev,
-        { role: "model", text: ERROR_TEXT[code], error: code },
+        createMessage("model", ERROR_TEXT[code], { error: code }),
       ]);
       setStatus("error");
     } finally {
       abortRef.current = null;
+    }
+  };
+
+  /** drop this message and everything after it, returning its text */
+  const rewindTo = (messageId: string) => {
+    const index = messagesRef.current.findIndex(
+      (message) => message.id === messageId,
+    );
+    if (index < 0) {
+      return "";
+    }
+    const text = messagesRef.current[index].text;
+    setMessages((prev) => prev.slice(0, index));
+    return text;
+  };
+
+  const retryFrom = (modelMessageId: string) => {
+    const index = messagesRef.current.findIndex(
+      (message) => message.id === modelMessageId,
+    );
+    const user = messagesRef.current
+      .slice(0, index)
+      .reverse()
+      .find((message) => message.role === "user");
+    if (user) {
+      send(rewindTo(user.id));
     }
   };
 
@@ -263,13 +332,17 @@ export const AIAssistant = ({
       return;
     }
     listeningRef.current = null;
+    setIsRecording(false);
     setStatus("thinking");
     try {
       const transcript = await session.stop();
       setStatus("idle");
       if (!transcript) {
+        setInput("");
+        setSpeechStatus("I didn't catch anything. Try again.");
         return;
       }
+      setSpeechStatus("");
       if (getAISettings().autoSend) {
         send(transcript);
       } else {
@@ -282,45 +355,43 @@ export const AIAssistant = ({
     }
   };
 
+  const cancelListening = () => {
+    listeningRef.current?.cancel();
+    listeningRef.current = null;
+    setIsRecording(false);
+    setInput("");
+    setSpeechStatus("");
+    setStatus("idle");
+  };
+
   const startVoice = async () => {
     if (listeningRef.current || isBusy || isLive) {
       return;
     }
     setSpeechStatus("");
+    setInput("");
     try {
       const session = await startListening({
         settings: getAISettings(),
         onPartial: setInput,
         onLevel: setLevel,
         onStatus: setSpeechStatus,
-        onEnd: finishListening,
+        onEngine: setSpeechEngine,
       });
       listeningRef.current = session;
       setSpeechEngine(session.engine);
+      setIsRecording(true);
       setStatus("listening");
     } catch (error: any) {
+      console.error(error);
       setStatus("error");
       setSpeechStatus(
         error?.name === "NotAllowedError"
           ? "Microphone access was blocked. Allow it in the address bar."
+          : error?.name === "NotFoundError"
+          ? "No microphone found."
           : "Couldn't start the microphone.",
       );
-    }
-  };
-
-  const onMicDown = () => {
-    pressStartRef.current = Date.now();
-    if (listeningRef.current) {
-      finishListening();
-      pressStartRef.current = 0;
-    } else {
-      startVoice();
-    }
-  };
-
-  const onMicUp = () => {
-    if (pressStartRef.current && Date.now() - pressStartRef.current > HOLD_MS) {
-      finishListening();
     }
   };
 
@@ -338,22 +409,32 @@ export const AIAssistant = ({
     }
     listeningRef.current?.cancel();
     listeningRef.current = null;
-    setIsLive(true);
+    setIsRecording(false);
+    setLiveState("connecting");
+    setSpeechStatus("");
     const context = await buildCanvasContext(excalidrawAPI);
     liveAliasesRef.current = context.aliases;
-    let lastRole: Message["role"] | null = null;
+    // a model turn that has already been shown, so transcript text keeps joining it
+    let lastRole: "user" | "model" | null = null;
     try {
       liveRef.current = await startLiveSession({
         apiKey,
-        systemPrompt: `${CANVAS_SYSTEM_PROMPT}\n\nYou are in a live voice conversation. Speak briefly and naturally. Edit the board by calling the functions instead of describing changes aloud.\n\nThe board when the conversation started:\n${context.text}`,
+        systemPrompt: `${CANVAS_SYSTEM_PROMPT}\n\nYou are in a live voice conversation. Speak briefly and naturally. Edit the board by calling the functions instead of describing changes aloud. To use ready-made art that isn't in the user's library, call find_library_art first, then insert_library_item with the library and item name (and replace to swap an existing shape for it).\n\nThe board when the conversation started:\n${context.text}`,
         onState: (state) => {
           if (state === "closed") {
             liveRef.current = null;
-            setIsLive(false);
+            setLiveState(null);
             setStatus("idle");
-          } else {
-            setStatus(state === "connecting" ? "thinking" : "listening");
+            return;
           }
+          setLiveState(state);
+          setStatus(
+            state === "connecting"
+              ? "thinking"
+              : state === "working"
+              ? "drawing"
+              : "listening",
+          );
         },
         onLevel: setLevel,
         onTranscript: (role, text) => {
@@ -366,14 +447,28 @@ export const AIAssistant = ({
               ];
             }
             lastRole = role;
-            return [...prev, { role, text: text.trimStart() }];
+            return [...prev, createMessage(role, text.trimStart())];
           });
         },
         onToolCalls: async (calls) => {
-          if (calls.some((call) => call.name === "read_canvas")) {
+          const wantsCanvas = calls.some((call) => call.name === "read_canvas");
+          if (wantsCanvas) {
             const fresh = await buildCanvasContext(excalidrawAPI);
             liveAliasesRef.current = fresh.aliases;
           }
+          const libraryAnswers = new Map<number, string>();
+          await Promise.all(
+            calls.map(async (call, index) => {
+              if (call.name === "find_library_art") {
+                libraryAnswers.set(
+                  index,
+                  (await searchOnlineLibraries(
+                    String(call.args.query ?? ""),
+                  )) || "No matching online library found.",
+                );
+              }
+            }),
+          );
           const ops = calls.flatMap(functionCallToOps);
           const result = ops.length
             ? await applyCanvasOps(excalidrawAPI, ops, liveAliasesRef.current)
@@ -382,30 +477,31 @@ export const AIAssistant = ({
             lastRole = null;
             setMessages((prev) => [
               ...prev,
-              {
-                role: "model",
-                text: "",
+              createMessage("model", "", {
                 note: `${
                   describeResult(result) || "no changes"
                 } · Ctrl+Z to undo`,
-              },
+              }),
             ]);
           }
           const canvas =
-            calls.some((call) => call.name === "read_canvas") &&
-            (await buildCanvasContext(excalidrawAPI)).text;
-          return calls.map((call) =>
-            call.name === "read_canvas" ? { canvas } : { ok: true },
+            wantsCanvas && (await buildCanvasContext(excalidrawAPI)).text;
+          return calls.map((call, index) =>
+            call.name === "read_canvas"
+              ? { canvas }
+              : libraryAnswers.has(index)
+              ? { libraries: libraryAnswers.get(index) }
+              : { ok: true },
           );
         },
         onError: (message) =>
           setMessages((prev) => [
             ...prev,
-            { role: "model", text: message, error: "network" },
+            createMessage("model", message, { error: "network" }),
           ]),
       });
     } catch (error: any) {
-      setIsLive(false);
+      setLiveState(null);
       setStatus("error");
       setSpeechStatus(
         error?.name === "NotAllowedError"
@@ -429,6 +525,19 @@ export const AIAssistant = ({
       ? `${trial.remaining}/${trial.limit} free today`
       : "Gemini";
 
+  const lastModelIndex = messages.reduce(
+    (found, message, index) => (message.role === "model" ? index : found),
+    -1,
+  );
+  const hasText = input.trim().length > 0;
+  const actionMode = isRecording
+    ? "record-stop"
+    : isBusy
+    ? "stop"
+    : hasText
+    ? "send"
+    : "mic";
+
   return (
     <div
       className="ai-assistant"
@@ -437,7 +546,11 @@ export const AIAssistant = ({
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation();
-          setIsOpen(false);
+          if (isRecording) {
+            cancelListening();
+          } else {
+            setIsOpen(false);
+          }
         }
       }}
     >
@@ -451,13 +564,20 @@ export const AIAssistant = ({
           <button
             type="button"
             className="ai-assistant__icon-button"
-            title="New conversation"
-            aria-label="New conversation"
-            onClick={() => setMessages([])}
+            title="New chat"
+            aria-label="New chat"
+            onClick={newChat}
           >
-            {TrashIcon}
+            {PlusIcon}
           </button>
         )}
+        <AIHistoryMenu
+          chats={chats}
+          activeId={activeId}
+          onNew={newChat}
+          onOpen={openChat}
+          onDelete={deleteChat}
+        />
         <button
           type="button"
           className="ai-assistant__icon-button"
@@ -478,79 +598,108 @@ export const AIAssistant = ({
         </button>
       </header>
 
-      <div className="ai-assistant__messages">
-        {messages.length === 0 ? (
-          <div className="ai-assistant__empty">
-            <p>
-              Ask about the board or tell it what to draw. Select things first
-              to work on just those.
-            </p>
-            {SUGGESTIONS.map((suggestion) => (
+      <div className="ai-assistant__conversation">
+        <div
+          className="ai-assistant__messages"
+          ref={scrollerRef}
+          onScroll={(event) => {
+            const element = event.currentTarget;
+            const following =
+              element.scrollHeight - element.scrollTop - element.clientHeight <
+              FOLLOW_PX;
+            followingRef.current = following;
+            setIsFollowing(following);
+          }}
+        >
+          {messages.length === 0 ? (
+            <div className="ai-assistant__empty">
+              <p>
+                Ask about the board or tell it what to draw. Select things first
+                to work on just those.
+              </p>
+              {SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  className="ai-assistant__chip"
+                  onClick={() => send(suggestion)}
+                >
+                  {suggestion}
+                </button>
+              ))}
               <button
-                key={suggestion}
                 type="button"
                 className="ai-assistant__chip"
-                onClick={() => send(suggestion)}
+                onClick={() =>
+                  excalidrawAPI.updateScene({
+                    appState: {
+                      openDialog: { name: "ttd", tab: "text-to-diagram" },
+                    },
+                  })
+                }
               >
-                {suggestion}
+                {mermaidLogoIcon} Diagram chat with preview
               </button>
-            ))}
-            <button
-              type="button"
-              className="ai-assistant__chip"
-              onClick={() =>
-                excalidrawAPI.updateScene({
-                  appState: {
-                    openDialog: { name: "ttd", tab: "text-to-diagram" },
-                  },
-                })
-              }
-            >
-              {mermaidLogoIcon} Diagram chat with preview
-            </button>
-          </div>
-        ) : (
-          messages.map((message, index) => (
-            <div
-              key={index}
-              className={clsx(
-                "ai-assistant__message",
-                `ai-assistant__message--${message.role}`,
-                { "ai-assistant__message--error": message.error },
-              )}
-            >
-              {message.text && <p>{message.text}</p>}
-              {message.note && (
-                <span className="ai-assistant__note">{message.note}</span>
-              )}
-              {message.error && KEY_ERRORS.includes(message.error) && (
-                <button
-                  type="button"
-                  className="ai-assistant__link"
-                  onClick={() => openKeyDialog(true)}
-                >
-                  {message.error === "quota_exceeded" ||
-                  message.error === "invalid_key"
-                    ? "Open AI settings"
-                    : "Add your own free key"}
-                </button>
-              )}
             </div>
-          ))
+          ) : (
+            messages.map((message, index) => (
+              <AIChatMessage
+                key={message.id}
+                message={message}
+                isLast={index === messages.length - 1}
+                offerKey={
+                  message.error && KEY_ERRORS.includes(message.error)
+                    ? message.error === "quota_exceeded" ||
+                      message.error === "invalid_key"
+                      ? "Open AI settings"
+                      : "Add your own free key"
+                    : null
+                }
+                onOfferKey={() => openKeyDialog(true)}
+                onEdit={
+                  message.role === "user" && !isBusy && !isLive
+                    ? () => setInput(rewindTo(message.id))
+                    : undefined
+                }
+                onRetry={
+                  index === lastModelIndex &&
+                  !message.note &&
+                  !isBusy &&
+                  !isLive
+                    ? () => retryFrom(message.id)
+                    : undefined
+                }
+              />
+            ))
+          )}
+          {isBusy && (
+            <div className="ai-assistant__message ai-assistant__message--model ai-assistant__typing">
+              <span />
+              <span />
+              <span />
+            </div>
+          )}
+        </div>
+        {!isFollowing && messages.length > 0 && (
+          <button
+            type="button"
+            className="ai-assistant__scroll-down"
+            title="Scroll to latest"
+            aria-label="Scroll to latest"
+            onClick={() => {
+              followingRef.current = true;
+              setIsFollowing(true);
+              scrollToEnd(true);
+            }}
+          >
+            {chevronDownIcon}
+          </button>
         )}
-        {isBusy && (
-          <div className="ai-assistant__message ai-assistant__message--model ai-assistant__typing">
-            <span />
-            <span />
-            <span />
-          </div>
-        )}
-        <div ref={messagesEndRef} />
       </div>
 
-      {(speechStatus || speechEngine) && (
-        <div className="ai-assistant__speech">
-          {speechEngine && (
+      {(speechStatus || speechEngine) && (isRecording || speechStatus) && (
+        <div className="ai-assistant__speech" role="status">
+          {speechEngine && isRecording && (
             <span
               className={clsx("ai-assistant__badge", {
                 "ai-assistant__badge--cloud": !isOnDevice(speechEngine),
@@ -569,28 +718,55 @@ export const AIAssistant = ({
       )}
 
       <form
-        className="ai-assistant__input"
+        className={clsx("ai-assistant__composer", {
+          "ai-assistant__composer--recording": isRecording,
+          "ai-assistant__composer--live": isLive,
+        })}
         onSubmit={(event) => {
           event.preventDefault();
-          send(input);
+          if (hasText && !isRecording) {
+            send(input);
+          }
         }}
       >
-        <textarea
-          value={input}
-          rows={2}
-          placeholder={
-            status === "listening" ? "Listening…" : "Ask or describe a change…"
-          }
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              send(input);
+        {isLive ? (
+          <div className="ai-assistant__live-panel" role="status">
+            <AIVoiceVisualizer
+              active={liveState !== "connecting"}
+              bars={24}
+              height={40}
+              source={liveState === "speaking" ? "model" : "you"}
+            />
+            <span className="ai-assistant__live-label">
+              {LIVE_LABELS[liveState]}
+            </span>
+          </div>
+        ) : (
+          <textarea
+            value={input}
+            rows={2}
+            readOnly={isRecording}
+            aria-label="Message"
+            placeholder={
+              isRecording
+                ? speechEngine === "whisper"
+                  ? "Listening… your words appear when you stop"
+                  : "Listening…"
+                : "Ask or describe a change…"
             }
-          }}
-          // eslint-disable-next-line jsx-a11y/no-autofocus
-          autoFocus
-        />
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (!isRecording) {
+                  send(input);
+                }
+              }
+            }}
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+          />
+        )}
         <div className="ai-assistant__actions">
           <button
             type="button"
@@ -602,43 +778,62 @@ export const AIAssistant = ({
                 ? "Live voice conversation with Gemini"
                 : "Live voice needs your own free Gemini key"
             }
+            disabled={isRecording}
             onClick={toggleLive}
           >
             {isLive ? "End live" : "Live"}
           </button>
-          <button
-            type="button"
-            className={clsx("ai-assistant__icon-button", {
-              "ai-assistant__icon-button--active": status === "listening",
-            })}
-            title="Click to talk, or hold and release"
-            aria-label="Voice input"
-            aria-pressed={status === "listening"}
-            disabled={isLive}
-            onPointerDown={onMicDown}
-            onPointerUp={onMicUp}
-          >
-            {microphoneIcon}
-          </button>
-          {isBusy ? (
+          <span className="ai-assistant__spacer" />
+          {isRecording && (
+            <>
+              <span className="ai-assistant__timer" aria-hidden="true">
+                {formatTime(elapsed)}
+              </span>
+              <AIVoiceVisualizer active={isRecording} bars={5} height={24} />
+            </>
+          )}
+          {!isLive && (
             <button
-              type="button"
-              className="ai-assistant__icon-button"
-              title="Stop"
-              aria-label="Stop"
-              onClick={() => abortRef.current?.abort()}
+              type={actionMode === "send" ? "submit" : "button"}
+              className={clsx("ai-assistant__action", {
+                "ai-assistant__action--recording": isRecording,
+              })}
+              data-mode={actionMode}
+              title={
+                {
+                  mic: "Speak your request",
+                  send: "Send",
+                  stop: "Stop",
+                  "record-stop": "Stop recording",
+                }[actionMode]
+              }
+              aria-label={
+                {
+                  mic: "Use voice input",
+                  send: "Send message",
+                  stop: "Stop generating",
+                  "record-stop": "Stop recording",
+                }[actionMode]
+              }
+              onClick={
+                actionMode === "mic"
+                  ? startVoice
+                  : actionMode === "record-stop"
+                  ? finishListening
+                  : actionMode === "stop"
+                  ? () => abortRef.current?.abort()
+                  : undefined
+              }
             >
-              {CloseIcon}
-            </button>
-          ) : (
-            <button
-              type="submit"
-              className="ai-assistant__icon-button ai-assistant__send"
-              title="Send"
-              aria-label="Send"
-              disabled={!input.trim()}
-            >
-              {ArrowRightIcon}
+              <span className="ai-assistant__action-icon" data-icon="mic">
+                {microphoneIcon}
+              </span>
+              <span className="ai-assistant__action-icon" data-icon="send">
+                {ArrowRightIcon}
+              </span>
+              <span className="ai-assistant__action-icon" data-icon="stop">
+                {playerStopFilledIcon}
+              </span>
             </button>
           )}
         </div>

@@ -24,7 +24,8 @@ const load = () => {
           self.postMessage({
             type: "progress",
             file: event.file,
-            progress: percent,
+            loaded: event.loaded,
+            total: event.total,
           });
         }
       },

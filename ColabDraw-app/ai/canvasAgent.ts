@@ -180,6 +180,8 @@ export type CanvasOp = {
   /** also draw an arrow from the `near` element to this new one */
   /** online library (libraries.excalidraw.com) the item comes from */
   library?: string;
+  /** existing element this library item takes the place of */
+  replace?: string;
   link?: boolean;
   linkLabel?: string;
   linkArrowhead?: ArrowheadName;
@@ -445,6 +447,9 @@ export const CANVAS_FUNCTIONS = [
           "Name of an online library from CANVAS (not installed yet); omit for the user's own library",
         ),
         id: S("Your new id for it (n1, n2...)"),
+        replace: S(
+          "Id of an existing shape this item replaces: it is drawn in that shape's place at a matching size, the shape is removed, and its arrows and label move to the item",
+        ),
         ...PLACEMENT,
         ...LINK,
         size: SIZE.size,
@@ -506,7 +511,7 @@ HOW TO ANSWER:
 MAKING GOOD, DISTINCT DIAGRAMS:
 - Use the vocabulary: rectangle = component, ellipse = start/end or actor, diamond = decision, sticky = note/annotation, text = title/label, frames = titled sections, groups = things that belong together.
 - Color with meaning (green success/done, red error/danger, blue services, yellow notes/warnings, violet data, orange external), not decoration; keep to 3-4 colors. Use fill patterns, thickness, font and size to show hierarchy: a large "display" or "hand-drawn" title, bold outlines for the main path, dashed lines for optional or async flows, a different arrowhead for a different relation (diamond for composition, cardinality heads for database (ER) relations, circle for events).
-- Add a title and a short legend or sticky-note annotation when it helps. Wrap sections in frames. Use library items when one fits (icons, symbols). If CANVAS lists Online libraries that fit what the user asked for, call insert_library_item with library set to that library's name and name set to one of its items; it is saved to their library automatically.
+- Add a title and a short legend or sticky-note annotation when it helps. Wrap sections in frames. Use library items when one fits (icons, symbols). If CANVAS lists Online libraries that fit what the user asked for, call insert_library_item with library set to that library's name and name set to one of its items; it is saved to their library automatically. The user can ask you to swap shapes for icons ("use icons instead of boxes"): call insert_library_item once per shape with replace set to that shape's id; the icon takes its place, keeps its arrows and its text. Do that instead of saying you can't.
 - Omit style options to match the user's current style; only override when asked or when it carries meaning.
 - Keep labels short. Only touch what the user asked about. If the request is ambiguous, make a sensible choice.`;
 
@@ -698,7 +703,12 @@ export const buildCanvasContext = async (
 
   const hiddenCount = selected.length ? 0 : elements.length - visible.length;
   const library = await loadLibrary();
-  const online = userText ? await onlineLibraryContext(userText) : "";
+  const online = userText
+    ? await onlineLibraryContext(
+        userText,
+        described.map((element) => labelOf(element, elementsMap)).join(" "),
+      )
+    : "";
   const sloppiness = keyOf(SLOPPINESS, appState.currentItemRoughness);
 
   const text = [
@@ -1706,8 +1716,34 @@ export const applyCanvasOps = async (
           randomizeSeed: true,
         });
         const [x1, y1, x2, y2] = getCommonBounds(duplicatedElements);
-        const k = SIZES[op.size ?? "medium"];
-        const box = place({ w: (x2 - x1) * k, h: (y2 - y1) * k }, op);
+        const target = op.replace ? existing(op.replace) : null;
+        const itemSize = Math.max(x2 - x1, y2 - y1, 1);
+        // replacing a shape: match its size unless a size was asked for
+        const k =
+          target && !op.size
+            ? Math.min(
+                2.5,
+                Math.max(
+                  0.3,
+                  Math.max(90, Math.max(target.width, target.height) * 0.8) /
+                    itemSize,
+                ),
+              )
+            : SIZES[op.size ?? "medium"];
+        const itemBox = { w: (x2 - x1) * k, h: (y2 - y1) * k };
+        let box: Box;
+        if (target) {
+          box = {
+            x: target.x + target.width / 2 - itemBox.w / 2,
+            y: target.y + target.height / 2 - itemBox.h / 2,
+            ...itemBox,
+          };
+          occupied = occupied.filter((entry) => entry.id !== target.id);
+          occupied.push(box);
+          lastPlaced = box;
+        } else {
+          box = place(itemBox, op);
+        }
         const placed: ExcalidrawElement[] = [];
         for (const element of duplicatedElements) {
           placed.push({
@@ -1734,6 +1770,73 @@ export const applyCanvasOps = async (
         registerInserted(alias, placed);
         linkToNear(op, alias);
         result.added++;
+        if (target && op.replace) {
+          const mainId = ids.get(alias)!;
+          const oldLabel = boundTextOf(target)?.originalText;
+          toDelete.push(...withLabel([target]));
+          result.deleted++;
+          // later calls that name the old shape now mean the icon
+          ids.set(op.replace, mainId);
+          ids.set(`@${target.id}`, mainId);
+          for (const arrow of scene.getNonDeletedElements()) {
+            if (
+              !isArrowElement(arrow) ||
+              toDelete.includes(arrow) ||
+              (arrow.startBinding?.elementId !== target.id &&
+                arrow.endBinding?.elementId !== target.id)
+            ) {
+              continue;
+            }
+            const startsHere = arrow.startBinding?.elementId === target.id;
+            const otherId = startsHere
+              ? arrow.endBinding?.elementId
+              : arrow.startBinding?.elementId;
+            if (!otherId || otherId === target.id) {
+              continue;
+            }
+            if (!ids.has(`@${otherId}`)) {
+              ids.set(`@${otherId}`, otherId);
+            }
+            toDelete.push(...withLabel([arrow]));
+            connect(
+              {
+                op: "connect",
+                from: startsHere ? alias : `@${otherId}`,
+                to: startsHere ? `@${otherId}` : alias,
+                label: boundTextOf(arrow)?.originalText,
+                arrowType: arrow.elbowed
+                  ? "elbow"
+                  : arrow.roundness
+                  ? "curved"
+                  : "sharp",
+                startArrowhead: arrow.startArrowhead ?? "none",
+                endArrowhead: arrow.endArrowhead ?? "none",
+              },
+              {
+                strokeColor: arrow.strokeColor,
+                strokeWidth: arrow.strokeWidth,
+                strokeStyle: arrow.strokeStyle,
+                roughness: arrow.roughness,
+                opacity: arrow.opacity,
+              },
+            );
+          }
+          // keep the old shape's name under the icon
+          if (oldLabel) {
+            const font = fontFor(op);
+            skeletons.push({
+              type: "text",
+              id: randomId(),
+              x:
+                box.x +
+                box.w / 2 -
+                (oldLabel.length * font.fontSize * 0.55) / 2,
+              y: box.y + box.h + 6,
+              text: oldLabel,
+              ...font,
+            } as ExcalidrawElementSkeleton);
+          }
+        }
         break;
       }
       case "mermaid": {
