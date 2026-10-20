@@ -119,7 +119,7 @@ const tokenize = (text: string) =>
 
 // only search when the user is asking for ready-made art, so ordinary requests cost nothing
 const ART_WORDS =
-  /\b(librar(y|ies)|icons?|symbols?|stencils?|logos?|clip ?art|illustrations?|stickers?|pictograms?|emoji|sprites?)\b/i;
+  /librar(y|ies)|excalidraw\.com|\b(icons?|symbols?|stencils?|logos?|clip ?art|illustrations?|stickers?|pictograms?|emoji|sprites?)\b/i;
 
 const ART_TOKENS = new Set([
   "library",
@@ -138,6 +138,31 @@ const ART_TOKENS = new Set([
   "sprite",
   "installed",
   "online",
+  "shape",
+  "diagram",
+  "replace",
+  "above",
+  "below",
+  "find",
+  "instead",
+  "pick",
+  "search",
+  "already",
+  "there",
+  "here",
+  "those",
+  "them",
+  "then",
+  "okay",
+  "non",
+  "like",
+  "also",
+  "recently",
+  "imported",
+  "made",
+  "newly",
+  "added",
+  "previous",
   "use",
   "using",
 ]);
@@ -205,26 +230,42 @@ const MAX_NAMES = 14;
  * Online libraries that fit what the user asked for, as a short CANVAS section.
  * Empty (and free) unless the request is about ready-made art or names a library.
  */
-export const onlineLibraryContext = async (userText: string) => {
-  if (!ART_WORDS.test(userText)) {
-    return "";
-  }
+export const onlineLibraryContext = async (userText: string, boardText = "") =>
+  ART_WORDS.test(userText) ? searchOnlineLibraries(userText, boardText) : "";
+
+/** online libraries matching a free-text query, as a short block for the model */
+export const searchOnlineLibraries = async (
+  userText: string,
+  /** text already on the board (shape names), so "icons for these" finds fitting art */
+  boardText = "",
+) => {
   // the subject ("aws", "stick figure"), not the words that just say "icons"
-  const words = [
-    ...new Set(tokenize(userText).filter((word) => !ART_TOKENS.has(word))),
+  const subject = (text: string) => [
+    ...new Set(tokenize(text).filter((word) => !ART_TOKENS.has(word))),
   ];
+  const askedWords = subject(userText);
+  const boardWords = subject(boardText).filter(
+    (word) => !askedWords.includes(word),
+  );
+  const words = [...askedWords, ...boardWords];
   if (!words.length) {
     return "";
   }
+  // what the user typed counts double what is merely on the board
+  const weight = (word: string) => (askedWords.includes(word) ? 2 : 1);
   const index = await loadOnlineIndex();
   const matches = index
     .map((library) => {
       const nameWords = tokenize(library.name);
-      const nameScore = nameWords.filter((word) => words.includes(word)).length;
+      const nameScore = nameWords
+        .filter((word) => words.includes(word))
+        .reduce((sum, word) => sum + weight(word), 0);
       const rest = tokenize(
         `${library.description} ${(library.itemNames ?? []).join(" ")}`,
       );
-      const restScore = words.filter((word) => rest.includes(word)).length;
+      const restScore = words
+        .filter((word) => rest.includes(word))
+        .reduce((sum, word) => sum + weight(word), 0);
       return { library, nameScore, restScore };
     })
     .filter(({ nameScore, restScore }) => nameScore + restScore > 0)

@@ -1,4 +1,5 @@
 import { CANVAS_FUNCTIONS } from "./canvasAgent";
+import { startBandMeter } from "./voiceMeter";
 
 import type { FunctionCall } from "./aiClient";
 
@@ -18,6 +19,21 @@ const TOOLS = [
         name: "read_canvas",
         description:
           "Returns the board as it is now (selection or what's on screen). Call it before editing if the user may have changed the board.",
+      },
+      {
+        name: "find_library_art",
+        description:
+          "Searches the public Excalidraw libraries (libraries.excalidraw.com) for ready-made art such as icons or symbols that are not installed yet. Returns library names and item names to use with insert_library_item.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            query: {
+              type: "STRING",
+              description: "What to look for, e.g. aws icons, stick figures",
+            },
+          },
+          required: ["query"],
+        },
       },
       ...CANVAS_FUNCTIONS,
     ],
@@ -68,7 +84,12 @@ const fromBase64PCM = (data: string) => {
   return samples;
 };
 
-export type LiveState = "connecting" | "listening" | "speaking" | "closed";
+export type LiveState =
+  | "connecting"
+  | "listening"
+  | "speaking"
+  | "working"
+  | "closed";
 
 export type LiveSession = { stop: () => void };
 
@@ -101,16 +122,30 @@ export const startLiveSession = async ({
   });
   const input = new AudioContext({ sampleRate: INPUT_RATE });
   const output = new AudioContext({ sampleRate: OUTPUT_RATE });
+  input.resume().catch(() => {});
+  output.resume().catch(() => {});
   const socket = new WebSocket(`${LIVE_URL}?key=${encodeURIComponent(apiKey)}`);
   const playing = new Set<AudioBufferSourceNode>();
   let playhead = 0;
   let closed = false;
+
+  // frequency bands for the visualizer: what you say, then what the model says
+  const micAnalyser = input.createAnalyser();
+  micAnalyser.fftSize = 512;
+  const outAnalyser = output.createAnalyser();
+  outAnalyser.fftSize = 512;
+  outAnalyser.connect(output.destination);
+  const stopMeters = [
+    startBandMeter(micAnalyser, undefined, () => !playing.size),
+    startBandMeter(outAnalyser, undefined, () => playing.size > 0),
+  ];
 
   const stop = () => {
     if (closed) {
       return;
     }
     closed = true;
+    stopMeters.forEach((stopMeter) => stopMeter());
     stream.getTracks().forEach((track) => track.stop());
     input.close();
     output.close();
@@ -132,7 +167,13 @@ export const startLiveSession = async ({
     await input.audioWorklet.addModule(url);
     URL.revokeObjectURL(url);
     const node = new AudioWorkletNode(input, "capture");
-    input.createMediaStreamSource(stream).connect(node);
+    const micSource = input.createMediaStreamSource(stream);
+    micSource.connect(node);
+    micSource.connect(micAnalyser);
+    // some browsers only feed an analyser that reaches the output; silent
+    const silent = input.createGain();
+    silent.gain.value = 0;
+    micAnalyser.connect(silent).connect(input.destination);
     let pending: number[] = [];
     node.port.onmessage = ({ data }: MessageEvent<Float32Array>) => {
       pending.push(...data);
@@ -161,7 +202,7 @@ export const startLiveSession = async ({
     buffer.copyToChannel(samples, 0);
     const source = output.createBufferSource();
     source.buffer = buffer;
-    source.connect(output.destination);
+    source.connect(outAnalyser);
     playhead = Math.max(playhead, output.currentTime);
     source.start(playhead);
     playhead += buffer.duration;
@@ -209,11 +250,13 @@ export const startLiveSession = async ({
         message.toolCall.functionCalls ?? []
       ).map((call: any) => ({ ...call, args: call.args ?? {} }));
       let responses: object[];
+      onState("working");
       try {
         responses = await onToolCalls(calls);
       } catch (error: any) {
         responses = calls.map(() => ({ error: String(error?.message) }));
       }
+      onState("listening");
       send({
         toolResponse: {
           functionResponses: calls.map((call, index) => ({
