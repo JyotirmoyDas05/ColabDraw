@@ -231,12 +231,12 @@ $spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
       transition: opacity 0.15s ease;
     }
 
-    &__turn--last &__message-actions {
+    &__turn--last .ai-assistant__message-actions {
       opacity: 0.6;
     }
 
-    &__turn:hover &__message-actions,
-    &__turn:focus-within &__message-actions {
+    &__turn:hover .ai-assistant__message-actions,
+    &__turn:focus-within .ai-assistant__message-actions {
       opacity: 1;
     }
 
@@ -301,180 +301,6 @@ $spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
         background-color: var(--color-warning-background, #fff9db);
         color: var(--color-warning-text, #e67700);
       }
-    }
-
-    // ---- composer ----------------------------------------------------------
-
-    &__composer {
-      display: flex;
-      flex-direction: column;
-      margin: 0.5rem;
-      border: 1px solid var(--default-border-color);
-      border-radius: 1.25rem;
-      background-color: var(--island-bg-color);
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
-
-      &:focus-within,
-      &--recording,
-      &--live {
-        border-color: var(--color-primary);
-        box-shadow: 0 0 0 1px var(--color-primary-light);
-      }
-
-      textarea {
-        width: 100%;
-        box-sizing: border-box;
-        min-height: 3.5rem;
-        max-height: 9rem;
-        padding: 0.75rem 1rem 0.25rem;
-        border: none;
-        background: none;
-        color: inherit;
-        font: inherit;
-        line-height: 1.4;
-        resize: none;
-        outline: none;
-
-        &:read-only {
-          color: var(--color-gray-60);
-        }
-      }
-    }
-
-    &__actions {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.375rem 0.5rem 0.5rem 0.75rem;
-    }
-
-    &__spacer {
-      flex: 1;
-    }
-
-    &__timer {
-      color: var(--color-gray-60);
-      font-size: 0.75rem;
-      font-variant-numeric: tabular-nums;
-    }
-
-    &__live {
-      padding: 0.25rem 0.75rem;
-      border: 1px solid var(--default-border-color);
-      border-radius: 1rem;
-      background: none;
-      color: inherit;
-      font: inherit;
-      font-size: 0.75rem;
-      font-weight: 600;
-      cursor: pointer;
-
-      &:hover:not(:disabled) {
-        border-color: var(--color-primary);
-      }
-
-      &:disabled {
-        opacity: 0.4;
-        cursor: default;
-      }
-
-      &--on {
-        border-color: var(--color-danger);
-        color: var(--color-danger);
-      }
-    }
-
-    // one round button that turns into mic, send or stop
-    &__action {
-      position: relative;
-      flex: none;
-      width: 2rem;
-      height: 2rem;
-      padding: 0;
-      border: none;
-      border-radius: 50%;
-      background-color: var(--color-primary);
-      color: var(--color-surface-lowest, #fff);
-      cursor: pointer;
-      transition: background-color 0.2s ease, transform 0.2s ease;
-
-      &:hover {
-        background-color: var(--color-primary-darker);
-      }
-
-      &:active {
-        transform: scale(0.94);
-      }
-
-      &:focus-visible {
-        outline: 2px solid var(--color-primary);
-        outline-offset: 2px;
-      }
-
-      &[data-mode="mic"] {
-        background-color: transparent;
-        color: inherit;
-
-        &:hover {
-          background-color: var(--button-hover-bg);
-        }
-      }
-
-      &--recording {
-        animation: ai-assistant-pulse 1.2s ease-in-out infinite;
-      }
-    }
-
-    &__action-icon {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
-      filter: blur(1px);
-      transform: scale(0.5) rotate(45deg);
-      transition: opacity 0.3s #{$spring}, transform 0.3s #{$spring},
-        filter 0.3s ease;
-      pointer-events: none;
-
-      svg {
-        width: 1.125rem;
-        height: 1.125rem;
-      }
-
-      &[data-icon="send"] svg {
-        // the arrow icon points right; the send button points up
-        transform: rotate(-90deg);
-      }
-    }
-
-    &__action[data-mode="mic"] &__action-icon[data-icon="mic"],
-    &__action[data-mode="send"] &__action-icon[data-icon="send"],
-    &__action[data-mode="stop"] &__action-icon[data-icon="stop"],
-    &__action[data-mode="record-stop"] &__action-icon[data-icon="stop"] {
-      opacity: 1;
-      filter: none;
-      transform: none;
-    }
-
-    &__live-panel {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      min-height: 6rem;
-      padding: 0.75rem;
-
-      .ai-visualizer {
-        justify-content: center;
-      }
-    }
-
-    &__live-label {
-      color: var(--color-gray-60);
-      font-size: 0.8125rem;
     }
   }
 
@@ -573,12 +399,6 @@ $spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
   }
 
-  @keyframes ai-assistant-pulse {
-    50% {
-      box-shadow: 0 0 0 0.3rem var(--color-primary-light);
-    }
-  }
-
   @keyframes ai-assistant-pop {
     from {
       opacity: 0;
@@ -594,14 +414,42 @@ $spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .ai-assistant__action--recording,
     .ai-assistant__typing span,
     .ai-assistant__scroll-down {
       animation: none;
     }
+  }
+}
 
-    .ai-assistant__action-icon {
-      transition: none;
+.excalidraw {
+  // pictures sent with a message
+  .ai-assistant__images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-bottom: 0.375rem;
+  }
+
+  .ai-assistant__image {
+    width: 3.5rem;
+    height: 3.5rem;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-radius: 0.625rem;
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+    cursor: pointer;
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+    &:hover {
+      transform: scale(1.05);
+    }
+
+    img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
     }
   }
 }

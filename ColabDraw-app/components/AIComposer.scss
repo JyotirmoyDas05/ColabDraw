@@ -1,0 +1,547 @@
+$spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+$text: var(--text-primary-color);
+$card: var(--island-bg-color);
+$muted: color-mix(in srgb, #{$text} 50%, transparent);
+
+.excalidraw {
+  .ai-composer {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    margin: 0 0.5rem 0.5rem;
+    // bars take the text color, like the white-on-dark original
+    --ai-visualizer-color: #{$text};
+  }
+
+  .ai-composer__file {
+    display: none;
+  }
+
+  // ---- picture tray (slides up from behind the card) -----------------------
+
+  .ai-composer__tray {
+    position: relative;
+    z-index: 0;
+    overflow: hidden;
+    transition: height 0.4s $spring;
+  }
+
+  .ai-composer__tray-inner {
+    position: absolute;
+    right: 1.25rem;
+    bottom: -8px;
+    left: 1.25rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    height: 68px;
+    box-sizing: border-box;
+    padding: 0.5rem 0.5rem 0.25rem;
+    overflow-x: auto;
+    border: 1px solid var(--default-border-color);
+    border-bottom: 0;
+    border-radius: 1rem 1rem 0 0;
+    background-color: var(--color-surface-low, var(--button-gray-1));
+    transition: transform 0.4s $spring, opacity 0.3s ease-out;
+  }
+
+  .ai-composer__thumb {
+    position: relative;
+    flex: none;
+    width: 48px;
+    height: 48px;
+    overflow: hidden;
+    border: 1px solid var(--default-border-color);
+    border-radius: 12px;
+    transition: transform 0.2s $spring;
+
+    &:hover {
+      transform: scale(1.04);
+    }
+  }
+
+  .ai-composer__thumb-open {
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+
+  .ai-composer__thumb-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background-color: color-mix(in srgb, #{$card} 90%, transparent);
+    color: $muted;
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 0.2s ease, transform 0.2s $spring;
+  }
+
+  .ai-composer__thumb:hover .ai-composer__thumb-remove,
+  .ai-composer__thumb-remove:focus-visible {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  // ---- the card -----------------------------------------------------------
+
+  .ai-composer__card {
+    position: relative;
+    z-index: 1;
+    box-sizing: border-box;
+    overflow: hidden;
+    border: 1px solid var(--default-border-color);
+    border-radius: 24px;
+    background-color: $card;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+    cursor: default;
+    transition: height 0.4s $spring, border-color 0.2s ease,
+      box-shadow 0.2s ease;
+
+    &:hover {
+      border-color: color-mix(in srgb, #{$text} 22%, transparent);
+    }
+
+    &:focus-within {
+      border-color: color-mix(in srgb, #{$text} 38%, transparent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, #{$text} 12%, transparent);
+    }
+  }
+
+  .ai-composer__card--open {
+    overflow: visible;
+    cursor: text;
+  }
+
+  .ai-composer__card--live {
+    cursor: default;
+  }
+
+  // the whiteboard styles every textarea (border, padding, nowrap); undo that here
+  .ai-composer textarea.ai-composer__text {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 1;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 14px 48px 14px 16px;
+    overflow-y: hidden;
+    border: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    white-space: pre-wrap;
+    color: inherit;
+    font: inherit;
+    font-size: 0.875rem;
+    line-height: 22px;
+    outline: none;
+    resize: none;
+    cursor: text;
+    opacity: 0;
+    transform: translateY(-4px) scale(0.95);
+    pointer-events: none;
+    transition: opacity 0.3s ease-out, transform 0.3s ease-out,
+      height 0.4s $spring;
+
+    &::placeholder {
+      color: $muted;
+      font-weight: 500;
+    }
+
+    &:disabled {
+      color: inherit;
+      -webkit-text-fill-color: currentColor;
+      pointer-events: none;
+    }
+  }
+
+  .ai-composer .ai-composer__card--open textarea.ai-composer__text {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  .ai-composer textarea.ai-composer__text--scroll {
+    overflow-y: auto;
+  }
+
+  // soft edges when the text scrolls
+  .ai-composer__fade {
+    position: absolute;
+    right: 48px;
+    left: 16px;
+    z-index: 2;
+    height: 32px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .ai-composer__fade--top {
+    top: 0;
+    background: linear-gradient(to bottom, #{$card}, transparent);
+  }
+
+  .ai-composer__fade--bottom {
+    background: linear-gradient(to top, #{$card}, transparent);
+    transition: top 0.4s $spring;
+  }
+
+  // collapsed: the placeholder itself opens the card
+  .ai-composer__collapsed {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 1;
+    padding: 15px 48px 15px 16px;
+    border: none;
+    background: none;
+    color: $muted;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 17px;
+    text-align: start;
+    cursor: text;
+    outline: none;
+    transition: all 0.4s $spring;
+  }
+
+  .ai-composer__collapsed--hidden {
+    opacity: 0;
+    transform: translateY(4px) scale(1.05);
+    pointer-events: none;
+  }
+
+  // ---- toolbar ------------------------------------------------------------
+
+  .ai-composer__toolbar {
+    position: absolute;
+    right: 48px;
+    bottom: 8px;
+    left: 12px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    transition: all 0.3s $spring;
+  }
+
+  .ai-composer__toolbar--hidden {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(8px);
+    pointer-events: none;
+  }
+
+  .ai-composer__chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 999px;
+    background: none;
+    color: $muted;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease;
+
+    &:hover:not(:disabled) {
+      background-color: var(--button-hover-bg);
+      color: $text;
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-primary);
+    }
+
+    svg {
+      opacity: 0.8;
+    }
+  }
+
+  .ai-composer__chip--live-on {
+    border: 1px solid var(--color-danger);
+    color: var(--color-danger);
+
+    &:hover:not(:disabled) {
+      color: var(--color-danger);
+    }
+  }
+
+  .ai-composer__plus-wrap {
+    position: relative;
+    margin-inline-start: auto;
+  }
+
+  .ai-composer__plus {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: $muted;
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease;
+
+    &:hover {
+      background-color: var(--button-hover-bg);
+      color: $text;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-primary);
+    }
+  }
+
+  .ai-composer__menu {
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 11.5rem;
+    box-sizing: border-box;
+    margin-bottom: 10px;
+    padding: 4px;
+    border: 1px solid var(--default-border-color);
+    border-radius: 16px;
+    background-color: color-mix(in srgb, #{$card} 95%, transparent);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+    backdrop-filter: blur(12px);
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+    transform-origin: bottom right;
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.4s $spring;
+
+    button {
+      height: 32px;
+      padding: 0 10px;
+      border: none;
+      border-radius: 12px;
+      background: none;
+      color: inherit;
+      font: inherit;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-align: start;
+      cursor: pointer;
+
+      &:hover:not(:disabled) {
+        background-color: var(--button-hover-bg);
+      }
+
+      &:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+    }
+  }
+
+  .ai-composer__menu--open {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  .ai-composer__menu-hint {
+    margin: 0;
+    padding: 4px 10px 6px;
+    color: var(--color-gray-60);
+    font-size: 0.6875rem;
+    line-height: 1.4;
+  }
+
+  // ---- voice --------------------------------------------------------------
+
+  .ai-composer__bars {
+    position: absolute;
+    right: 48px;
+    bottom: 12px;
+    z-index: 10;
+  }
+
+  // one round button that is send, mic or stop
+  .ai-composer__action {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    z-index: 10;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background-color: $text;
+    color: $card;
+    cursor: pointer;
+    transition: all 0.3s ease;
+
+    &:hover {
+      opacity: 0.9;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+  }
+
+  .ai-composer__glyph {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    filter: blur(1px);
+    transform: scale(0.5);
+    pointer-events: none;
+    transition: all 0.3s $spring;
+  }
+
+  .ai-composer__glyph--turn-right {
+    transform: scale(0.5) rotate(45deg);
+  }
+
+  .ai-composer__glyph--turn-left {
+    transform: scale(0.5) rotate(-45deg);
+  }
+
+  .ai-composer__glyph--on {
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+
+  // ---- live ---------------------------------------------------------------
+
+  .ai-composer__live {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 7.5rem;
+    padding: 0.75rem 0.75rem 0.625rem;
+
+    .ai-visualizer {
+      justify-content: center;
+    }
+  }
+
+  .ai-composer__live-label {
+    color: var(--color-gray-60);
+    font-size: 0.8125rem;
+  }
+
+  // ---- picture preview ----------------------------------------------------
+
+  .ai-composer__lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgb(0 0 0 / 0.55);
+    backdrop-filter: blur(6px);
+    animation: ai-composer-fade 0.25s ease-out;
+
+    img {
+      max-width: min(86vw, 560px);
+      max-height: 78vh;
+      border-radius: 20px;
+      box-shadow: 0 24px 60px -12px rgb(0 0 0 / 0.45);
+      animation: ai-composer-zoom 0.4s $spring;
+    }
+  }
+
+  .ai-composer__lightbox-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background-color: color-mix(in srgb, #{$card} 90%, transparent);
+    color: $text;
+    cursor: pointer;
+
+    svg {
+      width: 14px;
+      height: 14px;
+    }
+  }
+
+  @keyframes ai-composer-fade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes ai-composer-zoom {
+    from {
+      opacity: 0;
+      transform: scale(0.85);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ai-composer__card,
+    .ai-composer__text,
+    .ai-composer__collapsed,
+    .ai-composer__toolbar,
+    .ai-composer__glyph,
+    .ai-composer__tray,
+    .ai-composer__tray-inner,
+    .ai-composer__menu {
+      transition: none;
+    }
+
+    .ai-composer__lightbox,
+    .ai-composer__lightbox img {
+      animation: none;
+    }
+  }
+}

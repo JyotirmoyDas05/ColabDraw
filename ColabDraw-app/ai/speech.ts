@@ -38,7 +38,13 @@ const ensureLocalRecognition = async (lang: string) => {
   }
 };
 
-/** Never silently picks cloud recognition: "auto" means on-device or Whisper. */
+// some browsers (Brave) expose the on-device speech API but never answer it
+const PROBE_TIMEOUT_MS = 2500;
+
+/**
+ * Never silently picks cloud recognition: "auto" means on-device or Whisper.
+ * Gives up after a moment instead of waiting on a browser that doesn't answer.
+ */
 export const pickSpeechEngine = async (
   settings: AISettings,
 ): Promise<SpeechEngine> => {
@@ -46,12 +52,17 @@ export const pickSpeechEngine = async (
   if (settings.speech === "whisper") {
     return "whisper";
   }
-  if (await ensureLocalRecognition(lang)) {
-    return "browser-local";
-  }
-  return settings.speech === "browser" && getRecognitionClass()
-    ? "browser-cloud"
-    : "whisper";
+  const fallback: SpeechEngine =
+    settings.speech === "browser" && getRecognitionClass()
+      ? "browser-cloud"
+      : "whisper";
+  const probe = ensureLocalRecognition(lang).then(
+    (ok): SpeechEngine => (ok ? "browser-local" : fallback),
+  );
+  const timeout = new Promise<SpeechEngine>((resolve) =>
+    setTimeout(() => resolve(fallback), PROBE_TIMEOUT_MS),
+  );
+  return Promise.race([probe, timeout]);
 };
 
 const SILENCE_RMS = 0.005;
@@ -97,8 +108,11 @@ const transcribeWithWhisper = (
           downloadShown,
           total ? Math.floor((100 * loaded) / total) : 0,
         );
+        // once everything is downloaded the model still takes a moment to start
         onStatus(
-          `Downloading speech model (first time only)… ${downloadShown}%`,
+          downloadShown >= 100
+            ? "Starting the speech model (first time only)…"
+            : `Downloading speech model (first time only)… ${downloadShown}%`,
         );
         return;
       }
@@ -137,12 +151,17 @@ export type ListeningSession = {
 
 // recognition errors that just mean "nobody spoke yet"
 const HARMLESS_ERRORS = ["no-speech", "aborted"];
+// how often the on-device model re-reads what you've said so far
+const PARTIAL_EVERY_MS = 2500;
+const PARTIAL_AFTER_MS = PROBE_TIMEOUT_MS + 500;
+const MIN_PARTIAL_SAMPLES = 16000 * 1.5;
 
 /**
- * Listens through the microphone. It always records the audio too, so when the
- * browser's own speech recognition is missing, blocked or fails (common outside
- * Chrome), the on-device Whisper model transcribes the recording instead of the
- * microphone button silently doing nothing.
+ * Listens through the microphone and is ready as soon as the microphone is.
+ * It always records the audio too, so when the browser's own speech
+ * recognition is missing, blocked or fails (common outside Chrome), the
+ * on-device Whisper model transcribes it: live every couple of seconds while
+ * you talk, and once more when you stop.
  */
 export const startListening = async ({
   settings,
@@ -159,29 +178,45 @@ export const startListening = async ({
   onEngine: (engine: SpeechEngine) => void;
 }): Promise<ListeningSession> => {
   const lang = resolveSpeechLang(settings);
+  const whisperLang = lang.split("-")[0];
   // first, so a blocked or missing microphone is reported straight away
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true },
   });
-  const context = new AudioContext();
-  // browsers can start a context suspended; the click that began listening allows resuming
-  context.resume().catch(() => {});
-  const analyser = context.createAnalyser();
-  analyser.fftSize = 512;
-  analyser.smoothingTimeConstant = 0.6;
-  context.createMediaStreamSource(stream).connect(analyser);
-  // some browsers only feed an analyser that reaches the output; silent, so nothing is heard
-  const silent = context.createGain();
-  silent.gain.value = 0;
-  analyser.connect(silent).connect(context.destination);
-  const stopMeter = startBandMeter(analyser, onLevel);
 
+  let context: AudioContext | null = null;
+  let stopMeter = () => {};
+  let recorder: MediaRecorder;
   const chunks: Blob[] = [];
-  const recorder = new MediaRecorder(stream);
-  recorder.ondataavailable = (event) => chunks.push(event.data);
-  recorder.start();
+  try {
+    context = new AudioContext();
+    // browsers can start a context suspended; the click that began listening allows resuming
+    context.resume().catch(() => {});
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.6;
+    context.createMediaStreamSource(stream).connect(analyser);
+    // some browsers only feed an analyser that reaches the output; silent, so nothing is heard
+    const silent = context.createGain();
+    silent.gain.value = 0;
+    analyser.connect(silent).connect(context.destination);
+    stopMeter = startBandMeter(analyser, onLevel);
 
-  let engine = await pickSpeechEngine(settings);
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = (event) => chunks.push(event.data);
+    // a chunk every second, so what's been said so far can be read while recording
+    recorder.start(1000);
+  } catch (error) {
+    // don't leave the microphone switched on after a failed start
+    stopMeter();
+    stream.getTracks().forEach((track) => track.stop());
+    context?.close();
+    throw error;
+  }
+
+  const startedAt = Date.now();
+  // the on-device model until the browser proves it can do better
+  let engine: SpeechEngine = "whisper";
   let recognition: any = null;
   let committed = "";
   let current = "";
@@ -195,7 +230,7 @@ export const startListening = async ({
     }
   };
 
-  if (engine !== "whisper") {
+  const startRecognition = () => {
     const Recognition = getRecognitionClass();
     const start = () => {
       recognition = new Recognition();
@@ -240,13 +275,56 @@ export const startListening = async ({
       recognition = null;
       fallBackToWhisper();
     }
+  };
+
+  // choose in the background: the microphone is already live
+  if (settings.speech !== "whisper") {
+    pickSpeechEngine(settings).then((picked) => {
+      if (listening && picked !== "whisper") {
+        engine = picked;
+        onEngine(picked);
+        startRecognition();
+      }
+    });
   }
+
+  // live text from the on-device model, every couple of seconds
+  let partialBusy = false;
+  const partialTimer = setInterval(async () => {
+    if (
+      !listening ||
+      engine !== "whisper" ||
+      partialBusy ||
+      Date.now() - startedAt < PARTIAL_AFTER_MS
+    ) {
+      return;
+    }
+    partialBusy = true;
+    try {
+      const audio = await decodeTo16kMono(
+        new Blob(chunks, { type: recorder.mimeType }),
+      );
+      if (audio.length < MIN_PARTIAL_SAMPLES || rms(audio) < SILENCE_RMS) {
+        return;
+      }
+      const text = await transcribeWithWhisper(audio, whisperLang, onStatus);
+      if (listening && engine === "whisper") {
+        onPartial(text);
+        onStatus("");
+      }
+    } catch {
+      // keep recording; the final pass reports a real failure
+    } finally {
+      partialBusy = false;
+    }
+  }, PARTIAL_EVERY_MS);
 
   const release = () => {
     listening = false;
+    clearInterval(partialTimer);
     stopMeter();
     stream.getTracks().forEach((track) => track.stop());
-    context.close();
+    context?.close();
   };
 
   /** stops recognition and waits briefly for its last words */
@@ -287,6 +365,8 @@ export const startListening = async ({
       return engine;
     },
     stop: async () => {
+      // from here on, late live text from an earlier pass must not overwrite the result
+      listening = false;
       await stopRecognition();
       const browserText = engine !== "whisper" ? transcript() : "";
       const recording = await stopRecording();
@@ -301,12 +381,13 @@ export const startListening = async ({
         if (rms(audio) < SILENCE_RMS) {
           return "";
         }
-        return await transcribeWithWhisper(audio, lang.split("-")[0], onStatus);
+        return await transcribeWithWhisper(audio, whisperLang, onStatus);
       } finally {
         onStatus("");
       }
     },
     cancel: () => {
+      listening = false;
       recorder.onstop = null;
       stopRecognition();
       if (recorder.state !== "inactive") {

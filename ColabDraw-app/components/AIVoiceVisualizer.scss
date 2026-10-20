@@ -23,11 +23,11 @@
       width: 4px;
       height: 4px;
       border-radius: 999px;
-      background-color: var(--color-primary);
+      background-color: var(--ai-visualizer-color, var(--color-primary));
       transition: height 75ms ease-out;
     }
 
-    &--model &__bar {
+    &--model .ai-visualizer__bar {
       background-color: var(--color-success, #2f9e44);
     }
   }

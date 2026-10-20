@@ -2046,11 +2046,16 @@ class App extends React.Component<AppProps, AppState> {
                         title="Excalidraw Embedded Content"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen={true}
-                        sandbox={`${
-                          src?.sandbox?.allowSameOrigin
-                            ? "allow-same-origin"
-                            : ""
-                        } allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-downloads`}
+                        sandbox={
+                          // sites outside the built-in list get no escaping popups or downloads
+                          src?.sandbox?.restricted
+                            ? "allow-scripts allow-forms allow-popups allow-presentation"
+                            : `${
+                                src?.sandbox?.allowSameOrigin
+                                  ? "allow-same-origin"
+                                  : ""
+                              } allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-downloads`
+                        }
                       />
                     )}
                   </div>
@@ -4287,6 +4292,10 @@ class App extends React.Component<AppProps, AppState> {
 
     this.appStateObserver.flush(prevState);
 
+    if (prevProps.validateEmbeddable !== this.props.validateEmbeddable) {
+      // the rules changed: check every embed again
+      this.embedsValidationStatus.clear();
+    }
     this.updateEmbeddables();
     const elements = this.scene.getElementsIncludingDeleted();
     const elementsMap = this.scene.getElementsMapIncludingDeleted();

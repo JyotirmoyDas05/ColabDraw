@@ -1,11 +1,8 @@
 import {
-  ArrowRightIcon,
   CloseIcon,
   PlusIcon,
   chevronDownIcon,
   mermaidLogoIcon,
-  microphoneIcon,
-  playerStopFilledIcon,
   settingsIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import clsx from "clsx";
@@ -36,7 +33,12 @@ import {
   buildCanvasContext,
   snapshotElements,
 } from "../ai/canvasAgent";
-import { createMessage, useChatHistory } from "../ai/chatHistory";
+import {
+  createMessage,
+  rememberFullImages,
+  useChatHistory,
+} from "../ai/chatHistory";
+import { makeThumbnail } from "../ai/drawing";
 import { searchOnlineLibraries } from "../ai/libraryItems";
 import { startLiveSession } from "../ai/live";
 import { isOnDevice, startListening } from "../ai/speech";
@@ -44,13 +46,14 @@ import { isOnDevice, startListening } from "../ai/speech";
 import { AIBuddy } from "./AIBuddy/AIBuddy";
 import { AIChatMessage } from "./AIChatMessage";
 import { AIHistoryMenu } from "./AIHistoryMenu";
-import { AIVoiceVisualizer } from "./AIVoiceVisualizer";
+import { AIComposer } from "./AIComposer";
 
 import "./AIAssistant.scss";
 
 import type { AIErrorCode, GeminiContent } from "../ai/aiClient";
 import type { ApplyResult } from "../ai/canvasAgent";
 import type { LiveSession, LiveState } from "../ai/live";
+import type { ComposerAttachment } from "./AIComposer";
 import type { ListeningSession, SpeechEngine } from "../ai/speech";
 
 const HISTORY_LIMIT = 8;
@@ -84,14 +87,6 @@ const KEY_ERRORS: AIErrorCode[] = [
   "quota_exceeded",
 ];
 
-const LIVE_LABELS: Record<LiveState, string> = {
-  connecting: "Connecting…",
-  listening: "Listening",
-  speaking: "Speaking",
-  working: "Working on the board",
-  closed: "",
-};
-
 const describeResult = ({
   added,
   changed,
@@ -106,9 +101,6 @@ const describeResult = ({
   ]
     .filter(Boolean)
     .join(", ");
-
-const formatTime = (seconds: number) =>
-  `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
 export const AIAssistant = ({
   excalidrawAPI,
@@ -135,12 +127,13 @@ export const AIAssistant = ({
   const [speechEngine, setSpeechEngine] = useState<SpeechEngine | null>(null);
   const [speechStatus, setSpeechStatus] = useState("");
   const [isRecording, setIsRecording] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
   const [liveState, setLiveState] = useState<LiveState | null>(null);
   const [isFollowing, setIsFollowing] = useState(true);
 
   const isLive = liveState !== null;
   const listeningRef = useRef<ListeningSession | null>(null);
+  // true while the microphone is being opened, so a second click can't open another
+  const startingVoiceRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const liveRef = useRef<LiveSession | null>(null);
   const liveAliasesRef = useRef<Map<string, string>>(new Map());
@@ -173,15 +166,6 @@ export const AIAssistant = ({
     }
   }, [messages, isBusy, isOpen]);
 
-  useEffect(() => {
-    if (!isRecording) {
-      return;
-    }
-    setElapsed(0);
-    const timer = setInterval(() => setElapsed((seconds) => seconds + 1), 1000);
-    return () => clearInterval(timer);
-  }, [isRecording]);
-
   useEffect(
     () => () => {
       listeningRef.current?.cancel();
@@ -191,7 +175,36 @@ export const AIAssistant = ({
     [],
   );
 
-  const send = async (text: string) => {
+  const canAttach = hasOwnKey && getAISettings().engine === "gemini";
+
+  /** a picture of the selection (or the whole board) to show the model */
+  const attachSelection = async (): Promise<ComposerAttachment | null> => {
+    const state = excalidrawAPI.getAppState();
+    const elements = excalidrawAPI.getSceneElements();
+    const selected = elements.filter(
+      (element) => state.selectedElementIds[element.id],
+    );
+    const target = selected.length ? selected : elements;
+    if (!target.length) {
+      setSpeechStatus("There's nothing on the board to take a picture of.");
+      return null;
+    }
+    const part = await snapshotElements(excalidrawAPI, target);
+    if (!("inlineData" in part)) {
+      return null;
+    }
+    const { mimeType, data } = part.inlineData;
+    return {
+      id: `selection-${Date.now()}`,
+      name: "Selection.png",
+      mimeType,
+      data,
+      sourceMime: mimeType,
+      url: `data:${mimeType};base64,${data}`,
+    };
+  };
+
+  const send = async (text: string, attachments: ComposerAttachment[] = []) => {
     const prompt = text.trim();
     if (!prompt || isBusy) {
       return;
@@ -201,16 +214,43 @@ export const AIAssistant = ({
     const history = messagesRef.current
       .filter((message) => !message.error && message.text)
       .slice(-HISTORY_LIMIT);
-    setMessages((prev) => [...prev, createMessage("user", prompt)]);
+    // pictures only go to Gemini with the user's own key
+    const pictures = canAttach ? attachments : [];
+    // small copies are kept in the saved chat, full ones for this session
+    const thumbnails = (
+      await Promise.all(
+        pictures.map((picture) =>
+          makeThumbnail(picture.url, 160).catch(() => null),
+        ),
+      )
+    ).filter((thumbnail): thumbnail is string => !!thumbnail);
+    const userMessage = createMessage("user", prompt, {
+      images: thumbnails.length ? thumbnails : undefined,
+    });
+    rememberFullImages(
+      userMessage.id,
+      pictures.map((picture) => picture.url),
+    );
+    setMessages((prev) => [...prev, userMessage]);
     setStatus("thinking");
     const controller = new AbortController();
     abortRef.current = controller;
 
     try {
       const context = await buildCanvasContext(excalidrawAPI, prompt);
+      const pictureNote = pictures.length
+        ? `\n\nAttached pictures: ${pictures
+            .map((picture, index) => `${index + 1} = "${picture.name}"`)
+            .join(", ")}`
+        : "";
       const parts: GeminiContent["parts"] = [
-        { text: `${prompt}\n\n${context.text}` },
+        { text: `${prompt}\n\n${context.text}${pictureNote}` },
       ];
+      for (const picture of pictures) {
+        parts.push({
+          inlineData: { mimeType: picture.mimeType, data: picture.data },
+        });
+      }
       // the free trial is text-only, so drawings are only shown with an own key
       if (
         context.visualElements.length &&
@@ -257,6 +297,11 @@ export const AIAssistant = ({
             excalidrawAPI,
             response.ops,
             context.aliases,
+            pictures.map((picture) => ({
+              name: picture.name,
+              mimeType: picture.sourceMime,
+              url: picture.url,
+            })),
           );
           const summary = describeResult(result);
           note = summary ? `${summary} · Ctrl+Z to undo` : undefined;
@@ -365,10 +410,12 @@ export const AIAssistant = ({
   };
 
   const startVoice = async () => {
-    if (listeningRef.current || isBusy || isLive) {
+    if (listeningRef.current || startingVoiceRef.current || isBusy || isLive) {
       return;
     }
-    setSpeechStatus("");
+    startingVoiceRef.current = true;
+    // the browser may be asking for permission; say so instead of looking dead
+    setSpeechStatus("Allow the microphone in your browser…");
     setInput("");
     try {
       const session = await startListening({
@@ -380,6 +427,7 @@ export const AIAssistant = ({
       });
       listeningRef.current = session;
       setSpeechEngine(session.engine);
+      setSpeechStatus("");
       setIsRecording(true);
       setStatus("listening");
     } catch (error: any) {
@@ -392,6 +440,8 @@ export const AIAssistant = ({
           ? "No microphone found."
           : "Couldn't start the microphone.",
       );
+    } finally {
+      startingVoiceRef.current = false;
     }
   };
 
@@ -529,15 +579,6 @@ export const AIAssistant = ({
     (found, message, index) => (message.role === "model" ? index : found),
     -1,
   );
-  const hasText = input.trim().length > 0;
-  const actionMode = isRecording
-    ? "record-stop"
-    : isBusy
-    ? "stop"
-    : hasText
-    ? "send"
-    : "mic";
-
   return (
     <div
       className="ai-assistant"
@@ -717,127 +758,28 @@ export const AIAssistant = ({
         </div>
       )}
 
-      <form
-        className={clsx("ai-assistant__composer", {
-          "ai-assistant__composer--recording": isRecording,
-          "ai-assistant__composer--live": isLive,
-        })}
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (hasText && !isRecording) {
-            send(input);
-          }
-        }}
-      >
-        {isLive ? (
-          <div className="ai-assistant__live-panel" role="status">
-            <AIVoiceVisualizer
-              active={liveState !== "connecting"}
-              bars={24}
-              height={40}
-              source={liveState === "speaking" ? "model" : "you"}
-            />
-            <span className="ai-assistant__live-label">
-              {LIVE_LABELS[liveState]}
-            </span>
-          </div>
-        ) : (
-          <textarea
-            value={input}
-            rows={2}
-            readOnly={isRecording}
-            aria-label="Message"
-            placeholder={
-              isRecording
-                ? speechEngine === "whisper"
-                  ? "Listening… your words appear when you stop"
-                  : "Listening…"
-                : "Ask or describe a change…"
-            }
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                if (!isRecording) {
-                  send(input);
-                }
-              }
-            }}
-            // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
-          />
-        )}
-        <div className="ai-assistant__actions">
-          <button
-            type="button"
-            className={clsx("ai-assistant__live", {
-              "ai-assistant__live--on": isLive,
-            })}
-            title={
-              hasOwnKey
-                ? "Live voice conversation with Gemini"
-                : "Live voice needs your own free Gemini key"
-            }
-            disabled={isRecording}
-            onClick={toggleLive}
-          >
-            {isLive ? "End live" : "Live"}
-          </button>
-          <span className="ai-assistant__spacer" />
-          {isRecording && (
-            <>
-              <span className="ai-assistant__timer" aria-hidden="true">
-                {formatTime(elapsed)}
-              </span>
-              <AIVoiceVisualizer active={isRecording} bars={5} height={24} />
-            </>
-          )}
-          {!isLive && (
-            <button
-              type={actionMode === "send" ? "submit" : "button"}
-              className={clsx("ai-assistant__action", {
-                "ai-assistant__action--recording": isRecording,
-              })}
-              data-mode={actionMode}
-              title={
-                {
-                  mic: "Speak your request",
-                  send: "Send",
-                  stop: "Stop",
-                  "record-stop": "Stop recording",
-                }[actionMode]
-              }
-              aria-label={
-                {
-                  mic: "Use voice input",
-                  send: "Send message",
-                  stop: "Stop generating",
-                  "record-stop": "Stop recording",
-                }[actionMode]
-              }
-              onClick={
-                actionMode === "mic"
-                  ? startVoice
-                  : actionMode === "record-stop"
-                  ? finishListening
-                  : actionMode === "stop"
-                  ? () => abortRef.current?.abort()
-                  : undefined
-              }
-            >
-              <span className="ai-assistant__action-icon" data-icon="mic">
-                {microphoneIcon}
-              </span>
-              <span className="ai-assistant__action-icon" data-icon="send">
-                {ArrowRightIcon}
-              </span>
-              <span className="ai-assistant__action-icon" data-icon="stop">
-                {playerStopFilledIcon}
-              </span>
-            </button>
-          )}
-        </div>
-      </form>
+      <AIComposer
+        value={input}
+        onChange={setInput}
+        onSubmit={send}
+        placeholder="Ask or describe a change…"
+        recordingPlaceholder="Listening…"
+        isRecording={isRecording}
+        onToggleRecording={isRecording ? finishListening : startVoice}
+        isBusy={isBusy}
+        onStopBusy={() => abortRef.current?.abort()}
+        isLive={isLive}
+        liveState={liveState}
+        onToggleLive={toggleLive}
+        liveTitle={
+          hasOwnKey
+            ? "Live voice conversation with Gemini"
+            : "Live voice needs your own free Gemini key"
+        }
+        canAttach={canAttach}
+        attachTitle="Pictures need your own Gemini key (AI settings)."
+        onAttachSelection={attachSelection}
+      />
     </div>
   );
 };

@@ -1,4 +1,8 @@
-import { brainIcon, eyeIcon } from "@excalidraw/excalidraw/components/icons";
+import {
+  EmbedIcon,
+  brainIcon,
+  eyeIcon,
+} from "@excalidraw/excalidraw/components/icons";
 import { MainMenu } from "@excalidraw/excalidraw/index";
 import React from "react";
 
@@ -18,6 +22,8 @@ export const AppMainMenu: React.FC<{
   isCollabEnabled: boolean;
   theme: Theme | "system";
   refresh: () => void;
+  embedsOpen: boolean;
+  onToggleEmbeds: () => void;
 }> = React.memo((props) => {
   const openAISettings = useSetAtom(aiKeyDialogOpenAtom);
   return (
@@ -59,6 +65,14 @@ export const AppMainMenu: React.FC<{
       <MainMenu.DefaultItems.Preferences />
       <MainMenu.Item icon={brainIcon} onSelect={() => openAISettings(true)}>
         AI settings
+      </MainMenu.Item>
+      <MainMenu.Item
+        icon={EmbedIcon}
+        onSelect={props.onToggleEmbeds}
+        aria-pressed={props.embedsOpen}
+        title="Lets web embeds load any https website, not only a short list. Applies to you in this room only."
+      >
+        Open web embeds: {props.embedsOpen ? "On" : "Off"}
       </MainMenu.Item>
       <MainMenu.DefaultItems.ToggleTheme allowSystemTheme theme={props.theme} />
       <MainMenu.ItemCustom>
