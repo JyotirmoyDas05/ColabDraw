@@ -111,6 +111,11 @@ import {
   loadFilesFromAppwrite,
 } from "./data";
 
+import {
+  areEmbedsOpen,
+  setEmbedsOpen,
+  validateEmbeddable,
+} from "./data/embedPolicy";
 import { updateStaleImageStatuses } from "./data/FileManager";
 import { FileStatusStore } from "./data/fileStatusStore";
 import {
@@ -444,6 +449,13 @@ const ExcalidrawWrapper = () => {
   });
 
   const [, forceRefresh] = useState(false);
+  const embedsOpen = areEmbedsOpen();
+  // a new function makes the editor re-check every embed when the choice changes
+  const checkEmbeddable = useCallback(
+    (url: string) => validateEmbeddable(url),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [embedsOpen, isCollaborating],
+  );
 
   useEffect(() => {
     if (isDevEnv()) {
@@ -906,6 +918,7 @@ const ExcalidrawWrapper = () => {
         onExport={onExport}
         initialData={initialStatePromiseRef.current.promise}
         isCollaborating={isCollaborating}
+        validateEmbeddable={checkEmbeddable}
         onPointerUpdate={collabAPI?.onPointerUpdate}
         UIOptions={{
           canvasActions: {
@@ -963,6 +976,11 @@ const ExcalidrawWrapper = () => {
           isCollabEnabled={!isCollabDisabled}
           theme={appTheme}
           refresh={() => forceRefresh((prev) => !prev)}
+          embedsOpen={embedsOpen}
+          onToggleEmbeds={() => {
+            setEmbedsOpen(!embedsOpen);
+            forceRefresh((prev) => !prev);
+          }}
         />
         <AppWelcomeScreen
           onCollabDialogOpen={onCollabDialogOpen}

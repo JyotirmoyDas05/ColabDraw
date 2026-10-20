@@ -143,7 +143,7 @@ export type IframeData =
   | {
       intrinsicSize: { w: number; h: number };
       error?: Error;
-      sandbox?: { allowSameOrigin?: boolean };
+      sandbox?: { allowSameOrigin?: boolean; restricted?: boolean };
     } & (
       | { type: "video" | "generic"; link: string }
       | { type: "document"; srcdoc: (theme: Theme) => string }

@@ -7,6 +7,10 @@ import {
 import clsx from "clsx";
 import { useEffect, useState } from "react";
 
+import { fullImageFor } from "../ai/chatHistory";
+
+import { AILightbox } from "./AILightbox";
+
 import type { ChatMessage } from "../ai/chatHistory";
 
 const COPIED_MS = 1600;
@@ -31,6 +35,7 @@ export const AIChatMessage = ({
   onRetry?: () => void;
 }) => {
   const [copied, setCopied] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
 
   useEffect(() => {
     if (!copied) {
@@ -65,6 +70,23 @@ export const AIChatMessage = ({
         )}
         title={new Date(message.at).toLocaleString()}
       >
+        {message.images && message.images.length > 0 && (
+          <div className="ai-assistant__images">
+            {message.images.map((image, index) => (
+              <button
+                key={index}
+                type="button"
+                className="ai-assistant__image"
+                aria-label={`Open picture ${index + 1}`}
+                onClick={() =>
+                  setPreview(fullImageFor(message, index) ?? image)
+                }
+              >
+                <img src={image} alt="" draggable={false} />
+              </button>
+            ))}
+          </div>
+        )}
         {message.text && <p>{message.text}</p>}
         {message.note && (
           <span className="ai-assistant__note">{message.note}</span>
@@ -79,6 +101,13 @@ export const AIChatMessage = ({
           </button>
         )}
       </div>
+      {preview && (
+        <AILightbox
+          url={preview}
+          name="Attached picture"
+          onClose={() => setPreview(null)}
+        />
+      )}
       {message.text && (
         <div className="ai-assistant__message-actions">
           <button

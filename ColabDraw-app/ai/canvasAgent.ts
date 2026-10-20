@@ -4,7 +4,7 @@ import {
   FONT_FAMILY,
   FONT_SIZES,
   ROUNDNESS,
-  STROKE_WIDTH,
+  getStrokeWidthByKey,
   randomId,
 } from "@excalidraw/common";
 import {
@@ -21,6 +21,8 @@ import {
   isArrowElement,
   isFrameLikeElement,
   newElementWith,
+  newFreeDrawElement,
+  newImageElement,
   newTextElement,
   positionElementsOnGrid,
   redrawTextBoundingBox,
@@ -31,6 +33,7 @@ import { exportToBlob } from "@excalidraw/excalidraw";
 import type { ExcalidrawElementSkeleton } from "@excalidraw/element";
 import type {
   ExcalidrawElement,
+  FileId,
   NonDeletedExcalidrawElement,
 } from "@excalidraw/element/types";
 import type {
@@ -48,7 +51,17 @@ import {
   resolveOnlineItem,
 } from "./libraryItems";
 
+import {
+  boundsOf,
+  measureImage,
+  relaxPath,
+  simplifyPath,
+  smoothPath,
+  traceImage,
+} from "./drawing";
+
 import type { FunctionCall, GeminiPart } from "./aiClient";
+import type { Point } from "./drawing";
 import type { NamedLibraryItem } from "./libraryItems";
 
 // ---------------------------------------------------------------------------
@@ -142,7 +155,11 @@ export type CanvasOp = {
     | "arrange"
     | "duplicate"
     | "reorder"
-    | "canvas";
+    | "canvas"
+    | "image"
+    | "trace"
+    | "smooth"
+    | "freehand";
   id?: string;
   shape?: "rectangle" | "ellipse" | "diamond" | "sticky" | "text" | "line";
   label?: string;
@@ -176,6 +193,13 @@ export type CanvasOp = {
   how?: typeof ARRANGEMENTS[number];
   count?: number;
   position?: "front" | "back";
+  /** 1-based number of a picture the user attached */
+  picture?: number;
+  /** x,y pairs of a hand-drawn path */
+  points?: number[];
+  closed?: boolean;
+  amount?: "light" | "medium" | "strong";
+  detail?: "low" | "medium" | "high";
   grid?: boolean;
   /** also draw an arrow from the `near` element to this new one */
   /** online library (libraries.excalidraw.com) the item comes from */
@@ -186,6 +210,9 @@ export type CanvasOp = {
   linkLabel?: string;
   linkArrowhead?: ArrowheadName;
 };
+
+/** a picture attached to the message: `url` is the original file, for the board */
+export type PictureRef = { name: string; mimeType: string; url: string };
 
 export type CanvasAgentResponse = { reply: string; ops: CanvasOp[] };
 
@@ -457,6 +484,82 @@ export const CANVAS_FUNCTIONS = [
       required: ["name"],
     },
   },
+  {
+    name: "insert_image",
+    description:
+      "Put one of the pictures the user attached onto the board as an image, exactly as it is (logos, photos, screenshots, SVGs).",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        picture: N("Number of the attached picture (1 is the first)"),
+        id: S("Your new id for it (n1, n2...)"),
+        ...PLACEMENT,
+        size: SIZE.size,
+      },
+      required: ["picture"],
+    },
+  },
+  {
+    name: "trace_image",
+    description:
+      "Redraw an attached picture by hand with the pencil tool: its outlines become editable freehand strokes. Use it for 'draw this logo', 'sketch this', 'hand-draw it'.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        picture: N("Number of the attached picture (1 is the first)"),
+        detail: S("How many strokes and how fine", {
+          enum: ["low", "medium", "high"],
+        }),
+        id: S("Your new id for it (n1, n2...)"),
+        ...PLACEMENT,
+        size: SIZE.size,
+        color: SHAPE_STYLE.color,
+        thickness: SHAPE_STYLE.thickness,
+      },
+      required: ["picture"],
+    },
+  },
+  {
+    name: "smooth_drawing",
+    description:
+      "Clean up an existing hand drawing or line in place: steadier lines, fewer wobbles, same shape. Use it for 'improve', 'clean up', 'smooth out' a drawing or outline.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        id: S("Id of the hand-drawing (e1...)"),
+        amount: S("How much to clean up", {
+          enum: ["light", "medium", "strong"],
+        }),
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "draw_freehand",
+    description:
+      "Draw a freehand line yourself with the pencil tool, from a path you describe. Use it to redraw or invent a simple shape or outline. Prefer smooth_drawing to clean up what is already drawn, and trace_image for an attached picture.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        points: {
+          type: "ARRAY",
+          items: { type: "NUMBER" },
+          description:
+            "The path as x,y pairs in one flat list, in a 0 to 100 box: [x1,y1,x2,y2,...]. Use 30 to 120 points for an outline, following its real shape.",
+        },
+        closed: B("Join the end back to the start"),
+        replace: S(
+          "Id of an existing drawing this replaces; the new line fills the same area and the old one is removed",
+        ),
+        id: S("Your new id for it (n1, n2...)"),
+        ...PLACEMENT,
+        size: SIZE.size,
+        color: SHAPE_STYLE.color,
+        thickness: SHAPE_STYLE.thickness,
+      },
+      required: ["points"],
+    },
+  },
 ];
 
 export const functionCallToOps = ({ name, args }: FunctionCall): CanvasOp[] => {
@@ -487,6 +590,14 @@ export const functionCallToOps = ({ name, args }: FunctionCall): CanvasOp[] => {
       return [{ op: "mermaid", ...withStyle }];
     case "insert_library_item":
       return [{ op: "library", ...rest }];
+    case "insert_image":
+      return [{ op: "image", ...rest }];
+    case "trace_image":
+      return [{ op: "trace", ...rest }];
+    case "smooth_drawing":
+      return [{ op: "smooth", ...rest }];
+    case "draw_freehand":
+      return [{ op: "freehand", ...rest }];
     default:
       return [];
   }
@@ -507,6 +618,10 @@ HOW TO ANSWER:
 - Always reply with one or two friendly sentences of text as well; in voice mode they are spoken aloud.
 - Questions ("explain this", "what's wrong here", "solve this"): answer in text and call nothing, unless asked to write it on the board (then add a sticky note).
 - Brand-new diagram, flow or process of four or more steps on an empty area: draw_mermaid once. Small additions: add_element and connect.
+
+PICTURES AND DRAWINGS:
+- Pictures the user attached are numbered in the message ("Attached pictures: 1 = ..."). You can see them. To put one on the board unchanged, call insert_image. To redraw one by hand with the pencil tool ("draw this logo", "sketch it"), call trace_image. Do not rebuild a picture out of rectangles and ellipses.
+- Elements listed as hand-drawing are freehand strokes. To improve or clean up a hand drawing or outline, call smooth_drawing on it (light, medium or strong). Use draw_freehand to redraw a simple shape yourself, replacing the old one. Never answer a request about a drawing or picture by adding a flowchart.
 
 MAKING GOOD, DISTINCT DIAGRAMS:
 - Use the vocabulary: rectangle = component, ellipse = start/end or actor, diamond = decision, sticky = note/annotation, text = title/label, frames = titled sections, groups = things that belong together.
@@ -834,7 +949,10 @@ const explicitStyle = (op: CanvasOp, type: string, tintsFill: boolean) => {
     patch.strokeStyle = op.stroke;
   }
   if (op.thickness) {
-    patch.strokeWidth = STROKE_WIDTH[THICKNESS[op.thickness]];
+    patch.strokeWidth = getStrokeWidthByKey(
+      type as ExcalidrawElement["type"],
+      THICKNESS[op.thickness],
+    );
   }
   if (op.sloppiness) {
     patch.roughness = SLOPPINESS[op.sloppiness];
@@ -872,7 +990,10 @@ const defaultStyle = (appState: AppState, type: string) => ({
   strokeColor: appState.currentItemStrokeColor,
   backgroundColor: appState.currentItemBackgroundColor,
   fillStyle: appState.currentItemFillStyle,
-  strokeWidth: STROKE_WIDTH[appState.currentItemStrokeWidthKey],
+  strokeWidth: getStrokeWidthByKey(
+    type as ExcalidrawElement["type"],
+    appState.currentItemStrokeWidthKey,
+  ),
   strokeStyle: appState.currentItemStrokeStyle,
   roughness: appState.currentItemRoughness,
   opacity: appState.currentItemOpacity,
@@ -982,10 +1103,36 @@ export type ApplyResult = {
   newElementIds: string[];
 };
 
+/** one pencil stroke through absolute scene points */
+const freehandElement = (
+  points: Point[],
+  style: Record<string, any>,
+  groupIds: string[] = [],
+) => {
+  const { minX, minY, width, height } = boundsOf(points);
+  return newFreeDrawElement({
+    type: "freedraw",
+    x: minX,
+    y: minY,
+    width,
+    height,
+    points: points.map(([px, py]) => [px - minX, py - minY]) as any,
+    simulatePressure: true,
+    strokeColor: style.strokeColor,
+    strokeWidth: style.strokeWidth,
+    strokeStyle: style.strokeStyle,
+    opacity: style.opacity,
+    roughness: style.roughness,
+    groupIds,
+  } as any);
+};
+
 export const applyCanvasOps = async (
   api: ExcalidrawImperativeAPI,
   ops: CanvasOp[],
   aliases: Map<string, string>,
+  /** pictures attached to the message, numbered from 1 in the order given */
+  pictures: PictureRef[] = [],
 ): Promise<ApplyResult> => {
   const appState = api.getAppState();
   // shallow clones: library helpers mutate in place and history needs the originals intact
@@ -1074,6 +1221,7 @@ export const applyCanvasOps = async (
   const extraElements: ExcalidrawElement[] = [];
   const toFront = new Set<string>();
   const toBack = new Set<string>();
+  const files: { id: FileId; mimeType: string; dataURL: string }[] = [];
   const nextAppState: Partial<AppState> = {};
 
   const proxyFor = (element: ExcalidrawElement) => {
@@ -1839,6 +1987,157 @@ export const applyCanvasOps = async (
         }
         break;
       }
+      case "image": {
+        const picture = pictures[(op.picture ?? 1) - 1];
+        if (!picture) {
+          break;
+        }
+        const natural = await measureImage(picture.url);
+        const fit =
+          (360 * SIZES[op.size ?? "medium"]) /
+          Math.max(natural.width, natural.height);
+        const width = round(natural.width * fit);
+        const height = round(natural.height * fit);
+        const box = place({ w: width, h: height }, op);
+        const fileId = randomId() as FileId;
+        files.push({
+          id: fileId,
+          mimeType: picture.mimeType,
+          dataURL: picture.url,
+        });
+        const image = newImageElement({
+          type: "image",
+          fileId,
+          status: "saved",
+          x: box.x,
+          y: box.y,
+          width,
+          height,
+        });
+        extraElements.push(image);
+        registerInserted(op.id ?? `__img${image.id}`, [image]);
+        result.added++;
+        break;
+      }
+      case "trace": {
+        const picture = pictures[(op.picture ?? 1) - 1];
+        if (!picture) {
+          break;
+        }
+        const traced = await traceImage(picture.url, op.detail ?? "medium");
+        if (!traced.contours.length) {
+          break;
+        }
+        const fit =
+          (360 * SIZES[op.size ?? "medium"]) /
+          Math.max(traced.width, traced.height);
+        const box = place(
+          { w: round(traced.width * fit), h: round(traced.height * fit) },
+          op,
+        );
+        const style = {
+          ...defaultStyle(appState, "freedraw"),
+          ...explicitStyle(op, "freedraw", false),
+        };
+        const groupId = randomId();
+        const strokes = traced.contours.map((contour) =>
+          freehandElement(
+            contour.map(
+              ([px, py]): Point => [px * fit + box.x, py * fit + box.y],
+            ),
+            style,
+            [groupId],
+          ),
+        );
+        extraElements.push(...strokes);
+        registerInserted(op.id ?? `__trace${groupId}`, strokes);
+        result.added += strokes.length;
+        break;
+      }
+      case "smooth": {
+        const element = existing(op.id);
+        if (
+          !element ||
+          (element.type !== "freedraw" && element.type !== "line")
+        ) {
+          break;
+        }
+        const points = element.points.map(([px, py]): Point => [px, py]);
+        const { width, height } = boundsOf(points);
+        const size = Math.max(width, height);
+        const rounds = { light: 2, medium: 6, strong: 16 }[
+          op.amount ?? "medium"
+        ];
+        // even out the wobble, then keep only the points the shape needs
+        const cleaned = simplifyPath(
+          smoothPath(relaxPath(points, rounds), 1),
+          size * 0.004,
+        );
+        const bounds = boundsOf(cleaned);
+        scene.mutateElement(element, {
+          points: cleaned,
+          width: bounds.width,
+          height: bounds.height,
+          ...(element.type === "freedraw"
+            ? { pressures: [], simulatePressure: true }
+            : null),
+        } as any);
+        result.changed++;
+        break;
+      }
+      case "freehand": {
+        const pairs: Point[] = [];
+        for (let i = 0; i + 1 < (op.points?.length ?? 0); i += 2) {
+          const x = Number(op.points![i]);
+          const y = Number(op.points![i + 1]);
+          if (Number.isFinite(x) && Number.isFinite(y)) {
+            pairs.push([x, y]);
+          }
+        }
+        if (pairs.length < 2) {
+          break;
+        }
+        if (op.closed) {
+          pairs.push(pairs[0]);
+        }
+        const path = smoothPath(pairs, 1);
+        const shape = boundsOf(path);
+        const target = op.replace ? existing(op.replace) : null;
+        let box: Box;
+        if (target) {
+          // the new line takes the old drawing's place and size
+          box = boxOf(target);
+          occupied = occupied.filter((entry) => entry.id !== target.id);
+          occupied.push(box);
+          lastPlaced = box;
+          toDelete.push(target);
+          result.deleted++;
+        } else {
+          const width = 300 * SIZES[op.size ?? "medium"];
+          const aspect = shape.width ? shape.height / shape.width : 1;
+          box = place(
+            { w: round(width), h: round(Math.min(width * aspect, width * 3)) },
+            op,
+          );
+        }
+        const style = {
+          ...defaultStyle(appState, "freedraw"),
+          ...explicitStyle(op, "freedraw", false),
+        };
+        const stroke = freehandElement(
+          path.map(
+            ([px, py]): Point => [
+              box.x + ((px - shape.minX) / (shape.width || 1)) * box.w,
+              box.y + ((py - shape.minY) / (shape.height || 1)) * box.h,
+            ],
+          ),
+          style,
+        );
+        extraElements.push(stroke);
+        registerInserted(op.id ?? `__draw${stroke.id}`, [stroke]);
+        result.added++;
+        break;
+      }
       case "mermaid": {
         const mermaidElements = await mermaidToElements(api, op, appState);
         if (!mermaidElements.length) {
@@ -1968,6 +2267,11 @@ export const applyCanvasOps = async (
   if (result.newElementIds.length) {
     nextAppState.selectedElementIds = Object.fromEntries(
       result.newElementIds.map((id) => [id, true]),
+    );
+  }
+  if (files.length) {
+    api.addFiles(
+      files.map((file) => ({ ...file, created: Date.now() })) as any,
     );
   }
   api.updateScene({

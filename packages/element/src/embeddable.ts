@@ -386,18 +386,13 @@ export const getEmbedLink = (
     return ret;
   }
 
-  embeddedLinkCache.set(link, {
-    link,
-    intrinsicSize: aspectRatio,
-    type,
-    sandbox: { allowSameOrigin },
-  });
-  return {
-    link,
-    intrinsicSize: aspectRatio,
-    type,
-    sandbox: { allowSameOrigin },
+  const sandbox = {
+    allowSameOrigin,
+    restricted: !matchHostname(link, ALLOWED_DOMAINS),
   };
+  const ret = { link, intrinsicSize: aspectRatio, type, sandbox };
+  embeddedLinkCache.set(link, ret);
+  return ret;
 };
 
 export const createPlaceholderEmbeddableLabel = (

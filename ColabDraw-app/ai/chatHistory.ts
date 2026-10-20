@@ -9,6 +9,8 @@ export type ChatMessage = {
   /** what the reply changed on the board */
   note?: string;
   error?: AIErrorCode;
+  /** small pictures that were sent with a message, as data URLs */
+  images?: string[];
   at: number;
 };
 
@@ -30,7 +32,7 @@ const newId = () => Math.random().toString(36).slice(2, 10) + Date.now();
 export const createMessage = (
   role: ChatMessage["role"],
   text: string,
-  extra: Partial<Pick<ChatMessage, "note" | "error">> = {},
+  extra: Partial<Pick<ChatMessage, "note" | "error" | "images">> = {},
 ): ChatMessage => ({ id: newId(), role, text, at: Date.now(), ...extra });
 
 const load = (): State => {
@@ -49,6 +51,18 @@ const titleFor = (messages: ChatMessage[]) => {
   const first = messages.find((message) => message.role === "user")?.text;
   return first ? first.replace(/\s+/g, " ").slice(0, 48) : "New chat";
 };
+
+// full-size pictures of this session's messages; only small copies are saved
+const fullImages = new Map<string, string[]>();
+
+export const rememberFullImages = (messageId: string, urls: string[]) => {
+  if (urls.length) {
+    fullImages.set(messageId, urls);
+  }
+};
+
+export const fullImageFor = (message: ChatMessage, index: number) =>
+  fullImages.get(message.id)?.[index] ?? message.images?.[index];
 
 /** Chats kept in this browser: the active conversation plus past ones. */
 export const useChatHistory = () => {
