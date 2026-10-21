@@ -1,0 +1,24 @@
+.excalidraw .colab-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--lg-button-size);
+
+  svg {
+    width: auto;
+    height: 2.5rem;
+    margin-inline-end: 0.125rem;
+    flex: none;
+    color: var(--color-logo-icon);
+  }
+
+  img {
+    width: auto;
+    height: 1.375rem;
+  }
+}
+
+// the wordmark is dark artwork: flip it on a dark background
+.excalidraw.theme--dark .colab-brand img {
+  filter: invert(1) hue-rotate(180deg);
+}

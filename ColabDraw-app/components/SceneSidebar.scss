@@ -1,0 +1,366 @@
+.excalidraw-app {
+  --colab-sidebar-width: 18rem;
+
+  @media (max-width: 760px) {
+    --colab-sidebar-width: 15rem;
+  }
+}
+
+// make room: the editor's own controls move over by the sidebar's width
+.excalidraw-app.has-scene-sidebar .excalidraw .layer-ui__wrapper {
+  width: calc(100% - var(--colab-sidebar-width));
+  transform: translateX(var(--colab-sidebar-width));
+}
+
+// the welcome logo is sized by the window, so step it down one size
+// while the sidebar takes a slice of that width
+.excalidraw-app.has-scene-sidebar .excalidraw .ExcalidrawLogo {
+  @media (min-width: 769px) and (max-width: 1024px) {
+    .ExcalidrawLogo-icon {
+      height: var(--logo-icon--tablet) !important;
+    }
+
+    .ExcalidrawLogo-text {
+      height: var(--logo-text--tablet) !important;
+    }
+  }
+
+  @media (min-width: 1025px) and (max-width: 1440px) {
+    .ExcalidrawLogo-icon {
+      height: var(--logo-icon--small) !important;
+    }
+
+    .ExcalidrawLogo-text {
+      height: var(--logo-text--small) !important;
+    }
+  }
+
+  @media (min-width: 1441px) and (max-width: 2560px) {
+    .ExcalidrawLogo-icon {
+      height: var(--logo-icon--normal) !important;
+    }
+
+    .ExcalidrawLogo-text {
+      height: var(--logo-text--normal) !important;
+    }
+  }
+
+  @media (min-width: 2561px) {
+    .ExcalidrawLogo-icon {
+      height: var(--logo-icon--QHD) !important;
+    }
+
+    .ExcalidrawLogo-text {
+      height: var(--logo-text--QHD) !important;
+    }
+  }
+}
+
+.excalidraw .colab-scene-sidebar {
+  --colab-accent: #6965db;
+  --colab-accent-hover: #5753c9;
+  --colab-on-accent: #ffffff;
+  --colab-accent-soft: #e4e3ff;
+  --colab-on-accent-soft: #3a3799;
+
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  inset-inline-start: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  width: var(--colab-sidebar-width);
+  padding: 1rem 0.5rem 0;
+  border-inline-end: 1px solid var(--default-border-color);
+  background: var(--island-bg-color);
+  color: var(--text-primary-color);
+  font-family: var(--ui-font);
+  pointer-events: all;
+
+  :where(button, input) {
+    font: inherit;
+    color: inherit;
+  }
+
+  svg {
+    width: 1.125rem;
+    height: 1.125rem;
+    flex: none;
+  }
+
+  // same height and top edge as the editor's own top-left buttons
+  &__brand {
+    display: flex;
+    align-items: center;
+    height: var(--lg-button-size);
+    padding: 0 0.25rem;
+  }
+
+  &__avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--lg-button-size);
+    height: var(--lg-button-size);
+    flex: none;
+    border-radius: 50%;
+    background: var(--colab-accent);
+    color: var(--colab-on-accent);
+    font-weight: 600;
+
+    &--user {
+      width: 2rem;
+      height: 2rem;
+      background: var(--colab-accent-soft);
+      color: var(--colab-on-accent-soft);
+      font-size: 0.875rem;
+    }
+  }
+
+  &__search {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 2.5rem;
+    padding: 0 0.625rem;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    background: var(--color-surface-low, var(--default-bg-color));
+    color: var(--color-gray-60);
+
+    &:focus-within {
+      border-color: var(--colab-accent);
+    }
+
+    input {
+      flex: 1;
+      min-width: 0;
+      padding: 0;
+      border: 0 !important;
+      outline: 0 !important;
+      box-shadow: none !important;
+      background: none !important;
+      color: var(--text-primary-color);
+      appearance: none;
+
+      &::-webkit-search-cancel-button {
+        display: none;
+      }
+    }
+  }
+
+  &__tab {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 2.5rem;
+    padding: 0 0.75rem;
+    border: 0;
+    border-radius: 0.5rem;
+    background: none;
+    text-align: start;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--button-hover-bg);
+    }
+  }
+
+  &__heading {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+    padding: 0 0.25rem;
+
+    h2 {
+      display: flex;
+      flex: 1;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      font-size: 1.1875rem;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  &__collection-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    flex: none;
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+
+  &__icon,
+  &__add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.5rem;
+    background: none;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: var(--button-hover-bg);
+    }
+  }
+
+  &__add {
+    background: var(--colab-accent);
+    color: var(--colab-on-accent);
+
+    &:hover:not(:disabled) {
+      background: var(--colab-accent-hover);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  &__note {
+    margin: 0 0.5rem;
+    font-size: 0.75rem;
+    color: var(--color-gray-60);
+  }
+
+  &__list {
+    flex: 1;
+    margin: 0 -0.25rem;
+    padding: 0 0.25rem;
+    overflow-y: auto;
+    list-style: none;
+  }
+
+  &__empty {
+    padding: 1.5rem 0.5rem;
+    text-align: center;
+    font-size: 0.875rem;
+    color: var(--color-gray-60);
+  }
+
+  &__collection,
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.5rem;
+    border: 0;
+    border-radius: 0.625rem;
+    background: none;
+    text-align: start;
+    cursor: pointer;
+
+    &:hover:not(:disabled):not(.is-active) {
+      background: var(--button-hover-bg);
+    }
+
+    &.is-active {
+      background: var(--colab-accent);
+      color: var(--colab-on-accent);
+
+      .colab-scene-sidebar__text span,
+      em {
+        color: inherit;
+        opacity: 0.85;
+      }
+    }
+
+    &:disabled:not(.is-active) {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    em {
+      margin-inline-start: auto;
+      font-style: normal;
+      font-size: 0.75rem;
+      color: var(--color-gray-60);
+    }
+  }
+
+  &__item {
+    position: relative;
+  }
+
+  &__pin {
+    display: inline-flex;
+    margin-inline-start: 0.375rem;
+    vertical-align: middle;
+    opacity: 0.8;
+
+    svg {
+      width: 0.8125rem;
+      height: 0.8125rem;
+    }
+  }
+
+  &__thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    flex: none;
+    overflow: hidden;
+    border-radius: 0.5rem;
+    background: var(--color-surface-low, var(--default-bg-color));
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+  }
+
+  &__text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+
+    strong {
+      overflow: hidden;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    span {
+      font-size: 0.75rem;
+      color: var(--color-gray-60);
+    }
+  }
+
+  &__user {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0 -0.5rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--default-border-color);
+  }
+}
+
+.excalidraw.theme--dark .colab-scene-sidebar {
+  --colab-accent: #a8a5ff;
+  --colab-accent-hover: #bdbbff;
+  --colab-on-accent: #1b1b1f;
+  --colab-accent-soft: #38366b;
+  --colab-on-accent-soft: #e0dfff;
+}

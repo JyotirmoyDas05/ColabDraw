@@ -44,6 +44,7 @@ import { SAVE_TO_LOCAL_STORAGE_TIMEOUT, STORAGE_KEYS } from "../app_constants";
 import { FileManager } from "./FileManager";
 import { FileStatusStore } from "./fileStatusStore";
 import { Locker } from "./Locker";
+import { allSceneFileIds, getActiveSceneId, saveScene } from "./scenes";
 import { updateBrowserStateVersion } from "./tabSync";
 
 const filesStore = createStore("files-db", "files-store");
@@ -52,6 +53,8 @@ export const localStorageQuotaExceededAtom = atom(false);
 
 class LocalFileManager extends FileManager {
   clearObsoleteFiles = async (opts: { currentFileIds: FileId[] }) => {
+    // images of the user's other scenes are not obsolete
+    const usedByScenes = await allSceneFileIds();
     await entries(filesStore).then((entries) => {
       for (const [id, imageData] of entries as [FileId, BinaryFileData][]) {
         // if image is unused (not on canvas) & is older than 1 day, delete it
@@ -61,7 +64,8 @@ class LocalFileManager extends FileManager {
         if (
           (!imageData.lastRetrieved ||
             Date.now() - imageData.lastRetrieved > 24 * 3600 * 1000) &&
-          !opts.currentFileIds.includes(id as FileId)
+          !opts.currentFileIds.includes(id as FileId) &&
+          !usedByScenes.has(id as FileId)
         ) {
           del(id, filesStore);
         }
@@ -123,6 +127,11 @@ export class LocalData {
       onFilesSaved: () => void,
     ) => {
       saveDataStateToLocalStorage(elements, appState);
+
+      const sceneId = getActiveSceneId();
+      if (sceneId) {
+        saveScene(sceneId, elements, appState).catch(console.error);
+      }
 
       await this.fileStorage.saveFiles({
         elements,

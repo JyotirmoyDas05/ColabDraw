@@ -33,6 +33,7 @@
     "appwrite": "^16.0.2",
     "callsites": "4.2.0",
     "dotenv": "16.0.1",
+    "emojibase-data": "18.0.0",
     "framer-motion": "12.23.25",
     "i18next-browser-languagedetector": "6.1.4",
     "idb-keyval": "6.0.3",

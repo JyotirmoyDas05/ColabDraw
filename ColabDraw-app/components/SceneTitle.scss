@@ -1,0 +1,54 @@
+.excalidraw {
+  // looks like the hamburger button next to it (it borrows that button's classes)
+  .colab-scene-button {
+    order: -1;
+  }
+
+  // sits after the main menu button
+  .colab-scene-name {
+    order: 1;
+    min-width: 0;
+    font-family: var(--ui-font);
+    color: var(--text-primary-color);
+
+    button,
+    input {
+      height: 2rem;
+      padding: 0 0.625rem;
+      border: 0;
+      border-radius: var(--border-radius-md);
+      font: inherit;
+      color: inherit;
+    }
+
+    button {
+      max-width: 14rem;
+      overflow: hidden;
+      background: none;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: pointer;
+
+      &:hover {
+        background: var(--button-hover-bg);
+      }
+    }
+
+    input {
+      width: 12rem;
+      border: 1px solid var(--color-primary);
+      background: var(--input-bg-color);
+      outline: 0;
+    }
+
+    @media (max-width: 700px) {
+      display: none;
+    }
+  }
+
+  // the "Export, preferences, languages" hint points at the menu button,
+  // which now sits after the sidebar button
+  .welcome-screen-decor-hint--menu {
+    margin-inline-start: calc(0.6rem + var(--lg-button-size) + 0.5rem);
+  }
+}

@@ -11,6 +11,7 @@ import { isDevEnv } from "@excalidraw/common";
 import type { Theme } from "@excalidraw/element/types";
 
 import { useSetAtom } from "../app-jotai";
+
 import { LanguageList } from "../app-language/LanguageList";
 import { aiKeyDialogOpenAtom } from "../ai/aiState";
 

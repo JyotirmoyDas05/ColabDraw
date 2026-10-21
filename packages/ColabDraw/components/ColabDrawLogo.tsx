@@ -11674,3 +11674,5 @@ export const ExcalidrawLogo = ({
     </div>
   );
 };
+
+export { LogoIcon as ColabDrawLogoIcon };
