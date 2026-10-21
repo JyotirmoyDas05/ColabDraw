@@ -60,7 +60,23 @@ $env:CLOUDFLARE_API_TOKEN = $cfg.oauth_token
 cd worker && npx wrangler deploy
 ```
 
-Then set `VITE_APP_BACKEND_URL` to the Worker URL in the Vercel project.
+The stored token is short-lived (minutes), so run any cheap `cf` command immediately before reading it — that refreshes it.
+
+An account needs a `workers.dev` subdomain before its first Worker can be published, and neither `cf` nor `wrangler` can register one. If `wrangler deploy` reports the subdomain is missing, register it once:
+
+```bash
+$h = @{ Authorization = "Bearer $((Get-Content "$env:APPDATA\xdg.config\cloudflare\config\default.json" -Raw | ConvertFrom-Json).oauth_token)" }
+Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/accounts/<account-id>/workers/subdomain" `
+  -Headers $h -Method PUT -Body '{"subdomain":"<name>"}' -ContentType "application/json"
+```
+
+`workers_dev` defaults to `true`, so the Worker then publishes at `https://<worker-name>.<subdomain>.workers.dev`.
+
+Finally set `VITE_APP_BACKEND_URL` to that URL in the Vercel project.
+
+## Deployed instance
+
+`https://colabdraw-backend.jyotimoydas.workers.dev` — D1 `colabdraw`, R2 `colabdraw-files`, both APAC. Verified with `node worker/tests/e2e.mjs https://colabdraw-backend.jyotimoydas.workers.dev` (15/15).
 
 ## What it costs
 
