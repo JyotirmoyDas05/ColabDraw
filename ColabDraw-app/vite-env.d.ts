@@ -17,12 +17,8 @@ interface ImportMetaEnv {
   VITE_APP_DISABLE_SENTRY: string;
   VITE_APP_ENABLE_TRACKING: string;
 
-  // Appwrite configuration
-  VITE_APP_APPWRITE_ENDPOINT: string;
-  VITE_APP_APPWRITE_PROJECT_ID: string;
-  VITE_APP_APPWRITE_DATABASE_ID: string;
-  VITE_APP_APPWRITE_TABLE_ID: string;
-  VITE_APP_APPWRITE_BUCKET_ID: string;
+  // Cloudflare Worker backend (scenes, share links, files)
+  VITE_APP_BACKEND_URL: string;
 
   // Smart Canvas AI - Gemini API Key (default key with 15 req/day limit per user)
 

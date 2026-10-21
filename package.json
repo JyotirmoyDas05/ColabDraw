@@ -100,7 +100,6 @@
   },
   "dependencies": {
     "esbuild": "0.27.2",
-    "next": "14.2.35",
-    "node-appwrite": "21.0.0"
+    "next": "14.2.35"
   }
 }

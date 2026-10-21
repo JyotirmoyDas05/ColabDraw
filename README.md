@@ -85,7 +85,7 @@ The ColabDraw editor supports:
 
 - ⚡ **Powered by Bun** (ultra-fast builds and installs)
 - 📡 PWA support (works offline)
-- 🤼 Real-time collaboration via Appwrite
+- 🤼 Real-time collaboration via Cloudflare Workers
 - 🔒 End-to-end encryption
 - 📊 Web Analytics with Vercel Integration
 - 💾 Local-first support (autosaves to the browser)
@@ -106,7 +106,7 @@ bun install
 
 # Configure environment variables
 cp .env.development.example .env.development
-# Edit .env.development with your Appwrite credentials
+# Edit .env.development if your backend URL is not http://localhost:8787
 
 # Start development server (App + Room)
 bun run dev
@@ -155,7 +155,7 @@ docker run -p 80:80 colabdraw
 - **Build Tool**: Vite
 - **State Management**: Jotai
 - **Real-time Communication**: Socket.io
-- **Backend/Storage**: Appwrite
+- **Backend/Storage**: Cloudflare Workers + D1 + R2
 - **Analytics**: Vercel Web Analytics 📊
 
 ## Project Structure

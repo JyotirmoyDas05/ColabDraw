@@ -30,7 +30,6 @@
     "@huggingface/transformers": "4.3.1",
     "@sentry/browser": "9.0.1",
     "@vercel/analytics": "1.6.1",
-    "appwrite": "^16.0.2",
     "callsites": "4.2.0",
     "dotenv": "16.0.1",
     "emojibase-data": "18.0.0",
