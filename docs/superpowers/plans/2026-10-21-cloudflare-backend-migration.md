@@ -756,12 +756,16 @@ Expected: `0001_init.sql` applied. Confirm with `cf d1 query <database-id> "SELE
 
 - [ ] **Step 3: Deploy the Worker**
 
-```bash
+`cf deploy` cannot be used: it requires `worker/package.json` to declare `wrangler` as a devDependency, and adding that dependency is ruled out by the Global Constraints. Export the OAuth token `cf` already stores and deploy with `wrangler`:
+
+```powershell
+$cfg = Get-Content "$env:APPDATA\xdg.config\cloudflare\config\default.json" -Raw | ConvertFrom-Json
+$env:CLOUDFLARE_API_TOKEN = $cfg.oauth_token
 cd worker
-cf deploy
+npx wrangler deploy
 ```
 
-Expected: a `https://colabdraw-backend.<subdomain>.workers.dev` URL. If `cf deploy` refuses a bare Worker project, fall back to `npx wrangler deploy` — but that needs `CLOUDFLARE_API_TOKEN`; report the blocker instead of guessing.
+Expected: a `https://colabdraw-backend.<subdomain>.workers.dev` URL. `wrangler whoami` with that variable set was verified to authenticate as `jyotimoydas12345@gmail.com` (account `649f61080067899dd8ab5149c15c44b6`).
 
 - [ ] **Step 4: Run the e2e script against production**
 

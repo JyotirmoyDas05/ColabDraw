@@ -107,11 +107,13 @@ Untouched: `AppwriteSceneVersionCache` logic (renamed), the encryption and recon
 ## Deployment (via `cf`)
 
 ```
-cf d1 create colabdraw                                  # capture database_id
-cf r2 buckets create colabdraw-files
-cf d1 migrations apply colabdraw --remote
-cd worker && cf deploy
+cf d1 create --name colabdraw          # capture database_id
+cf r2 buckets create --name colabdraw-files
+cf d1 migrations apply <database-id> --dir migrations
+cd worker && npx wrangler deploy
 ```
+
+`cf` creates the resources; it cannot deploy the Worker, because `cf deploy` requires the project's manifest to declare `wrangler` as a devDependency and this Worker deliberately has none. `wrangler` is not logged in on this machine, but it accepts the OAuth token `cf` already stores, exported as `CLOUDFLARE_API_TOKEN`.
 
 Then in Vercel: set `VITE_APP_BACKEND_URL` to the Worker URL, delete the six `VITE_APP_APPWRITE_*` vars, redeploy.
 
