@@ -4,13 +4,13 @@
 
 import { MIME_TYPES, SVG_NS } from "@excalidraw/common";
 
+import { isInitializedImageElement } from "./typeChecks";
+
 import type {
   AppClassProperties,
   DataURL,
   BinaryFiles,
 } from "../../ColabDraw/types";
-
-import { isInitializedImageElement } from "./typeChecks";
 
 import type {
   ExcalidrawElement,

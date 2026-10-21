@@ -8,11 +8,7 @@ import {
   toIterable,
 } from "@excalidraw/common";
 
-import type App from "../../ColabDraw/components/App";
-
 import type { DTO, ValueOf } from "@excalidraw/common/utility-types";
-
-import type { AppState, ObservedAppState } from "../../ColabDraw/types";
 
 import { deepCopyElement } from "./duplicate";
 import { newElementWith } from "./mutateElement";
@@ -26,6 +22,9 @@ import {
   isInitializedImageElement,
   isImageElement,
 } from "./index";
+
+import type { AppState, ObservedAppState } from "../../ColabDraw/types";
+import type App from "../../ColabDraw/components/App";
 
 import type { ApplyToOptions } from "./delta";
 

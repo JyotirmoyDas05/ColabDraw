@@ -81,8 +81,6 @@ import type {
   NonDeletedSceneElementsMap,
 } from "@excalidraw/element/types";
 
-import { renderSnaps } from "./renderSnaps";
-import { roundRect } from "./roundRect";
 import {
   getScrollBars,
   SCROLLBAR_COLOR,
@@ -94,6 +92,9 @@ import {
   getTextAutoResizeHandle,
   getTextBoxPadding,
 } from "../textAutoResizeHandle";
+
+import { roundRect } from "./roundRect";
+import { renderSnaps } from "./renderSnaps";
 
 import {
   bootstrapCanvas,

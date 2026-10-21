@@ -4,14 +4,6 @@ import type { GlobalCoord } from "@excalidraw/math";
 
 import type { FontFamilyValues, FontString } from "@excalidraw/element/types";
 
-import type {
-  ActiveTool,
-  AppState,
-  ToolType,
-  UnsubscribeCallback,
-  Zoom,
-} from "../../ColabDraw/types";
-
 import {
   DEFAULT_VERSION,
   ENV,
@@ -19,6 +11,14 @@ import {
   getFontFamilyFallbacks,
   WINDOWS_EMOJI_FALLBACK_FONT,
 } from "./constants";
+
+import type {
+  ActiveTool,
+  AppState,
+  ToolType,
+  UnsubscribeCallback,
+  Zoom,
+} from "../../ColabDraw/types";
 
 import type { MaybePromise, ResolutionType } from "./utility-types";
 

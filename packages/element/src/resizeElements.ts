@@ -17,8 +17,6 @@ import {
 
 import type { GlobalPoint } from "@excalidraw/math";
 
-import type { PointerDownState } from "../../ColabDraw/types";
-
 import type { Mutable } from "@excalidraw/common/utility-types";
 
 import {
@@ -68,6 +66,8 @@ import {
   getStickyNoteResizeIntent,
   updateStickyNoteLayout,
 } from "./stickyNote";
+
+import type { PointerDownState } from "../../ColabDraw/types";
 
 import type { Scene } from "./Scene";
 

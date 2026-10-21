@@ -71,7 +71,7 @@ Object.defineProperty(window, "FontFace", {
     private status: string;
     private unicodeRange: string;
 
-    constructor(family, source, descriptors) {
+    constructor(family: string, source: string, descriptors: any) {
       this.family = family;
       this.source = source;
       this.descriptors = descriptors;
@@ -117,7 +117,11 @@ vi.mock(
 
           // read local assets directly, without running a server
           const content = await fs.promises.readFile(url);
-          return content.buffer;
+          // copy out of Node's Buffer so we return exactly these bytes and a
+          // plain ArrayBuffer (Buffer#buffer can point at a shared pool)
+          const bytes = new Uint8Array(content.byteLength);
+          bytes.set(content);
+          return bytes.buffer;
         }
       },
     };

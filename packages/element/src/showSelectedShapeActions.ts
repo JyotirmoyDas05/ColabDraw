@@ -1,6 +1,6 @@
-import type { UIAppState } from "../../ColabDraw/types";
-
 import { getSelectedElements } from "./selection";
+
+import type { UIAppState } from "../../ColabDraw/types";
 
 import type { NonDeletedExcalidrawElement } from "./types";
 

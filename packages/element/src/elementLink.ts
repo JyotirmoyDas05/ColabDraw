@@ -4,9 +4,9 @@
 
 import { ELEMENT_LINK_KEY, normalizeLink } from "@excalidraw/common";
 
-import type { AppProps, AppState } from "../../ColabDraw/types";
-
 import { elementsAreInSameGroup } from "./groups";
+
+import type { AppProps, AppState } from "../../ColabDraw/types";
 
 import type { ExcalidrawElement } from "./types";
 

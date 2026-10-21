@@ -24,8 +24,6 @@ import {
   DEFAULT_ZOOM,
 } from "@excalidraw/common";
 
-import type { AppState } from "../../ColabDraw/types";
-
 import {
   bindPointToSnapToElementOutline,
   getHeadingForElbowArrowSnap,
@@ -54,6 +52,8 @@ import {
 } from "./types";
 import { aabbForElement, pointInsideBounds } from "./bounds";
 import { getHoveredElementForBinding } from "./collision";
+
+import type { AppState } from "../../ColabDraw/types";
 
 import type { Heading } from "./heading";
 import type {

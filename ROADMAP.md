@@ -1,7 +1,6 @@
 # ColabDraw roadmap
 
-Features inspired by Excalidraw Plus, built for a free app with no paid backend.
-One phase per PR; each is tested by hand before the next starts.
+Features inspired by Excalidraw Plus, built for a free app with no paid backend. One phase per PR; each is tested by hand before the next starts.
 
 ## Planned (in order)
 

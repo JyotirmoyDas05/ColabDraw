@@ -1,11 +1,5 @@
 import { isShallowEqual, type Bounds } from "@excalidraw/common";
 
-import type {
-  AppState,
-  BoxSelectionMode,
-  InteractiveCanvasAppState,
-} from "../../ColabDraw/types";
-
 import { elementsOverlappingBBox, getElementAbsoluteCoords } from "./bounds";
 import { isElementInViewport } from "./sizeHelpers";
 import {
@@ -16,6 +10,12 @@ import {
 import { getFrameChildren } from "./frame";
 
 import { isNonDeletedElement } from ".";
+
+import type {
+  AppState,
+  BoxSelectionMode,
+  InteractiveCanvasAppState,
+} from "../../ColabDraw/types";
 
 import type {
   ElementsMap,
