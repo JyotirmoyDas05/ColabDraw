@@ -7,11 +7,6 @@ import {
   type LocalPoint,
 } from "@excalidraw/math";
 
-import type {
-  AppState,
-  PendingExcalidrawElements,
-} from "../../ColabDraw/types";
-
 import { bindBindingElement } from "./binding";
 import { updateElbowArrowPoints } from "./elbowArrow";
 import {
@@ -49,6 +44,11 @@ import {
   type Ordered,
   type OrderedExcalidrawElement,
 } from "./types";
+
+import type {
+  AppState,
+  PendingExcalidrawElements,
+} from "../../ColabDraw/types";
 
 import type { Scene } from "./Scene";
 

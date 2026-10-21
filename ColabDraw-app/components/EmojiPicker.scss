@@ -82,7 +82,10 @@
     }
 
     &.is-active {
-      background: var(--colab-accent-soft, var(--color-surface-primary-container));
+      background: var(
+        --colab-accent-soft,
+        var(--color-surface-primary-container)
+      );
     }
   }
 

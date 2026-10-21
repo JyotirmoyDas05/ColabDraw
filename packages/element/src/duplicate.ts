@@ -11,8 +11,6 @@ import {
 
 import type { Mutable } from "@excalidraw/common/utility-types";
 
-import type { AppState } from "../../ColabDraw/types";
-
 import {
   getElementsInGroup,
   getNewGroupIdsForDuplication,
@@ -42,6 +40,8 @@ import { fixDuplicatedBindingsAfterDuplication } from "./binding";
 import { ShapeCache } from "./shape";
 
 import { isNonDeletedElement } from ".";
+
+import type { AppState } from "../../ColabDraw/types";
 
 import type { ElementUpdate } from "./mutateElement";
 

@@ -9,3 +9,5 @@ packages/excalidraw/types
 examples/**/public
 dev-dist
 coverage
+# separate npm project with its own eslint/prettier config and node_modules
+ColabDraw-room/

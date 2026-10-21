@@ -27,13 +27,6 @@ import type {
   ValueOf,
 } from "@excalidraw/common/utility-types";
 
-import type {
-  AppState,
-  ObservedAppState,
-  ObservedElementsAppState,
-  ObservedStandaloneAppState,
-} from "../../ColabDraw/types";
-
 import { getObservedAppState } from "./store";
 
 import {
@@ -60,6 +53,13 @@ import { orderByFractionalIndex, syncMovedIndices } from "./fractionalIndex";
 import { StoreSnapshot } from "./store";
 
 import { Scene } from "./Scene";
+
+import type {
+  AppState,
+  ObservedAppState,
+  ObservedElementsAppState,
+  ObservedStandaloneAppState,
+} from "../../ColabDraw/types";
 
 import type { BindableProp, BindingProp } from "./binding";
 

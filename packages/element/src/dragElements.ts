@@ -6,13 +6,6 @@ import {
   DRAGGING_THRESHOLD,
 } from "@excalidraw/common";
 
-import type {
-  AppState,
-  NormalizedZoomValue,
-  NullableGridSize,
-  PointerDownState,
-} from "../../ColabDraw/types";
-
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 
 import {
@@ -31,6 +24,13 @@ import {
   isImageElement,
   isTextElement,
 } from "./typeChecks";
+
+import type {
+  AppState,
+  NormalizedZoomValue,
+  NullableGridSize,
+  PointerDownState,
+} from "../../ColabDraw/types";
 
 import type { Scene } from "./Scene";
 

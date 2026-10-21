@@ -6,12 +6,6 @@ import {
   segmentsIntersectAt,
 } from "@excalidraw/math";
 
-import type {
-  AppClassProperties,
-  AppState,
-  StaticCanvasAppState,
-} from "../../ColabDraw/types";
-
 import type { ReadonlySetLike } from "@excalidraw/common/utility-types";
 
 import {
@@ -39,6 +33,12 @@ import {
 } from "./typeChecks";
 
 import { getNonDeletedElements } from ".";
+
+import type {
+  AppClassProperties,
+  AppState,
+  StaticCanvasAppState,
+} from "../../ColabDraw/types";
 
 import type { ExcalidrawElementsIncludingDeleted } from "./Scene";
 
