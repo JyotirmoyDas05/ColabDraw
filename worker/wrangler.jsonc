@@ -1,0 +1,14 @@
+{
+  "name": "colabdraw-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "colabdraw",
+      "database_id": "PLACEHOLDER_REPLACE_AFTER_cf_d1_create"
+    }
+  ],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "colabdraw-files" }]
+}

@@ -11,3 +11,5 @@ dev-dist
 coverage
 # separate npm project with its own eslint/prettier config and node_modules
 ColabDraw-room/
+# scratch workspace for plan execution (git-ignored)
+.superpowers/
