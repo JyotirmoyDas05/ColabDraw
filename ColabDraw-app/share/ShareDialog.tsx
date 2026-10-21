@@ -16,10 +16,12 @@ import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
 import { useCopyStatus } from "@excalidraw/excalidraw/hooks/useCopiedIndicator";
 import { useI18n } from "@excalidraw/excalidraw/i18n";
 import { KEYS, getFrame } from "@excalidraw/common";
+import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 
 import { atom, useAtom, useAtomValue } from "../app-jotai";
-import { activeRoomLinkAtom } from "../collab/Collab";
+import { activeRoomLinkAtom, isViewOnlyAtom } from "../collab/Collab";
+import { getViewOnlyCollaborationLink } from "../data";
 
 import "./ShareDialog.scss";
 import { QRCode } from "./QRCode";
@@ -64,15 +66,22 @@ const ActiveRoomDialog = ({
   handleClose: () => void;
 }) => {
   const { t } = useI18n();
+  const isViewOnly = useAtomValue(isViewOnlyAtom);
+  // a viewer only ever gets the view link; the host can hand out either
+  const [canEdit, setCanEdit] = useState(!isViewOnly);
   const [, setJustCopied] = useState(false);
   const timerRef = useRef<number>(0);
   const ref = useRef<HTMLInputElement>(null);
   const isShareSupported = "share" in navigator;
-  const { onCopy, copyStatus } = useCopyStatus();
+  const { onCopy, copyStatus, resetCopyStatus } = useCopyStatus();
+
+  const editLink = activeRoomLink.replace(/,view$/, "");
+  const viewLink = getViewOnlyCollaborationLink(activeRoomLink);
+  const activeLink = canEdit && !isViewOnly ? editLink : viewLink;
 
   const copyRoomLink = async () => {
     try {
-      await copyTextToSystemClipboard(activeRoomLink);
+      await copyTextToSystemClipboard(activeLink);
     } catch (e) {
       collabAPI.setCollabError(t("errors.copyToSystemClipboardFailed"));
     }
@@ -95,7 +104,7 @@ const ActiveRoomDialog = ({
       await navigator.share({
         title: t("roomDialog.shareTitle"),
         text: t("roomDialog.shareTitle"),
-        url: activeRoomLink,
+        url: activeLink,
       });
     } catch (error: any) {
       // Just ignore.
@@ -114,13 +123,47 @@ const ActiveRoomDialog = ({
         onChange={collabAPI.setUsername}
         onKeyDown={(event) => event.key === KEYS.ENTER && handleClose()}
       />
+      {!isViewOnly && (
+        <div
+          className="ShareDialog__active__modes"
+          role="group"
+          aria-label="Who can edit"
+        >
+          <button
+            type="button"
+            className={clsx("ShareDialog__active__mode", {
+              "is-active": canEdit,
+            })}
+            aria-pressed={canEdit}
+            onClick={() => {
+              setCanEdit(true);
+              resetCopyStatus();
+            }}
+          >
+            Can edit
+          </button>
+          <button
+            type="button"
+            className={clsx("ShareDialog__active__mode", {
+              "is-active": !canEdit,
+            })}
+            aria-pressed={!canEdit}
+            onClick={() => {
+              setCanEdit(false);
+              resetCopyStatus();
+            }}
+          >
+            Can view
+          </button>
+        </div>
+      )}
       <div className="ShareDialog__active__linkRow">
         <TextField
           ref={ref}
-          label="Link"
+          label={isViewOnly ? "View-only link" : "Link"}
           readonly
           fullWidth
-          value={activeRoomLink}
+          value={activeLink}
         />
         {isShareSupported && (
           <FilledButton
@@ -143,8 +186,15 @@ const ActiveRoomDialog = ({
           }}
         />
       </div>
-      <QRCode value={activeRoomLink} />
+      <QRCode value={activeLink} />
       <div className="ShareDialog__active__description">
+        <p className="ShareDialog__active__description__access">
+          {isViewOnly
+            ? "You're viewing this drawing. Ask the owner for an editable link if you need to make changes."
+            : canEdit
+            ? "Anyone with this link can edit the drawing."
+            : "Anyone with this link can watch the drawing, but not edit it."}
+        </p>
         <p>
           <span
             role="img"
@@ -163,11 +213,11 @@ const ActiveRoomDialog = ({
           size="large"
           variant="outlined"
           color="danger"
-          label={t("roomDialog.button_stopSession")}
+          label={isViewOnly ? "Leave" : t("roomDialog.button_stopSession")}
           icon={playerStopFilledIcon}
           onClick={() => {
             trackEvent("share", "room closed");
-            collabAPI.stopCollaboration();
+            collabAPI.stopCollaboration(!isViewOnly);
             if (!collabAPI.isCollaborating()) {
               handleClose();
             }

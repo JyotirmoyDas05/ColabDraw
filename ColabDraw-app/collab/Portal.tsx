@@ -28,21 +28,27 @@ class Portal {
   socketInitialized: boolean = false; // we don't want the socket to emit any updates until it is fully initialized
   roomId: string | null = null;
   roomKey: string | null = null;
+  isViewOnly: boolean = false;
   broadcastedElementVersions: Map<string, number> = new Map();
 
   constructor(collab: TCollabClass) {
     this.collab = collab;
   }
 
-  open(socket: Socket, id: string, key: string) {
+  open(socket: Socket, id: string, key: string, isViewOnly = false) {
     this.socket = socket;
     this.roomId = id;
     this.roomKey = key;
+    this.isViewOnly = isViewOnly;
 
     // Initialize socket listeners
     this.socket.on("init-room", () => {
       if (this.socket) {
         this.socket.emit("join-room", this.roomId);
+        if (this.isViewOnly) {
+          // the server drops our broadcasts once it knows we're only watching
+          this.socket.emit(WS_EVENTS.SET_VIEW_ONLY, this.roomId);
+        }
         trackEvent("share", "room joined");
       }
     });
@@ -69,6 +75,7 @@ class Portal {
     this.socket = null;
     this.roomId = null;
     this.roomKey = null;
+    this.isViewOnly = false;
     this.socketInitialized = false;
     this.broadcastedElementVersions = new Map();
   }
@@ -87,6 +94,10 @@ class Portal {
     volatile: boolean = false,
     roomId?: string,
   ) {
+    // viewers are read-only: never send scene updates, cursors or presence
+    if (this.isViewOnly) {
+      return;
+    }
     if (this.isOpen()) {
       const json = JSON.stringify(data);
       const encoded = new TextEncoder().encode(json);

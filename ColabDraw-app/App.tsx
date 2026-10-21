@@ -95,8 +95,10 @@ import Collab, {
   collabAPIAtom,
   isCollaboratingAtom,
   isOfflineAtom,
+  isViewOnlyAtom,
   userToFollowAtom,
 } from "./collab/Collab";
+import ViewOnlyBadge from "./collab/ViewOnlyBadge";
 import { AppFooter } from "./components/AppFooter";
 import { AppMainMenu } from "./components/AppMainMenu";
 import { Dashboard } from "./components/Dashboard";
@@ -350,6 +352,8 @@ const initializeScene = async (opts: {
           // necessary if we're invoking from a hashchange handler which doesn't
           // go through App.initializeScene() that resets this flag
           isLoading: false,
+          // a view-only link opens the scene read-only
+          ...(roomLinkData.isViewOnly ? { viewModeEnabled: true } : {}),
         },
         elements: reconcileElements(
           scene?.elements || [],
@@ -411,6 +415,9 @@ const ExcalidrawWrapper = () => {
   const [collabAPI] = useAtom(collabAPIAtom);
   const [isCollaborating] = useAtomWithInitialValue(isCollaboratingAtom, () => {
     return isCollaborationLink(window.location.href);
+  });
+  const [isViewOnly] = useAtomWithInitialValue(isViewOnlyAtom, () => {
+    return !!getCollaborationLinkData(window.location.href)?.isViewOnly;
   });
   const collabError = useAtomValue(collabErrorIndicatorAtom);
   const userToFollow = useAtomValue(userToFollowAtom);
@@ -957,12 +964,24 @@ const ExcalidrawWrapper = () => {
 
           return (
             <div className="excalidraw-ui-top-right">
-              {excalidrawAPI && <AIBuddyButton excalidrawAPI={excalidrawAPI} />}
+              {isViewOnly && (
+                <ViewOnlyBadge
+                  onClick={() =>
+                    setShareDialogState({
+                      isOpen: true,
+                      type: "collaborationOnly",
+                    })
+                  }
+                />
+              )}
+              {excalidrawAPI && !isViewOnly && (
+                <AIBuddyButton excalidrawAPI={excalidrawAPI} />
+              )}
               {!isCollabDisabled && collabError.message && (
                 <CollabError collabError={collabError} />
               )}
 
-              {!isCollabDisabled && collabAPI && (
+              {!isCollabDisabled && collabAPI && !isViewOnly && (
                 <LiveCollaborationTrigger
                   isCollaborating={isCollaborating}
                   onSelect={() =>
