@@ -7,7 +7,7 @@
     {
       "binding": "DB",
       "database_name": "colabdraw",
-      "database_id": "PLACEHOLDER_REPLACE_AFTER_cf_d1_create"
+      "database_id": "61ea32c6-c7ab-4482-87d0-4dcf86a83df9"
     }
   ],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "colabdraw-files" }]
