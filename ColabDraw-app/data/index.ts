@@ -33,12 +33,12 @@ import {
 
 import { encodeFilesForUpload } from "./FileManager";
 import {
-  saveFilesToAppwrite,
-  _getDatabase,
-  APPWRITE_DATABASE_ID,
-  APPWRITE_SHARE_LINKS_TABLE_ID,
+  BACKEND_URL,
   bytesToBase64,
-} from "./appwrite";
+  createShareLink,
+  readShareLink,
+  saveFilesToBackend,
+} from "./backend";
 
 import type { WS_SUBTYPES } from "../app_constants";
 
@@ -64,7 +64,7 @@ export const getSyncableElements = (
     isSyncableElement(element),
   ) as SyncableExcalidrawElement[];
 
-// Backend URLs - no longer used for sharing, everything goes through Appwrite now
+// Collaboration links carry the room key in the URL hash; nothing is shared here.
 
 const generateRoomId = async () => {
   const buffer = new Uint8Array(ROOM_ID_BYTES);
@@ -179,27 +179,22 @@ export const getViewOnlyCollaborationLink = (link: string) => {
   return `${link.replace(/,view$/, "")},view`;
 };
 
-// legacy_decodeFromBackend removed as we are now using Appwrite storage for new shares
+// legacy_decodeFromBackend removed; new shares live in our own backend.
 
 export const importFromBackend = async (
   id: string,
   decryptionKey: string,
 ): Promise<ImportedDataState> => {
   try {
-    const database = _getDatabase();
-    // Fetch from Appwrite instead of Excalidraw public API
-    const doc = await database.getDocument(
-      APPWRITE_DATABASE_ID,
-      APPWRITE_SHARE_LINKS_TABLE_ID,
-      id,
-    );
+    // Fetch from our own backend instead of Excalidraw's public API
+    const doc = await readShareLink(id);
 
     if (!doc) {
       window.alert(t("alerts.importBackendFailed"));
       return {};
     }
 
-    const buffer = Uint8Array.from(atob((doc as any).ciphertext), (c) =>
+    const buffer = Uint8Array.from(atob(doc.ciphertext), (c) =>
       c.charCodeAt(0),
     );
 
@@ -234,19 +229,13 @@ type ExportToBackendResult =
   | { url: string; errorMessage: null };
 
 /**
- * Turns the storage service's error into something a user (or the person
- * running the deployment) can act on, instead of a generic failure.
+ * Turns the backend's error into something a user (or the person running the
+ * deployment) can act on, instead of a generic failure.
  */
-const describeShareLinkError = (error: any) => {
+export const describeShareLinkError = (error: any) => {
   const message = String(error?.message || "");
 
-  if (/Invalid Origin/i.test(message)) {
-    return t("alerts.shareLinkOriginNotAllowed");
-  }
-  if (error?.code === 402 || /billing/i.test(message)) {
-    return t("alerts.shareLinkStorageFull");
-  }
-  if (/longer than.*?bytes/i.test(message)) {
+  if (error?.status === 413 || /longer than.*?bytes/i.test(message)) {
     return t("alerts.couldNotCreateShareableLinkTooBig");
   }
   return t("alerts.couldNotCreateShareableLink");
@@ -257,7 +246,7 @@ export const exportToBackend = async (
   appState: Partial<AppState>,
   files: BinaryFiles,
 ): Promise<ExportToBackendResult> => {
-  if (!APPWRITE_SHARE_LINKS_TABLE_ID) {
+  if (!BACKEND_URL) {
     return {
       url: null,
       errorMessage: t("alerts.shareLinkNotConfigured"),
@@ -287,29 +276,18 @@ export const exportToBackend = async (
       maxBytes: FILE_UPLOAD_MAX_BYTES,
     });
 
-    const database = _getDatabase();
     const id = await generateRoomId();
 
-    // Save encrypted JSON to Appwrite
+    // Save encrypted JSON to the backend
     const ciphertextBase64 = bytesToBase64(new Uint8Array(payload.buffer));
 
-    await database.createDocument(
-      APPWRITE_DATABASE_ID,
-      APPWRITE_SHARE_LINKS_TABLE_ID,
-      id,
-      {
-        ciphertext: ciphertextBase64,
-      },
-    );
+    await createShareLink(id, ciphertextBase64);
 
     const url = new URL(window.location.href);
     url.hash = `json=${id},${encryptionKey}`;
     const urlString = url.toString();
 
-    await saveFilesToAppwrite({
-      prefix: `/files/shareLinks/${id}`,
-      files: filesToUpload,
-    });
+    await saveFilesToBackend({ files: filesToUpload });
 
     return { url: urlString, errorMessage: null };
   } catch (error: any) {
@@ -319,5 +297,5 @@ export const exportToBackend = async (
   }
 };
 
-// Re-export Appwrite functions for easy importing
-export { loadFilesFromAppwrite, saveFilesToAppwrite } from "./appwrite";
+// Re-export backend functions for easy importing
+export { loadFilesFromBackend, saveFilesToBackend } from "./backend";

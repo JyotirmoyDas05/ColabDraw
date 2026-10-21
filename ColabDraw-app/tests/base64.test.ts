@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bytesToBase64 } from "../data/appwrite";
+import { bytesToBase64 } from "../data/backend";
 
 describe("bytesToBase64", () => {
   it("encodes small payloads", () => {

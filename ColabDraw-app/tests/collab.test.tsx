@@ -27,24 +27,24 @@ Object.defineProperty(window, "crypto", {
   },
 });
 
-vi.mock("../../excalidraw-app/data/appwrite.ts", () => {
-  const loadFromAppwrite = async () => null;
-  const saveToAppwrite = () => {};
-  const isSavedToAppwrite = () => true;
-  const loadFilesFromAppwrite = async () => ({
+vi.mock("../data/backend.ts", () => {
+  const loadFromBackend = async () => null;
+  const saveToBackend = () => {};
+  const isSavedToBackend = () => true;
+  const loadFilesFromBackend = async () => ({
     loadedFiles: [],
     erroredFiles: new Map(),
   });
-  const saveFilesToAppwrite = async () => ({
+  const saveFilesToBackend = async () => ({
     savedFiles: [],
     erroredFiles: [],
   });
   return {
-    loadFromAppwrite,
-    saveToAppwrite,
-    isSavedToAppwrite,
-    loadFilesFromAppwrite,
-    saveFilesToAppwrite,
+    loadFromBackend,
+    saveToBackend,
+    isSavedToBackend,
+    loadFilesFromBackend,
+    saveFilesToBackend,
   };
 });
 

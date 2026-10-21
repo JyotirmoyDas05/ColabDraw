@@ -56,7 +56,6 @@ import { appJotaiStore, atom } from "../app-jotai";
 import {
   CURSOR_SYNC_TIMEOUT,
   FILE_UPLOAD_MAX_BYTES,
-  FIREBASE_STORAGE_PREFIXES,
   INITIAL_SCENE_UPDATE_TIMEOUT,
   LOAD_IMAGES_TIMEOUT,
   WS_SUBTYPES,
@@ -76,12 +75,12 @@ import {
 import { FileStatusStore } from "../data/fileStatusStore";
 import { LocalData } from "../data/LocalData";
 import {
-  isSavedToAppwrite,
-  loadFilesFromAppwrite,
-  loadFromAppwrite,
-  saveFilesToAppwrite,
-  saveToAppwrite,
-} from "../data/appwrite";
+  isSavedToBackend,
+  loadFilesFromBackend,
+  loadFromBackend,
+  saveFilesToBackend,
+  saveToBackend,
+} from "../data/backend";
 import {
   importUsernameFromLocalStorage,
   saveUsernameToLocalStorage,
@@ -163,7 +162,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           throw new AbortError();
         }
 
-        return loadFilesFromAppwrite(`files/rooms/${roomId}`, roomKey, fileIds);
+        return loadFilesFromBackend(roomKey, fileIds);
       },
       saveFiles: async ({ addedFiles }) => {
         const { roomId, roomKey } = this.portal;
@@ -171,8 +170,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           throw new AbortError();
         }
 
-        const { savedFiles, erroredFiles } = await saveFilesToAppwrite({
-          prefix: `${FIREBASE_STORAGE_PREFIXES.collabFiles}/${roomId}`,
+        const { savedFiles, erroredFiles } = await saveFilesToBackend({
           files: await encodeFilesForUpload({
             files: addedFiles,
             encryptionKey: roomKey,
@@ -311,11 +309,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     if (
       this.isCollaborating() &&
       (this.fileManager.shouldPreventUnload(syncableElements) ||
-        !isSavedToAppwrite(this.portal, syncableElements))
+        !isSavedToBackend(this.portal, syncableElements))
     ) {
       // this won't run in time if user decides to leave the site, but
       //  the purpose is to run in immediately after user decides to stay
-      this.saveCollabRoomToAppwrite(syncableElements);
+      this.saveCollabRoomToBackend(syncableElements);
 
       if (import.meta.env.VITE_APP_DISABLE_PREVENT_UNLOAD !== "true") {
         preventUnload(event);
@@ -327,7 +325,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     }
   });
 
-  saveCollabRoomToAppwrite = async (
+  saveCollabRoomToBackend = async (
     syncableElements: readonly SyncableExcalidrawElement[],
   ) => {
     // a viewer must never write the room back, even if its scene is stale
@@ -336,7 +334,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     }
     syncableElements = cloneJSON(syncableElements);
     try {
-      const storedElements = await saveToAppwrite(
+      const storedElements = await saveToBackend(
         this.portal,
         syncableElements,
         this.excalidrawAPI.getAppState(),
@@ -375,7 +373,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
   stopCollaboration = (keepRemoteState = true) => {
     this.queueBroadcastAllElements.cancel();
-    this.queueSaveToAppwrite.cancel();
+    this.queuesaveToBackend.cancel();
     this.loadImageFiles.cancel();
     this.resetErrorIndicator(true);
 
@@ -388,7 +386,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       return;
     }
 
-    this.saveCollabRoomToAppwrite(
+    this.saveCollabRoomToBackend(
       getSyncableElements(
         this.excalidrawAPI.getSceneElementsIncludingDeleted(),
       ),
@@ -593,7 +591,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         captureUpdate: CaptureUpdateAction.NEVER,
       });
 
-      this.saveCollabRoomToAppwrite(getSyncableElements(elements));
+      this.saveCollabRoomToBackend(getSyncableElements(elements));
     }
 
     // fallback in case you're not alone in the room but still don't receive
@@ -760,7 +758,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       this.excalidrawAPI.resetScene();
 
       try {
-        const elements = await loadFromAppwrite(
+        const elements = await loadFromBackend(
           roomLinkData.roomId,
           roomLinkData.roomKey,
           this.portal.socket,
@@ -1001,7 +999,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       return;
     }
     this.broadcastElements(elements);
-    this.queueSaveToAppwrite();
+    this.queuesaveToBackend();
   };
 
   queueBroadcastAllElements = throttle(() => {
@@ -1018,10 +1016,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.setLastBroadcastedOrReceivedSceneVersion(newVersion);
   }, SYNC_FULL_SCENE_INTERVAL_MS);
 
-  queueSaveToAppwrite = throttle(
+  queuesaveToBackend = throttle(
     () => {
       if (this.portal.socketInitialized) {
-        this.saveCollabRoomToAppwrite(
+        this.saveCollabRoomToBackend(
           getSyncableElements(
             this.excalidrawAPI.getSceneElementsIncludingDeleted(),
           ),
