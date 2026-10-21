@@ -217,6 +217,7 @@ try {
 
   io.on("connection", (socket) => {
     ioDebug("connection established!");
+    socket.data.viewOnlyRooms = new Set<string>();
     io.to(`${socket.id}`).emit("init-room");
     socket.on("join-room", async (roomID) => {
       socketDebug(`${socket.id} has joined ${roomID}`);
@@ -235,9 +236,26 @@ try {
       );
     });
 
+    // view-only links: the client tells us it's watching, and from then on we
+    // drop its broadcasts. Enforcement, not secrecy: the client still holds the
+    // decryption key, so this stops edits from a read-only tab, not a hostile one.
+    socket.on("set-view-only", (roomID: string) => {
+      if (typeof roomID !== "string") {
+        return;
+      }
+      socketDebug(`${socket.id} is view-only in ${roomID}`);
+      socket.data.viewOnlyRooms?.add(roomID);
+    });
+
     socket.on(
       "server-broadcast",
       (roomID: string, encryptedData: ArrayBuffer, iv: Uint8Array) => {
+        if (socket.data.viewOnlyRooms?.has(roomID)) {
+          socketDebug(
+            `${socket.id} tried to broadcast to ${roomID} as a viewer`,
+          );
+          return;
+        }
         socketDebug(`${socket.id} sends update to ${roomID}`);
         socket.broadcast.to(roomID).emit("client-broadcast", encryptedData, iv);
       },
@@ -246,6 +264,12 @@ try {
     socket.on(
       "server-volatile-broadcast",
       (roomID: string, encryptedData: ArrayBuffer, iv: Uint8Array) => {
+        if (socket.data.viewOnlyRooms?.has(roomID)) {
+          socketDebug(
+            `${socket.id} tried to broadcast to ${roomID} as a viewer`,
+          );
+          return;
+        }
         socketDebug(`${socket.id} sends volatile update to ${roomID}`);
         socket.volatile.broadcast
           .to(roomID)

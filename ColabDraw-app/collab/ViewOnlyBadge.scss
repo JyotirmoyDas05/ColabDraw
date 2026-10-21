@@ -1,0 +1,37 @@
+@use "../../packages/ColabDraw/css/variables.module" as *;
+
+.excalidraw {
+  .view-only-badge {
+    --button-bg: var(--color-surface-high);
+    --button-color: var(--color-on-surface);
+    --button-border: var(--border-color);
+
+    --button-hover-bg: var(--color-surface-mid);
+    --button-hover-border: var(--border-color);
+    --button-active-bg: var(--color-surface-mid);
+
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+
+    width: auto;
+    height: var(--lg-button-size);
+    padding-inline: 0.75rem;
+
+    box-shadow: 0 0 0 1px var(--color-surface-lowest);
+    flex-shrink: 0;
+
+    svg {
+      width: 1rem;
+      height: 1rem;
+    }
+
+    span {
+      font-family: var(--ui-font);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      line-height: 1;
+      white-space: nowrap;
+    }
+  }
+}

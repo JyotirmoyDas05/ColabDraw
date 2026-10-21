@@ -98,6 +98,7 @@ import type {
 
 export const collabAPIAtom = atom<CollabAPI | null>(null);
 export const isCollaboratingAtom = atom(false);
+export const isViewOnlyAtom = atom(false);
 export const isOfflineAtom = atom(false);
 
 interface CollabState {
@@ -287,6 +288,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   }
 
   isCollaborating = () => appJotaiStore.get(isCollaboratingAtom)!;
+  isViewOnly = () => appJotaiStore.get(isViewOnlyAtom)!;
 
   private setIsCollaborating = (isCollaborating: boolean) => {
     appJotaiStore.set(isCollaboratingAtom, isCollaborating);
@@ -297,6 +299,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   };
 
   private beforeUnload = withBatchedUpdates((event: BeforeUnloadEvent) => {
+    // viewers have nothing to save, so don't nag them on close
+    if (this.isViewOnly()) {
+      return;
+    }
+
     const syncableElements = getSyncableElements(
       this.getSceneElementsIncludingDeleted(),
     );
@@ -323,6 +330,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   saveCollabRoomToAppwrite = async (
     syncableElements: readonly SyncableExcalidrawElement[],
   ) => {
+    // a viewer must never write the room back, even if its scene is stale
+    if (this.isViewOnly()) {
+      return;
+    }
     syncableElements = cloneJSON(syncableElements);
     try {
       const storedElements = await saveToAppwrite(
@@ -367,6 +378,15 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.queueSaveToAppwrite.cancel();
     this.loadImageFiles.cancel();
     this.resetErrorIndicator(true);
+
+    if (this.isViewOnly()) {
+      // leaving is all a viewer can do: nothing to save, no confirmation
+      window.history.pushState({}, APP_NAME, window.location.origin);
+      this.destroySocketClient();
+      this.excalidrawAPI.updateScene({ appState: { viewModeEnabled: false } });
+      LocalData.fileStorage.reset();
+      return;
+    }
 
     this.saveCollabRoomToAppwrite(
       getSyncableElements(
@@ -417,6 +437,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.followedBy = new Set();
     if (!opts?.isUnload) {
       this.setIsCollaborating(false);
+      appJotaiStore.set(isViewOnlyAtom, false);
       this.setActiveRoomLink(null);
       appJotaiStore.set(userToFollowAtom, null);
       this.collaborators = new Map();
@@ -479,7 +500,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   private fallbackInitializationHandler: null | (() => any) = null;
 
   startCollaboration = async (
-    existingRoomLinkData: null | { roomId: string; roomKey: string },
+    existingRoomLinkData: null | {
+      roomId: string;
+      roomKey: string;
+      isViewOnly?: boolean;
+    },
   ) => {
     if (!this.state.username) {
       import("@excalidraw/random-username").then(({ getRandomUsername }) => {
@@ -494,9 +519,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
     let roomId;
     let roomKey;
+    let isViewOnly = false;
 
     if (existingRoomLinkData) {
       ({ roomId, roomKey } = existingRoomLinkData);
+      isViewOnly = !!existingRoomLinkData.isViewOnly;
     } else {
       ({ roomId, roomKey } = await generateCollaborationLinkData());
       window.history.pushState(
@@ -513,6 +540,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     >();
 
     this.setIsCollaborating(true);
+    appJotaiStore.set(isViewOnlyAtom, isViewOnly);
     LocalData.pauseSave("collaboration");
 
     const { default: socketIOClient } = await import(
@@ -536,6 +564,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         }),
         roomId,
         roomKey,
+        isViewOnly,
       );
 
       this.portal.socket.once("connect_error", fallbackInitializationHandler);
@@ -968,6 +997,9 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   };
 
   syncElements = (elements: readonly OrderedExcalidrawElement[]) => {
+    if (this.isViewOnly()) {
+      return;
+    }
     this.broadcastElements(elements);
     this.queueSaveToAppwrite();
   };

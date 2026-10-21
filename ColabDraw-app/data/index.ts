@@ -36,8 +36,8 @@ import {
   saveFilesToAppwrite,
   _getDatabase,
   APPWRITE_DATABASE_ID,
-  APPWRITE_TABLE_ID,
   APPWRITE_SHARE_LINKS_TABLE_ID,
+  bytesToBase64,
 } from "./appwrite";
 
 import type { WS_SUBTYPES } from "../app_constants";
@@ -129,7 +129,8 @@ export type SocketUpdateData =
     _brand: "socketUpdateData";
   };
 
-const RE_COLLAB_LINK = /^#room=([a-zA-Z0-9_-]+),([a-zA-Z0-9_-]+)$/;
+// `,view` marks a read-only link. Older links have no suffix and stay editable.
+const RE_COLLAB_LINK = /^#room=([a-zA-Z0-9_-]+),([a-zA-Z0-9_-]+)(,view)?$/;
 
 export const isCollaborationLink = (link: string) => {
   const hash = new URL(link).hash;
@@ -143,7 +144,13 @@ export const getCollaborationLinkData = (link: string) => {
     window.alert(t("alerts.invalidEncryptionKey"));
     return null;
   }
-  return match ? { roomId: match[1], roomKey: match[2] } : null;
+  return match
+    ? {
+        roomId: match[1],
+        roomKey: match[2],
+        isViewOnly: !!match[3],
+      }
+    : null;
 };
 
 export const generateCollaborationLinkData = async () => {
@@ -160,8 +167,16 @@ export const generateCollaborationLinkData = async () => {
 export const getCollaborationLink = (data: {
   roomId: string;
   roomKey: string;
+  viewOnly?: boolean;
 }) => {
-  return `${window.location.origin}${window.location.pathname}#room=${data.roomId},${data.roomKey}`;
+  return `${window.location.origin}${window.location.pathname}#room=${
+    data.roomId
+  },${data.roomKey}${data.viewOnly ? ",view" : ""}`;
+};
+
+/** the view-only variant of an existing collaboration link */
+export const getViewOnlyCollaborationLink = (link: string) => {
+  return `${link.replace(/,view$/, "")},view`;
 };
 
 // legacy_decodeFromBackend removed as we are now using Appwrite storage for new shares
@@ -175,7 +190,7 @@ export const importFromBackend = async (
     // Fetch from Appwrite instead of Excalidraw public API
     const doc = await database.getDocument(
       APPWRITE_DATABASE_ID,
-      APPWRITE_SHARE_LINKS_TABLE_ID || APPWRITE_TABLE_ID, // Use share-links table if defined, else fallback to scenes
+      APPWRITE_SHARE_LINKS_TABLE_ID,
       id,
     );
 
@@ -218,11 +233,37 @@ type ExportToBackendResult =
   | { url: null; errorMessage: string }
   | { url: string; errorMessage: null };
 
+/**
+ * Turns the storage service's error into something a user (or the person
+ * running the deployment) can act on, instead of a generic failure.
+ */
+const describeShareLinkError = (error: any) => {
+  const message = String(error?.message || "");
+
+  if (/Invalid Origin/i.test(message)) {
+    return t("alerts.shareLinkOriginNotAllowed");
+  }
+  if (error?.code === 402 || /billing/i.test(message)) {
+    return t("alerts.shareLinkStorageFull");
+  }
+  if (/longer than.*?bytes/i.test(message)) {
+    return t("alerts.couldNotCreateShareableLinkTooBig");
+  }
+  return t("alerts.couldNotCreateShareableLink");
+};
+
 export const exportToBackend = async (
   elements: readonly ExcalidrawElement[],
   appState: Partial<AppState>,
   files: BinaryFiles,
 ): Promise<ExportToBackendResult> => {
+  if (!APPWRITE_SHARE_LINKS_TABLE_ID) {
+    return {
+      url: null,
+      errorMessage: t("alerts.shareLinkNotConfigured"),
+    };
+  }
+
   const encryptionKey = await generateEncryptionKey("string");
 
   const payload = await compressData(
@@ -250,13 +291,11 @@ export const exportToBackend = async (
     const id = await generateRoomId();
 
     // Save encrypted JSON to Appwrite
-    const ciphertextBase64 = btoa(
-      String.fromCharCode(...new Uint8Array(payload.buffer)),
-    );
+    const ciphertextBase64 = bytesToBase64(new Uint8Array(payload.buffer));
 
     await database.createDocument(
       APPWRITE_DATABASE_ID,
-      APPWRITE_SHARE_LINKS_TABLE_ID || APPWRITE_TABLE_ID,
+      APPWRITE_SHARE_LINKS_TABLE_ID,
       id,
       {
         ciphertext: ciphertextBase64,
@@ -276,7 +315,7 @@ export const exportToBackend = async (
   } catch (error: any) {
     console.error(error);
 
-    return { url: null, errorMessage: t("alerts.couldNotCreateShareableLink") };
+    return { url: null, errorMessage: describeShareLinkError(error) };
   }
 };
 

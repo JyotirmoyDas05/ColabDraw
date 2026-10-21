@@ -173,6 +173,17 @@ export const saveFilesToAppwrite = async ({
   return { savedFiles, erroredFiles };
 };
 
+export const bytesToBase64 = (bytes: Uint8Array) => {
+  // spreading a large array into String.fromCharCode overflows the call stack,
+  // which is why this goes in chunks
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+};
+
 const createAppwriteSceneDocument = async (
   elements: readonly SyncableExcalidrawElement[],
   roomKey: string,
@@ -182,10 +193,8 @@ const createAppwriteSceneDocument = async (
   const { ciphertext, iv } = await encryptElements(roomKey, elements);
 
   // Convert to base64 for string storage
-  const ciphertextBase64 = btoa(
-    String.fromCharCode(...new Uint8Array(ciphertext)),
-  );
-  const ivBase64 = btoa(String.fromCharCode(...iv));
+  const ciphertextBase64 = bytesToBase64(new Uint8Array(ciphertext));
+  const ivBase64 = bytesToBase64(iv);
 
   return {
     roomId,
