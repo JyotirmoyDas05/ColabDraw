@@ -15,7 +15,7 @@ The browser talks to it with plain `fetch`. Payloads are already encrypted clien
 | `GET` | `/files/:fileId` | — | `200` bytes, immutable cache | `404` |
 | `PUT` | `/files/:fileId` | raw bytes | `204` (overwrite allowed) | `413` |
 
-Ids must match `^[A-Za-z0-9._-]{1,128}$`; anything else is a `404` before D1 or R2 is touched. JSON bodies are capped at 10 MiB, file bodies at 8 MiB. Every response carries `access-control-allow-origin: *`.
+Ids must match `^[A-Za-z0-9._-]{1,128}$`; anything else is a `404` before D1 or R2 is touched. The client composes file ids as `<ownerId>_<fileId>` — room id or share-link id — so a share link never overwrites a room's bytes. JSON bodies are capped at 1.9 MB (D1's row limit is 2 MB), file bodies at 8 MiB. Every response carries `access-control-allow-origin: *`.
 
 ## Local development
 
@@ -24,7 +24,7 @@ Ids must match `^[A-Za-z0-9._-]{1,128}$`; anything else is a `404` before D1 or 
 ```bash
 cd worker
 npx wrangler d1 migrations apply DB --local   # once, and after adding a migration
-npx wrangler dev --port 8787
+npx wrangler dev --port 8787 --local
 ```
 
 Point the app at it with `VITE_APP_BACKEND_URL=http://localhost:8787` (already the value in `.env.development`).
@@ -80,4 +80,4 @@ Finally set `VITE_APP_BACKEND_URL` to that URL in the Vercel project.
 
 ## What it costs
 
-Free tier: 100k requests/day on Workers, 5 GB of D1, 10 GB of R2 with no egress charge. Because the API is unauthenticated, anyone who finds the URL can write until those quotas are hit. If that becomes a problem, the cheapest mitigation is a Turnstile check on the `PUT` routes.
+Free tier: 100k requests/day on Workers, 5 GB of D1 storage with 500 MB for a single database, 10 GB of R2 with no egress charge. With the 1.9 MB JSON cap, one database holds roughly 260 maximum-size scenes, which is well beyond what this app needs. Because the API is unauthenticated, anyone who finds the URL can write until those quotas are hit. If that becomes a problem, the cheapest mitigation is a Turnstile check on the `PUT` routes.

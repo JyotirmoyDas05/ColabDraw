@@ -52,3 +52,27 @@ export const fakeR2 = () => {
 
   return { bucket: bucket as unknown as R2Bucket, objects, calls };
 };
+
+/**
+ * A request whose body arrives as a stream, so it carries no `content-length`.
+ * This is the shape a chunked upload has, and the only way to exercise the
+ * measured size check rather than the declared one.
+ */
+export const streamedRequest = (
+  url: string,
+  chunks: Uint8Array[],
+  init: RequestInit,
+) =>
+  new Request(url, {
+    ...init,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(chunk);
+        }
+        controller.close();
+      },
+    }),
+    // Node's fetch needs this for a stream body; workerd does not.
+    duplex: "half",
+  } as RequestInit);

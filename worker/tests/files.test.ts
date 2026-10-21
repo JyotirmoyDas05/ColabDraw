@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { MAX_FILE_BYTES } from "../src/http";
 import worker from "../src/index";
 
-import { fakeD1, fakeR2 } from "./fakes";
+import { fakeD1, fakeR2, streamedRequest } from "./fakes";
 
 const envWith = (opts: { first?: unknown; changes?: number } = {}) => {
   const d1 = fakeD1(opts);
@@ -68,7 +69,7 @@ describe("PUT /files/:fileId", () => {
     expect(new TextDecoder().decode(objects.get("f1"))).toBe("second");
   });
 
-  it("413s when the body declares more than 8 MiB", async () => {
+  it("413s when the body declares more than the cap", async () => {
     const { env, objects } = envWith({});
 
     const res = await worker.fetch(
@@ -76,7 +77,7 @@ describe("PUT /files/:fileId", () => {
         method: "PUT",
         headers: {
           "content-type": "application/octet-stream",
-          "content-length": String(9 * 1024 * 1024),
+          "content-length": String(MAX_FILE_BYTES + 1),
         },
         body: new Uint8Array(1),
       }),
@@ -85,6 +86,27 @@ describe("PUT /files/:fileId", () => {
 
     expect(res.status).toBe(413);
     expect(await res.json()).toEqual({ error: "payload_too_large" });
+    expect(objects.size).toBe(0);
+  });
+
+  it("413s on a chunked body that exceeds the cap with no content-length", async () => {
+    const { env, objects } = envWith({});
+
+    const res = await worker.fetch(
+      streamedRequest(
+        "https://api.test/files/f1",
+        [new Uint8Array(MAX_FILE_BYTES + 1)],
+        {
+          method: "PUT",
+          headers: { "content-type": "application/octet-stream" },
+        },
+      ),
+      env,
+    );
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "payload_too_large" });
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
     expect(objects.size).toBe(0);
   });
 });

@@ -8,7 +8,7 @@ The app stores three things on Appwrite Cloud: a `scenes` document per room, a `
 
 The Appwrite project is frozen with `402 billing_limit_exceeded`. Per Appwrite's billing docs, exceeding the Free plan's bandwidth denies **all** API access until the billing cycle resets or the plan is upgraded, so this recurs every time traffic passes the limit. Storage is capped at ~2 GB and files are served through Appwrite, so every image view counts against bandwidth.
 
-Cloudflare Workers + D1 + R2 removes both ceilings: 10 GB of R2 storage with no egress charge, 5 GB of D1, and no plan that expires.
+Cloudflare Workers + D1 + R2 removes both ceilings: 10 GB of R2 storage with no egress charge, 5 GB of D1 (500 MB for a single database), and no plan that expires.
 
 ## Goal
 
@@ -48,11 +48,15 @@ All JSON is UTF-8. Ids are validated against `^[A-Za-z0-9._-]{1,128}$`.
 | `GET` | `/files/:fileId` | — | `200` bytes, `content-type: application/octet-stream`, `cache-control: public, max-age=31536000, immutable`, `etag` | `404` |
 | `PUT` | `/files/:fileId` | raw bytes | `204` (overwrite allowed) | `413` |
 
+`/files/:fileId` is a flat key space: the client composes the id as `<ownerId>_<fileId>`, where `ownerId` is the room id for a room upload and the share-link id for an export.
+
 `OPTIONS` on any path returns `204` with CORS headers.
 
 CORS: `access-control-allow-origin: *`, methods `GET, PUT, OPTIONS`, headers `content-type`, `max-age: 86400`. No credentials are ever sent, so `*` is safe.
 
-Limits: JSON bodies ≤ 10 MiB, file bodies ≤ 8 MiB (the client caps uploads at 4 MiB before encryption). Exceeding either returns `413`.
+Limits: JSON bodies ≤ 1.9 MB, file bodies ≤ 8 MiB (the client caps uploads at 4 MiB before encryption). Exceeding either returns `413`.
+
+1.9 MB rather than something rounder because D1 caps a row — and so any single string in it — at 2,000,000 bytes. A scene is stored as one row of base64 text, so a larger cap would pass validation and then fail inside D1 as a `500`. The cap is checked on the declared `content-length` and again while streaming the body, so an oversized upload is rejected without being buffered.
 
 ### Data model
 
@@ -72,7 +76,9 @@ CREATE TABLE share_links (
 );
 ```
 
-R2 object key is the Excalidraw file id. Ids are derived from file content, so `PUT` overwriting an existing key is idempotent and matches the current "409 means already saved" behaviour.
+R2 object keys are composed client-side as `<ownerId>_<fileId>`, where `fileId` is the Excalidraw file id (the SHA-1 of the plaintext) and `ownerId` is whatever owns the key the bytes were encrypted with — the room id in a room, the share-link id in an export.
+
+The prefix is load-bearing. An image keeps one `fileId` for its whole life, so the room and any share link built from it derive the same id from different keys and produce different bytes. Under a shared key the later upload would overwrite the earlier one's ciphertext, and every collaborator who reloaded after a share would download bytes their room key cannot decrypt. The old Appwrite flow never hit this because `createFile` returned `409` and the client treated that as "already saved" — which preserved the first writer's bytes but left share links unable to decrypt room files. Prefixing fixes both directions: each context owns its own copy, and `PUT` overwriting within a namespace stays idempotent because re-encrypting with the same key yields bytes that decrypt identically.
 
 ### Client changes
 

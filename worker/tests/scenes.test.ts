@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { MAX_JSON_BYTES } from "../src/http";
 import worker from "../src/index";
 
-import { fakeD1, fakeR2 } from "./fakes";
+import { fakeD1, fakeR2, streamedRequest } from "./fakes";
 
 const envWith = (opts: { first?: unknown; changes?: number } = {}) => {
   const d1 = fakeD1(opts);
@@ -19,7 +20,7 @@ const put = (roomId: string, body: unknown) =>
 
 describe("GET /scenes/:roomId", () => {
   it("returns the stored scene", async () => {
-    const { env } = envWith({
+    const { env, statements } = envWith({
       first: { scene_version: 7, iv: "aaa", ciphertext: "bbb" },
     });
 
@@ -36,6 +37,12 @@ describe("GET /scenes/:roomId", () => {
       ciphertext: "bbb",
     });
     expect(res.headers.get("access-control-allow-origin")).toBe("*");
+
+    // The fake replays whatever it is seeded with, so pin the query itself.
+    expect(statements[0].sql).toMatch(
+      /SELECT .*FROM scenes WHERE room_id = \?/i,
+    );
+    expect(statements[0].args).toEqual(["abc123"]);
   });
 
   it("404s when no scene is stored", async () => {
@@ -93,13 +100,13 @@ describe("PUT /scenes/:roomId", () => {
     expect(await res.json()).toEqual({ error: "bad_request" });
   });
 
-  it("413s when the body declares more than 10 MiB", async () => {
-    const { env } = envWith({});
+  it("413s when the body declares more than the cap", async () => {
+    const { env, statements } = envWith({});
 
     const res = await worker.fetch(
       new Request("https://api.test/scenes/abc123", {
         method: "PUT",
-        headers: { "content-length": String(11 * 1024 * 1024) },
+        headers: { "content-length": String(MAX_JSON_BYTES + 1) },
         body: "{}",
       }),
       env,
@@ -107,5 +114,27 @@ describe("PUT /scenes/:roomId", () => {
 
     expect(res.status).toBe(413);
     expect(await res.json()).toEqual({ error: "payload_too_large" });
+    expect(statements).toHaveLength(0);
+  });
+
+  it("413s on a chunked body that exceeds the cap with no content-length", async () => {
+    const { env, statements } = envWith({});
+
+    const res = await worker.fetch(
+      streamedRequest(
+        "https://api.test/scenes/abc123",
+        [new Uint8Array(MAX_JSON_BYTES + 1)],
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+        },
+      ),
+      env,
+    );
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "payload_too_large" });
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(statements).toHaveLength(0);
   });
 });

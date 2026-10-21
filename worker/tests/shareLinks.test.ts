@@ -23,7 +23,7 @@ const put = (id: string, body: unknown) =>
 
 describe("GET /share-links/:id", () => {
   it("returns the stored ciphertext", async () => {
-    const { env } = envWith({ first: { ciphertext: "abc" } });
+    const { env, statements } = envWith({ first: { ciphertext: "abc" } });
 
     const res = await worker.fetch(
       new Request("https://api.test/share-links/xyz"),
@@ -32,6 +32,12 @@ describe("GET /share-links/:id", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ciphertext: "abc" });
+
+    // The fake replays whatever it is seeded with, so pin the query itself.
+    expect(statements[0].sql).toMatch(
+      /SELECT .*FROM share_links WHERE id = \?/i,
+    );
+    expect(statements[0].args).toEqual(["xyz"]);
   });
 
   it("404s when absent", async () => {
