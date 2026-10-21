@@ -39,3 +39,6 @@ DEPLOYMENT.md
 .env.production
 .env.local
 .env.*.local
+# Cloudflare local dev state
+.wrangler/
+
