@@ -42,6 +42,19 @@ node worker/tests/e2e.mjs                     # defaults to localhost:8787
 node worker/tests/e2e.mjs https://host.example # or any deployment
 ```
 
+Every id it writes carries a per-run suffix (`e2e-<runId>`), so it can be run repeatedly against the same database. It does not delete what it created; sweep the rows when they bother you:
+
+```bash
+npx wrangler d1 execute colabdraw --remote \
+  --command "DELETE FROM scenes WHERE room_id LIKE 'e2e-%'; DELETE FROM share_links WHERE id LIKE 'e2e-%';"
+```
+
+Objects in R2 follow the same `e2e-` prefix. Wrangler cannot list a bucket, so delete them by key:
+
+```bash
+npx wrangler r2 object delete "colabdraw-files/<key>" --remote
+```
+
 ## Deploying
 
 Resource creation uses `cf` (the Cloudflare CLI), which is authenticated on this machine:
