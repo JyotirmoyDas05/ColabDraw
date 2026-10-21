@@ -1,5 +1,7 @@
+import { getFile, putFile } from "./files";
 import { corsHeaders, fail, HttpError, isValidId } from "./http";
 import { getScene, putScene } from "./scenes";
+import { getShareLink, putShareLink } from "./shareLinks";
 
 import type { Env } from "./types";
 
@@ -31,11 +33,23 @@ const route = async (request: Request, env: Env): Promise<Response> => {
     if (resource === "scenes") {
       return getScene(env, id);
     }
+    if (resource === "share-links") {
+      return getShareLink(env, id);
+    }
+    if (resource === "files") {
+      return getFile(env, id);
+    }
   }
 
   if (request.method === "PUT") {
     if (resource === "scenes") {
       return putScene(env, id, request);
+    }
+    if (resource === "share-links") {
+      return putShareLink(env, id, request);
+    }
+    if (resource === "files") {
+      return putFile(env, id, request);
     }
   }
 

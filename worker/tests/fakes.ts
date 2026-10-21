@@ -28,24 +28,27 @@ export const fakeD1 = (seed: { first?: unknown; changes?: number } = {}) => {
 /** An R2 stand-in backed by a Map, so byte round-trips are real. */
 export const fakeR2 = () => {
   const objects = new Map<string, Uint8Array>();
+  const calls = { get: 0, put: 0 };
 
   const bucket = {
     get: async (key: string) => {
+      calls.get += 1;
       const bytes = objects.get(key);
       if (!bytes) {
         return null;
       }
       return {
-        body: new Blob([bytes]).stream(),
+        body: new Response(bytes).body,
         httpEtag: `"${key}"`,
         size: bytes.byteLength,
       };
     },
     put: async (key: string, value: Uint8Array) => {
+      calls.put += 1;
       objects.set(key, value);
       return { key };
     },
   };
 
-  return { bucket: bucket as unknown as R2Bucket, objects };
+  return { bucket: bucket as unknown as R2Bucket, objects, calls };
 };
