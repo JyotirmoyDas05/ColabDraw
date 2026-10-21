@@ -99,6 +99,9 @@ import Collab, {
 } from "./collab/Collab";
 import { AppFooter } from "./components/AppFooter";
 import { AppMainMenu } from "./components/AppMainMenu";
+import { Dashboard } from "./components/Dashboard";
+import { SceneSidebar, sceneSidebarOpenAtom } from "./components/SceneSidebar";
+import { SceneTitle } from "./components/SceneTitle";
 import { AppWelcomeScreen } from "./components/AppWelcomeScreen";
 
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
@@ -117,6 +120,7 @@ import {
   validateEmbeddable,
 } from "./data/embedPolicy";
 import { updateStaleImageStatuses } from "./data/FileManager";
+import { ensureActiveScene } from "./data/scenes";
 import { FileStatusStore } from "./data/fileStatusStore";
 import {
   importFromLocalStorage,
@@ -448,6 +452,7 @@ const ExcalidrawWrapper = () => {
     migrationAdapter: LibraryLocalStorageMigrationAdapter,
   });
 
+  const sceneSidebarOpen = useAtomValue(sceneSidebarOpenAtom);
   const [, forceRefresh] = useState(false);
   const embedsOpen = areEmbedsOpen();
   // a new function makes the editor re-check every embed when the choice changes
@@ -456,6 +461,14 @@ const ExcalidrawWrapper = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [embedsOpen, isCollaborating],
   );
+
+  // the drawing a user already has becomes their first scene
+  useEffect(() => {
+    ensureActiveScene(() => {
+      const { elements, appState } = importFromLocalStorage();
+      return { elements, appState: appState ?? {} };
+    }).catch(console.error);
+  }, []);
 
   useEffect(() => {
     if (isDevEnv()) {
@@ -909,6 +922,7 @@ const ExcalidrawWrapper = () => {
       style={{ height: "100%" }}
       className={clsx("excalidraw-app", {
         "is-collaborating": isCollaborating,
+        "has-scene-sidebar": sceneSidebarOpen,
       })}
     >
       <Excalidraw
@@ -919,6 +933,7 @@ const ExcalidrawWrapper = () => {
         initialData={initialStatePromiseRef.current.promise}
         isCollaborating={isCollaborating}
         validateEmbeddable={checkEmbeddable}
+        renderTopLeftUI={(isMobile) => (isMobile ? null : <SceneTitle />)}
         onPointerUpdate={collabAPI?.onPointerUpdate}
         UIOptions={{
           canvasActions: {
@@ -992,6 +1007,14 @@ const ExcalidrawWrapper = () => {
         </OverwriteConfirmDialog>
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
         <AIComponents />
+        <SceneSidebar
+          excalidrawAPI={excalidrawAPI}
+          isCollaborating={isCollaborating}
+        />
+        <Dashboard
+          excalidrawAPI={excalidrawAPI}
+          isCollaborating={isCollaborating}
+        />
         <AIKeyDialog />
 
         <TTDDialogTrigger />

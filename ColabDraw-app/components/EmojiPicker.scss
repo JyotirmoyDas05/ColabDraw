@@ -1,0 +1,95 @@
+.excalidraw .colab-emoji {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  &__search {
+    height: 2.5rem;
+    padding: 0 0.75rem;
+    border: 1px solid var(--default-border-color);
+    border-radius: 0.5rem;
+    background: var(--input-bg-color);
+    color: var(--text-primary-color);
+    font: inherit;
+    outline: 0;
+
+    &:focus {
+      border-color: var(--colab-accent, var(--color-primary));
+    }
+  }
+
+  &__tabs {
+    display: flex;
+    gap: 0.125rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--default-border-color);
+
+    button {
+      flex: 1;
+      height: 2rem;
+      border: 0;
+      border-radius: 0.375rem;
+      background: none;
+      font-size: 1.0625rem;
+      cursor: pointer;
+      filter: grayscale(1);
+      opacity: 0.7;
+
+      &:hover,
+      &.is-active {
+        background: var(--button-hover-bg);
+        filter: none;
+        opacity: 1;
+      }
+    }
+  }
+
+  &__grid {
+    height: 15rem;
+    overflow-y: auto;
+
+    h4 {
+      margin: 0.5rem 0 0.25rem;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--color-gray-60);
+
+      &:first-child {
+        margin-top: 0;
+      }
+    }
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(2.25rem, 1fr));
+    gap: 0.125rem;
+  }
+
+  &__cell {
+    height: 2.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.375rem;
+    background: none;
+    font-size: 1.375rem;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--button-hover-bg);
+    }
+
+    &.is-active {
+      background: var(--colab-accent-soft, var(--color-surface-primary-container));
+    }
+  }
+
+  &__note {
+    margin: 1rem 0;
+    text-align: center;
+    font-size: 0.875rem;
+    color: var(--color-gray-60);
+  }
+}

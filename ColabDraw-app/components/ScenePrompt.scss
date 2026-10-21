@@ -1,0 +1,125 @@
+.excalidraw {
+  .colab-prompt__scrim {
+    --colab-accent: #6965db;
+    --colab-accent-hover: #5753c9;
+    --colab-on-accent: #ffffff;
+
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 12vh;
+    background: rgba(0, 0, 0, 0.45);
+    pointer-events: all;
+  }
+
+  &.theme--dark .colab-prompt__scrim {
+    --colab-accent: #a8a5ff;
+    --colab-accent-hover: #bdbbff;
+    --colab-on-accent: #1b1b1f;
+  }
+
+  .colab-prompt__dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    width: min(28rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 4rem);
+    overflow-y: auto;
+    padding: 1.5rem;
+    border-radius: 0.875rem;
+    background: var(--island-bg-color);
+    box-shadow: var(--shadow-island);
+    color: var(--text-primary-color);
+    font-family: var(--ui-font);
+
+    h2 {
+      margin: 0 0 0.25rem;
+      font-size: 1.375rem;
+    }
+
+    > input {
+      height: 3rem;
+      padding: 0 0.875rem;
+      border: 2px solid var(--colab-accent);
+      border-radius: 0.5rem;
+      background: var(--input-bg-color);
+      color: inherit;
+      outline: 0;
+      font: inherit;
+      font-size: 1rem;
+    }
+  }
+
+  .colab-prompt__label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+
+  .colab-prompt__emoji {
+    display: inline-flex;
+    justify-content: center;
+    width: 1.5rem;
+    font-size: 1.5rem;
+    line-height: 1;
+  }
+
+  .colab-prompt__icon-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    align-self: flex-start;
+    height: 2.75rem;
+    padding: 0 1rem 0 0.75rem;
+    border: 1px solid var(--default-border-color);
+    border-radius: 0.5rem;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+
+    &:hover,
+    &.is-open {
+      border-color: var(--colab-accent);
+    }
+  }
+
+  .colab-prompt__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+
+    button {
+      height: 2.75rem;
+      padding: 0 1.25rem;
+      border: 0;
+      border-radius: 0.5rem;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .is-text {
+      background: none;
+      color: var(--colab-accent);
+    }
+
+    .is-primary {
+      background: var(--colab-accent);
+      color: var(--colab-on-accent);
+
+      &:hover:not(:disabled) {
+        background: var(--colab-accent-hover);
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    }
+  }
+}
