@@ -162,7 +162,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           throw new AbortError();
         }
 
-        return loadFilesFromBackend(roomKey, fileIds);
+        return loadFilesFromBackend(roomKey, fileIds, roomId);
       },
       saveFiles: async ({ addedFiles }) => {
         const { roomId, roomKey } = this.portal;
@@ -176,6 +176,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
             encryptionKey: roomKey,
             maxBytes: FILE_UPLOAD_MAX_BYTES,
           }),
+          ownerId: roomId,
         });
 
         return {
@@ -346,9 +347,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         this.handleRemoteSceneUpdate(this._reconcileElements(storedElements));
       }
     } catch (error: any) {
-      const errorMessage = /is longer than.*?bytes/.test(error.message)
-        ? t("errors.collabSaveFailed_sizeExceeded")
-        : t("errors.collabSaveFailed");
+      const errorMessage =
+        error?.status === 413 ||
+        /is longer than.*?bytes/.test(error.message ?? "")
+          ? t("errors.collabSaveFailed_sizeExceeded")
+          : t("errors.collabSaveFailed");
 
       if (
         !this.state.dialogNotifiedErrors[errorMessage] ||
@@ -373,7 +376,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
   stopCollaboration = (keepRemoteState = true) => {
     this.queueBroadcastAllElements.cancel();
-    this.queuesaveToBackend.cancel();
+    this.queueSaveToBackend.cancel();
     this.loadImageFiles.cancel();
     this.resetErrorIndicator(true);
 
@@ -999,7 +1002,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       return;
     }
     this.broadcastElements(elements);
-    this.queuesaveToBackend();
+    this.queueSaveToBackend();
   };
 
   queueBroadcastAllElements = throttle(() => {
@@ -1016,7 +1019,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.setLastBroadcastedOrReceivedSceneVersion(newVersion);
   }, SYNC_FULL_SCENE_INTERVAL_MS);
 
-  queuesaveToBackend = throttle(
+  queueSaveToBackend = throttle(
     () => {
       if (this.portal.socketInitialized) {
         this.saveCollabRoomToBackend(

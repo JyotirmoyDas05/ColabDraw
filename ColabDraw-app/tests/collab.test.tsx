@@ -28,6 +28,17 @@ Object.defineProperty(window, "crypto", {
 });
 
 vi.mock("../data/backend.ts", () => {
+  class BackendError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = "BackendError";
+      this.status = status;
+    }
+  }
+  const BACKEND_URL = "http://backend.test";
+  const bytesToBase64 = (bytes: Uint8Array) =>
+    btoa(String.fromCharCode(...bytes));
   const loadFromBackend = async () => null;
   const saveToBackend = () => {};
   const isSavedToBackend = () => true;
@@ -39,12 +50,19 @@ vi.mock("../data/backend.ts", () => {
     savedFiles: [],
     erroredFiles: [],
   });
+  const readShareLink = async () => null;
+  const createShareLink = async () => {};
   return {
+    BACKEND_URL,
+    BackendError,
+    bytesToBase64,
     loadFromBackend,
     saveToBackend,
     isSavedToBackend,
     loadFilesFromBackend,
     saveFilesToBackend,
+    readShareLink,
+    createShareLink,
   };
 });
 

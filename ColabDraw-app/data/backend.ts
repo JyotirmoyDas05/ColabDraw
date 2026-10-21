@@ -136,10 +136,24 @@ export const isSavedToBackend = (
   return true;
 };
 
+/**
+ * Files are stored under the id of the thing that encrypted them.
+ *
+ * An image keeps one `fileId` for its whole life — it is the SHA-1 of the
+ * plaintext — but the bytes handed to the backend are encrypted with whatever
+ * key the current context holds: the room key in a room, a throwaway key in a
+ * share link. Two contexts therefore produce the same id for different bytes,
+ * and a shared key would let whichever uploaded last overwrite the other.
+ */
+const fileKey = (ownerId: string, fileId: FileId) => `${ownerId}_${fileId}`;
+
 export const saveFilesToBackend = async ({
   files,
+  ownerId,
 }: {
   files: { id: FileId; buffer: Uint8Array }[];
+  /** room id or share-link id — the owner of the key these bytes were encrypted with */
+  ownerId: string;
 }) => {
   const erroredFiles: FileId[] = [];
   const savedFiles: FileId[] = [];
@@ -154,7 +168,7 @@ export const saveFilesToBackend = async ({
           buffer.byteOffset + buffer.byteLength,
         ) as ArrayBuffer;
 
-        await request(`/files/${id}`, {
+        await request(`/files/${fileKey(ownerId, id)}`, {
           method: "PUT",
           headers: { "content-type": "application/octet-stream" },
           body: arrayBuffer,
@@ -278,6 +292,8 @@ export const loadFromBackend = async (
 export const loadFilesFromBackend = async (
   decryptionKey: string,
   filesIds: readonly FileId[],
+  /** room id or share-link id — the owner of the key these bytes were encrypted with */
+  ownerId: string,
 ) => {
   const loadedFiles: BinaryFileData[] = [];
   const erroredFiles = new Map<FileId, true>();
@@ -285,7 +301,7 @@ export const loadFilesFromBackend = async (
   await Promise.all(
     [...new Set(filesIds)].map(async (id) => {
       try {
-        const response = await fetch(url(`/files/${id}`));
+        const response = await fetch(url(`/files/${fileKey(ownerId, id)}`));
 
         if (response.status < 400) {
           const arrayBuffer = await response.arrayBuffer();

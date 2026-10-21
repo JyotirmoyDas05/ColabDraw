@@ -287,7 +287,7 @@ export const exportToBackend = async (
     url.hash = `json=${id},${encryptionKey}`;
     const urlString = url.toString();
 
-    await saveFilesToBackend({ files: filesToUpload });
+    await saveFilesToBackend({ files: filesToUpload, ownerId: id });
 
     return { url: urlString, errorMessage: null };
   } catch (error: any) {

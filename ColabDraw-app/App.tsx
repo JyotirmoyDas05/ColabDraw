@@ -534,7 +534,7 @@ const ExcalidrawWrapper = () => {
               fileIds.map((id) => [id, "loading"]),
             );
           }
-          loadFilesFromBackend(data.key, fileIds).then(
+          loadFilesFromBackend(data.key, fileIds, data.id).then(
             ({ loadedFiles, erroredFiles }) => {
               excalidrawAPI.addFiles(loadedFiles);
               updateStaleImageStatuses({
