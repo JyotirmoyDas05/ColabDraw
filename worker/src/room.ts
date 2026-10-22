@@ -79,13 +79,7 @@ export class Room {
   }
 
   async webSocketClose(ws: WebSocket) {
-    let attachment: Attachment | null;
-    try {
-      attachment = ws.deserializeAttachment() as Attachment | null;
-    } catch {
-      // A socket that never joined has no attachment and is not a member.
-      return;
-    }
+    const attachment = ws.deserializeAttachment() as Attachment | null;
     if (!attachment) {
       return;
     }
@@ -106,13 +100,9 @@ export class Room {
   private attachments(): Array<[WebSocket, Attachment]> {
     const result: Array<[WebSocket, Attachment]> = [];
     for (const socket of this.state.getWebSockets()) {
-      try {
-        const attachment = socket.deserializeAttachment() as Attachment | null;
-        if (attachment && isClientId(attachment.id)) {
-          result.push([socket, attachment]);
-        }
-      } catch {
-        // A socket that never joined has no attachment and is not a member.
+      const attachment = socket.deserializeAttachment() as Attachment | null;
+      if (attachment && isClientId(attachment.id)) {
+        result.push([socket, attachment]);
       }
     }
     return result;
