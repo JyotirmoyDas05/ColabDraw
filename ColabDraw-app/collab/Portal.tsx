@@ -1,7 +1,6 @@
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
-import { trackEvent } from "@excalidraw/excalidraw/analytics";
-import { encryptData } from "@excalidraw/excalidraw/data/encryption";
 import { newElementWith } from "@excalidraw/element";
+import { encryptData } from "@excalidraw/excalidraw/data/encryption";
 import throttle from "lodash.throttle";
 
 import type { UserIdleState } from "@excalidraw/common";
@@ -11,7 +10,7 @@ import type {
   SocketId,
 } from "@excalidraw/excalidraw/types";
 
-import { WS_EVENTS, FILE_UPLOAD_TIMEOUT, WS_SUBTYPES } from "../app_constants";
+import { FILE_UPLOAD_TIMEOUT, WS_SUBTYPES } from "../app_constants";
 import { isSyncableElement } from "../data";
 
 import type {
@@ -20,11 +19,11 @@ import type {
   SyncableExcalidrawElement,
 } from "../data";
 import type { TCollabClass } from "./Collab";
-import type { Socket } from "socket.io-client";
+import type { CollabSocket } from "./CollabSocket";
 
 class Portal {
   collab: TCollabClass;
-  socket: Socket | null = null;
+  socket: CollabSocket | null = null;
   socketInitialized: boolean = false; // we don't want the socket to emit any updates until it is fully initialized
   roomId: string | null = null;
   roomKey: string | null = null;
@@ -35,33 +34,29 @@ class Portal {
     this.collab = collab;
   }
 
-  open(socket: Socket, id: string, key: string, isViewOnly = false) {
+  open(
+    socket: CollabSocket,
+    id: string,
+    key: string,
+    isViewOnly = false,
+  ): CollabSocket {
     this.socket = socket;
     this.roomId = id;
     this.roomKey = key;
     this.isViewOnly = isViewOnly;
 
-    // Initialize socket listeners
-    this.socket.on("init-room", () => {
-      if (this.socket) {
-        this.socket.emit("join-room", this.roomId);
-        if (this.isViewOnly) {
-          // the server drops our broadcasts once it knows we're only watching
-          this.socket.emit(WS_EVENTS.SET_VIEW_ONLY, this.roomId);
-        }
-        trackEvent("share", "room joined");
-      }
-    });
-    this.socket.on("new-user", async (_socketId: string) => {
+    this.socket.on("newUser", async (_socketId: string) => {
       this.broadcastScene(
         WS_SUBTYPES.INIT,
         this.collab.getSceneElementsIncludingDeleted(),
         /* syncAll */ true,
       );
     });
-    this.socket.on("room-user-change", (clients: SocketId[]) => {
-      this.collab.setCollaborators(clients);
+    this.socket.on("members", (clients: string[]) => {
+      this.collab.setCollaborators(clients as SocketId[]);
     });
+
+    this.socket.connect();
 
     return socket;
   }
@@ -92,7 +87,7 @@ class Portal {
   async _broadcastSocketData(
     data: SocketUpdateData,
     volatile: boolean = false,
-    roomId?: string,
+    followersOnly: boolean = false,
   ) {
     // viewers are read-only: never send scene updates, cursors or presence
     if (this.isViewOnly) {
@@ -103,12 +98,10 @@ class Portal {
       const encoded = new TextEncoder().encode(json);
       const { encryptedBuffer, iv } = await encryptData(this.roomKey!, encoded);
 
-      this.socket?.emit(
-        volatile ? WS_EVENTS.SERVER_VOLATILE : WS_EVENTS.SERVER,
-        roomId ?? this.roomId,
-        encryptedBuffer,
-        iv,
-      );
+      this.socket?.sendUpdate(encryptedBuffer, iv, {
+        volatile,
+        followersOnly,
+      });
     }
   }
 
@@ -190,7 +183,7 @@ class Portal {
 
     this.queueFileUpload();
 
-    await this._broadcastSocketData(data as SocketUpdateData);
+    await this._broadcastSocketData(data as SocketUpdateData, false, false);
   };
 
   broadcastIdleChange = (userState: UserIdleState) => {
@@ -234,12 +227,9 @@ class Portal {
     }
   };
 
-  broadcastVisibleSceneBounds = (
-    payload: {
-      sceneBounds: SocketUpdateDataSource["USER_VISIBLE_SCENE_BOUNDS"]["payload"]["sceneBounds"];
-    },
-    roomId: string,
-  ) => {
+  broadcastVisibleSceneBounds = (payload: {
+    sceneBounds: SocketUpdateDataSource["USER_VISIBLE_SCENE_BOUNDS"]["payload"]["sceneBounds"];
+  }) => {
     if (this.socket?.id) {
       const data: SocketUpdateDataSource["USER_VISIBLE_SCENE_BOUNDS"] = {
         type: WS_SUBTYPES.USER_VISIBLE_SCENE_BOUNDS,
@@ -253,14 +243,16 @@ class Portal {
       return this._broadcastSocketData(
         data as SocketUpdateData,
         true, // volatile
-        roomId,
+        true, // followersOnly
       );
     }
   };
 
   broadcastUserFollowed = (payload: OnUserFollowedPayload) => {
-    if (this.socket?.id) {
-      this.socket.emit(WS_EVENTS.USER_FOLLOW_CHANGE, payload);
+    if (this.socket) {
+      this.socket.setFollowing(
+        payload.action === "FOLLOW" ? payload.userToFollow.socketId : null,
+      );
     }
   };
 }

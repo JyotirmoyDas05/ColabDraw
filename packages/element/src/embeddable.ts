@@ -138,7 +138,8 @@ const ALLOWED_DOMAINS = new Set([
   "player.vimeo.com",
   "drive.google.com",
   "figma.com",
-  "colab-draw-with-nextjs.vercel.app", // Production Vercel domain
+  "colab-draw-with-nextjs.vercel.app", //first Production Vercel domain
+  "colab-draw.vercel.app", // 2nd Production Vercel domain
   "gist.github.com",
   "twitter.com",
   "x.com",

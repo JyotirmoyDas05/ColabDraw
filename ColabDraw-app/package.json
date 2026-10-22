@@ -30,7 +30,6 @@
     "@huggingface/transformers": "4.3.1",
     "@sentry/browser": "9.0.1",
     "@vercel/analytics": "1.6.1",
-    "appwrite": "^16.0.2",
     "callsites": "4.2.0",
     "dotenv": "16.0.1",
     "emojibase-data": "18.0.0",
@@ -40,7 +39,6 @@
     "jotai": "2.11.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "socket.io-client": "4.7.2",
     "uqr": "0.1.2",
     "vite-plugin-html": "3.2.2"
   },

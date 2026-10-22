@@ -10,19 +10,12 @@ interface ImportMetaEnv {
   VITE_APP_BACKEND_V2_GET_URL: string;
   VITE_APP_BACKEND_V2_POST_URL: string;
 
-  // collaboration WebSocket server (https: string
-  VITE_APP_WS_SERVER_URL: string;
-
   // set this only if using the collaboration workflow we use on excalidraw.com
   VITE_APP_DISABLE_SENTRY: string;
   VITE_APP_ENABLE_TRACKING: string;
 
-  // Appwrite configuration
-  VITE_APP_APPWRITE_ENDPOINT: string;
-  VITE_APP_APPWRITE_PROJECT_ID: string;
-  VITE_APP_APPWRITE_DATABASE_ID: string;
-  VITE_APP_APPWRITE_TABLE_ID: string;
-  VITE_APP_APPWRITE_BUCKET_ID: string;
+  // Cloudflare Worker backend (scenes, share links, files)
+  VITE_APP_BACKEND_URL: string;
 
   // Smart Canvas AI - Gemini API Key (default key with 15 req/day limit per user)
 

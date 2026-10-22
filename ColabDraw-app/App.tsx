@@ -86,16 +86,13 @@ import {
   useAtomWithInitialValue,
   appJotaiStore,
 } from "./app-jotai";
-import {
-  FIREBASE_STORAGE_PREFIXES,
-  STORAGE_KEYS,
-  SYNC_BROWSER_TABS_TIMEOUT,
-} from "./app_constants";
+import { STORAGE_KEYS, SYNC_BROWSER_TABS_TIMEOUT } from "./app_constants";
 import Collab, {
   collabAPIAtom,
   isCollaboratingAtom,
   isOfflineAtom,
   isViewOnlyAtom,
+  syncUnavailableAtom,
   userToFollowAtom,
 } from "./collab/Collab";
 import ViewOnlyBadge from "./collab/ViewOnlyBadge";
@@ -113,7 +110,7 @@ import {
   getCollaborationLinkData,
   importFromBackend,
   isCollaborationLink,
-  loadFilesFromAppwrite,
+  loadFilesFromBackend,
 } from "./data";
 
 import {
@@ -533,29 +530,29 @@ const ExcalidrawWrapper = () => {
 
         if (data.isExternalScene) {
           if (fileIds.length) {
-            // Direct Appwrite call (not through FileManager), so track manually
+            // Direct backend call (not through FileManager), so track manually
             FileStatusStore.updateStatuses(
               fileIds.map((id) => [id, "loading"]),
             );
           }
-          loadFilesFromAppwrite(
-            `${FIREBASE_STORAGE_PREFIXES.shareLinkFiles}/${data.id}`,
-            data.key,
-            fileIds,
-          ).then(({ loadedFiles, erroredFiles }) => {
-            excalidrawAPI.addFiles(loadedFiles);
-            updateStaleImageStatuses({
-              excalidrawAPI,
-              erroredFiles,
-              elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
-            });
-            FileStatusStore.updateStatuses([
-              ...loadedFiles.map((f) => [f.id, "loaded"] as [FileId, "loaded"]),
-              ...[...erroredFiles.keys()].map(
-                (id) => [id, "error"] as [FileId, "error"],
-              ),
-            ]);
-          });
+          loadFilesFromBackend(data.key, fileIds, data.id).then(
+            ({ loadedFiles, erroredFiles }) => {
+              excalidrawAPI.addFiles(loadedFiles);
+              updateStaleImageStatuses({
+                excalidrawAPI,
+                erroredFiles,
+                elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
+              });
+              FileStatusStore.updateStatuses([
+                ...loadedFiles.map(
+                  (f) => [f.id, "loaded"] as [FileId, "loaded"],
+                ),
+                ...[...erroredFiles.keys()].map(
+                  (id) => [id, "error"] as [FileId, "error"],
+                ),
+              ]);
+            },
+          );
         } else if (isInitialLoad) {
           if (fileIds.length) {
             LocalData.fileStorage
@@ -847,6 +844,7 @@ const ExcalidrawWrapper = () => {
   };
 
   const isOffline = useAtomValue(isOfflineAtom);
+  const syncUnavailable = useAtomValue(syncUnavailableAtom);
 
   const localStorageQuotaExceeded = useAtomValue(localStorageQuotaExceededAtom);
 
@@ -1038,8 +1036,13 @@ const ExcalidrawWrapper = () => {
 
         <TTDDialogTrigger />
         {isCollaborating && isOffline && (
-          <div className="alertalert--warning">
+          <div className="alert alert--warning">
             {t("alerts.collabOfflineWarning")}
+          </div>
+        )}
+        {isCollaborating && syncUnavailable && (
+          <div className="alert alert--warning">
+            {t("alerts.collabSyncUnavailable")}
           </div>
         )}
         {localStorageQuotaExceeded && (

@@ -56,12 +56,10 @@ import { appJotaiStore, atom } from "../app-jotai";
 import {
   CURSOR_SYNC_TIMEOUT,
   FILE_UPLOAD_MAX_BYTES,
-  FIREBASE_STORAGE_PREFIXES,
   INITIAL_SCENE_UPDATE_TIMEOUT,
   LOAD_IMAGES_TIMEOUT,
   WS_SUBTYPES,
   SYNC_FULL_SCENE_INTERVAL_MS,
-  WS_EVENTS,
 } from "../app_constants";
 import {
   generateCollaborationLinkData,
@@ -76,12 +74,13 @@ import {
 import { FileStatusStore } from "../data/fileStatusStore";
 import { LocalData } from "../data/LocalData";
 import {
-  isSavedToAppwrite,
-  loadFilesFromAppwrite,
-  loadFromAppwrite,
-  saveFilesToAppwrite,
-  saveToAppwrite,
-} from "../data/appwrite";
+  BACKEND_URL,
+  isSavedToBackend,
+  loadFilesFromBackend,
+  loadFromBackend,
+  saveFilesToBackend,
+  saveToBackend,
+} from "../data/backend";
 import {
   importUsernameFromLocalStorage,
   saveUsernameToLocalStorage,
@@ -90,6 +89,7 @@ import { resetBrowserStateVersions } from "../data/tabSync";
 
 import { collabErrorIndicatorAtom } from "./CollabError";
 import Portal from "./Portal";
+import { CollabSocket } from "./CollabSocket";
 
 import type {
   SocketUpdateDataSource,
@@ -100,6 +100,7 @@ export const collabAPIAtom = atom<CollabAPI | null>(null);
 export const isCollaboratingAtom = atom(false);
 export const isViewOnlyAtom = atom(false);
 export const isOfflineAtom = atom(false);
+export const syncUnavailableAtom = atom(false);
 
 interface CollabState {
   errorMessage: string | null;
@@ -163,7 +164,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           throw new AbortError();
         }
 
-        return loadFilesFromAppwrite(`files/rooms/${roomId}`, roomKey, fileIds);
+        return loadFilesFromBackend(roomKey, fileIds, roomId);
       },
       saveFiles: async ({ addedFiles }) => {
         const { roomId, roomKey } = this.portal;
@@ -171,13 +172,13 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           throw new AbortError();
         }
 
-        const { savedFiles, erroredFiles } = await saveFilesToAppwrite({
-          prefix: `${FIREBASE_STORAGE_PREFIXES.collabFiles}/${roomId}`,
+        const { savedFiles, erroredFiles } = await saveFilesToBackend({
           files: await encodeFilesForUpload({
             files: addedFiles,
             encryptionKey: roomKey,
             maxBytes: FILE_UPLOAD_MAX_BYTES,
           }),
+          ownerId: roomId,
         });
 
         return {
@@ -311,11 +312,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     if (
       this.isCollaborating() &&
       (this.fileManager.shouldPreventUnload(syncableElements) ||
-        !isSavedToAppwrite(this.portal, syncableElements))
+        !isSavedToBackend(this.portal, syncableElements))
     ) {
       // this won't run in time if user decides to leave the site, but
       //  the purpose is to run in immediately after user decides to stay
-      this.saveCollabRoomToAppwrite(syncableElements);
+      this.saveCollabRoomToBackend(syncableElements);
 
       if (import.meta.env.VITE_APP_DISABLE_PREVENT_UNLOAD !== "true") {
         preventUnload(event);
@@ -327,7 +328,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     }
   });
 
-  saveCollabRoomToAppwrite = async (
+  saveCollabRoomToBackend = async (
     syncableElements: readonly SyncableExcalidrawElement[],
   ) => {
     // a viewer must never write the room back, even if its scene is stale
@@ -336,7 +337,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     }
     syncableElements = cloneJSON(syncableElements);
     try {
-      const storedElements = await saveToAppwrite(
+      const storedElements = await saveToBackend(
         this.portal,
         syncableElements,
         this.excalidrawAPI.getAppState(),
@@ -348,9 +349,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         this.handleRemoteSceneUpdate(this._reconcileElements(storedElements));
       }
     } catch (error: any) {
-      const errorMessage = /is longer than.*?bytes/.test(error.message)
-        ? t("errors.collabSaveFailed_sizeExceeded")
-        : t("errors.collabSaveFailed");
+      const errorMessage =
+        error?.status === 413 ||
+        /is longer than.*?bytes/.test(error.message ?? "")
+          ? t("errors.collabSaveFailed_sizeExceeded")
+          : t("errors.collabSaveFailed");
 
       if (
         !this.state.dialogNotifiedErrors[errorMessage] ||
@@ -375,7 +378,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
   stopCollaboration = (keepRemoteState = true) => {
     this.queueBroadcastAllElements.cancel();
-    this.queueSaveToAppwrite.cancel();
+    this.queueSaveToBackend.cancel();
     this.loadImageFiles.cancel();
     this.resetErrorIndicator(true);
 
@@ -388,18 +391,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       return;
     }
 
-    this.saveCollabRoomToAppwrite(
+    this.saveCollabRoomToBackend(
       getSyncableElements(
         this.excalidrawAPI.getSceneElementsIncludingDeleted(),
       ),
     );
-
-    if (this.portal.socket && this.fallbackInitializationHandler) {
-      this.portal.socket.off(
-        "connect_error",
-        this.fallbackInitializationHandler,
-      );
-    }
 
     if (!keepRemoteState) {
       LocalData.fileStorage.reset();
@@ -435,6 +431,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.portal.close();
     this.fileManager.reset();
     this.followedBy = new Set();
+    appJotaiStore.set(syncUnavailableAtom, false);
     if (!opts?.isUnload) {
       this.setIsCollaborating(false);
       appJotaiStore.set(isViewOnlyAtom, false);
@@ -543,10 +540,6 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     appJotaiStore.set(isViewOnlyAtom, isViewOnly);
     LocalData.pauseSave("collaboration");
 
-    const { default: socketIOClient } = await import(
-      /* webpackChunkName: "socketIoClient" */ "socket.io-client"
-    );
-
     const fallbackInitializationHandler = () => {
       this.initializeRoom({
         roomLinkData: existingRoomLinkData,
@@ -558,16 +551,24 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.fallbackInitializationHandler = fallbackInitializationHandler;
 
     try {
-      this.portal.socket = this.portal.open(
-        socketIOClient(import.meta.env.VITE_APP_WS_SERVER_URL, {
-          transports: ["websocket", "polling"],
-        }),
-        roomId,
-        roomKey,
-        isViewOnly,
-      );
+      const socket = new CollabSocket(BACKEND_URL, roomId, { isViewOnly });
+      this.portal.open(socket, roomId, roomKey, isViewOnly);
 
-      this.portal.socket.once("connect_error", fallbackInitializationHandler);
+      let hasConnected = false;
+      this.portal.socket!.on("status", (status) => {
+        if (status === "open") {
+          if (hasConnected) {
+            // a reconnect must accept the peers' SCENE_INIT again
+            this.portal.socketInitialized = false;
+          }
+          hasConnected = true;
+          appJotaiStore.set(syncUnavailableAtom, false);
+        }
+        if (status === "unavailable") {
+          appJotaiStore.set(syncUnavailableAtom, true);
+          fallbackInitializationHandler();
+        }
+      });
     } catch (error: any) {
       console.error(error);
       this.setErrorDialog(error.message);
@@ -593,7 +594,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         captureUpdate: CaptureUpdateAction.NEVER,
       });
 
-      this.saveCollabRoomToAppwrite(getSyncableElements(elements));
+      this.saveCollabRoomToBackend(getSyncableElements(elements));
     }
 
     // fallback in case you're not alone in the room but still don't receive
@@ -604,118 +605,117 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     );
 
     // All socket listeners are moving to Portal
-    this.portal.socket.on(
-      "client-broadcast",
-      async (encryptedData: ArrayBuffer, iv: Uint8Array<ArrayBuffer>) => {
-        if (!this.portal.roomKey) {
+    this.portal.socket!.on("scene", async ({ iv, data }) => {
+      if (!this.portal.roomKey) {
+        return;
+      }
+
+      const decryptedData = await this.decryptPayload(
+        iv,
+        data.buffer as ArrayBuffer,
+        this.portal.roomKey,
+      );
+
+      switch (decryptedData.type) {
+        case WS_SUBTYPES.INVALID_RESPONSE:
           return;
-        }
-
-        const decryptedData = await this.decryptPayload(
-          iv,
-          encryptedData,
-          this.portal.roomKey,
-        );
-
-        switch (decryptedData.type) {
-          case WS_SUBTYPES.INVALID_RESPONSE:
-            return;
-          case WS_SUBTYPES.INIT: {
-            if (!this.portal.socketInitialized) {
-              this.initializeRoom({ fetchScene: false });
-              const remoteElements = toBrandedType<
-                readonly RemoteExcalidrawElement[]
-              >(decryptedData.payload.elements);
-              const reconciledElements =
-                this._reconcileElements(remoteElements);
-              this.handleRemoteSceneUpdate(reconciledElements);
-              // noop if already resolved via init from firebase
-              scenePromise.resolve({
-                elements: reconciledElements,
-                scrollToContent: true,
-              });
-            }
-            break;
+        case WS_SUBTYPES.INIT: {
+          if (!this.portal.socketInitialized) {
+            this.initializeRoom({ fetchScene: false });
+            const remoteElements = toBrandedType<
+              readonly RemoteExcalidrawElement[]
+            >(decryptedData.payload.elements);
+            const reconciledElements = this._reconcileElements(remoteElements);
+            this.handleRemoteSceneUpdate(reconciledElements);
+            // noop if already resolved via init from firebase
+            scenePromise.resolve({
+              elements: reconciledElements,
+              scrollToContent: true,
+            });
           }
-          case WS_SUBTYPES.UPDATE:
-            this.handleRemoteSceneUpdate(
-              this._reconcileElements(
-                toBrandedType<readonly RemoteExcalidrawElement[]>(
-                  decryptedData.payload.elements,
-                ),
+          break;
+        }
+        case WS_SUBTYPES.UPDATE:
+          this.handleRemoteSceneUpdate(
+            this._reconcileElements(
+              toBrandedType<readonly RemoteExcalidrawElement[]>(
+                decryptedData.payload.elements,
               ),
-            );
-            break;
-          case WS_SUBTYPES.MOUSE_LOCATION: {
-            const { pointer, button, username, selectedElementIds } =
-              decryptedData.payload;
+            ),
+          );
+          break;
+        case WS_SUBTYPES.MOUSE_LOCATION: {
+          const { pointer, button, username, selectedElementIds } =
+            decryptedData.payload;
 
-            const socketId: SocketUpdateDataSource["MOUSE_LOCATION"]["payload"]["socketId"] =
-              decryptedData.payload.socketId ||
-              // @ts-ignore legacy, see #2094 (#2097)
-              decryptedData.payload.socketID;
+          const socketId: SocketUpdateDataSource["MOUSE_LOCATION"]["payload"]["socketId"] =
+            decryptedData.payload.socketId ||
+            // @ts-ignore legacy, see #2094 (#2097)
+            decryptedData.payload.socketID;
 
-            this.updateCollaborator(socketId, {
-              pointer,
-              button,
-              selectedElementIds,
-              username,
-            });
+          this.updateCollaborator(socketId, {
+            pointer,
+            button,
+            selectedElementIds,
+            username,
+          });
 
-            break;
-          }
-
-          case WS_SUBTYPES.USER_VISIBLE_SCENE_BOUNDS: {
-            const { sceneBounds, socketId } = decryptedData.payload;
-
-            const userToFollow = appJotaiStore.get(userToFollowAtom);
-
-            // we're not following the user
-            // (shouldn't happen, but could be late message or bug upstream)
-            if (userToFollow?.socketId !== socketId) {
-              console.warn(
-                `receiving remote client's (from ${socketId}) viewport bounds even though we're not subscribed to it!`,
-              );
-              return;
-            }
-
-            // cross-follow case, ignore updates in this case
-            if (this.followedBy.has(userToFollow.socketId)) {
-              return;
-            }
-
-            const appState = this.excalidrawAPI.getAppState();
-
-            this.excalidrawAPI.updateScene({
-              appState: zoomToFitBounds({
-                appState,
-                bounds: sceneBounds,
-                fit: "contain",
-              }).appState,
-            });
-
-            break;
-          }
-
-          case WS_SUBTYPES.IDLE_STATUS: {
-            const { userState, socketId, username } = decryptedData.payload;
-            this.updateCollaborator(socketId, {
-              userState,
-              username,
-            });
-            break;
-          }
-
-          default: {
-            assertNever(decryptedData, null);
-          }
+          break;
         }
-      },
-    );
 
-    this.portal.socket.on("first-in-room", async () => {
-      if (this.portal.socket) {
-        this.portal.socket.off("first-in-room");
+        case WS_SUBTYPES.USER_VISIBLE_SCENE_BOUNDS: {
+          const { sceneBounds, socketId } = decryptedData.payload;
+
+          const userToFollow = appJotaiStore.get(userToFollowAtom);
+
+          // we're not following the user
+          // (shouldn't happen, but could be late message or bug upstream)
+          if (userToFollow?.socketId !== socketId) {
+            console.warn(
+              `receiving remote client's (from ${socketId}) viewport bounds even though we're not subscribed to it!`,
+            );
+            return;
+          }
+
+          // cross-follow case, ignore updates in this case
+          if (this.followedBy.has(userToFollow.socketId)) {
+            return;
+          }
+
+          const appState = this.excalidrawAPI.getAppState();
+
+          this.excalidrawAPI.updateScene({
+            appState: zoomToFitBounds({
+              appState,
+              bounds: sceneBounds,
+              fit: "contain",
+            }).appState,
+          });
+
+          break;
+        }
+
+        case WS_SUBTYPES.IDLE_STATUS: {
+          const { userState, socketId, username } = decryptedData.payload;
+          this.updateCollaborator(socketId, {
+            userState,
+            username,
+          });
+          break;
+        }
+
+        default: {
+          assertNever(decryptedData, null);
+        }
+      }
+    });
+
+    this.portal.socket!.on("joined", async ({ first }) => {
+      if (!first) {
+        return; // peers will send SCENE_INIT
+      }
+      if (this.portal.socketInitialized) {
+        return; // reconnect while alone: keep local edits
       }
       const sceneData = await this.initializeRoom({
         fetchScene: true,
@@ -724,14 +724,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       scenePromise.resolve(sceneData);
     });
 
-    this.portal.socket.on(
-      WS_EVENTS.USER_FOLLOW_ROOM_CHANGE,
-      (followedBy: SocketId[]) => {
-        this.followedBy = new Set(followedBy);
+    this.portal.socket!.on("followers", (followedBy: string[]) => {
+      this.followedBy = new Set(followedBy as SocketId[]);
 
-        this.relayVisibleSceneBounds({ force: true });
-      },
-    );
+      this.relayVisibleSceneBounds({ force: true });
+    });
 
     this.initializeIdleDetector();
 
@@ -750,17 +747,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       }
     | { fetchScene: false; roomLinkData?: null }) => {
     clearTimeout(this.socketInitializationTimer!);
-    if (this.portal.socket && this.fallbackInitializationHandler) {
-      this.portal.socket.off(
-        "connect_error",
-        this.fallbackInitializationHandler,
-      );
-    }
     if (fetchScene && roomLinkData && this.portal.socket) {
       this.excalidrawAPI.resetScene();
 
       try {
-        const elements = await loadFromAppwrite(
+        const elements = await loadFromBackend(
           roomLinkData.roomId,
           roomLinkData.roomKey,
           this.portal.socket,
@@ -972,12 +963,9 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
   relayVisibleSceneBounds = (props?: { force: boolean }) => {
     if (this.portal.socket && (this.followedBy.size > 0 || props?.force)) {
-      this.portal.broadcastVisibleSceneBounds(
-        {
-          sceneBounds: getVisibleSceneBounds(this.excalidrawAPI.getAppState()),
-        },
-        `follow@${this.portal.socket.id}`,
-      );
+      this.portal.broadcastVisibleSceneBounds({
+        sceneBounds: getVisibleSceneBounds(this.excalidrawAPI.getAppState()),
+      });
     }
   };
 
@@ -1001,7 +989,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       return;
     }
     this.broadcastElements(elements);
-    this.queueSaveToAppwrite();
+    this.queueSaveToBackend();
   };
 
   queueBroadcastAllElements = throttle(() => {
@@ -1018,10 +1006,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.setLastBroadcastedOrReceivedSceneVersion(newVersion);
   }, SYNC_FULL_SCENE_INTERVAL_MS);
 
-  queueSaveToAppwrite = throttle(
+  queueSaveToBackend = throttle(
     () => {
       if (this.portal.socketInitialized) {
-        this.saveCollabRoomToAppwrite(
+        this.saveCollabRoomToBackend(
           getSyncableElements(
             this.excalidrawAPI.getSceneElementsIncludingDeleted(),
           ),

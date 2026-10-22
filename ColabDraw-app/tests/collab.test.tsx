@@ -27,40 +27,56 @@ Object.defineProperty(window, "crypto", {
   },
 });
 
-vi.mock("../../excalidraw-app/data/appwrite.ts", () => {
-  const loadFromAppwrite = async () => null;
-  const saveToAppwrite = () => {};
-  const isSavedToAppwrite = () => true;
-  const loadFilesFromAppwrite = async () => ({
+vi.mock("../data/backend.ts", () => {
+  class BackendError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = "BackendError";
+      this.status = status;
+    }
+  }
+  const BACKEND_URL = "http://backend.test";
+  const bytesToBase64 = (bytes: Uint8Array) =>
+    btoa(String.fromCharCode(...bytes));
+  const loadFromBackend = async () => null;
+  const saveToBackend = () => {};
+  const isSavedToBackend = () => true;
+  const loadFilesFromBackend = async () => ({
     loadedFiles: [],
     erroredFiles: new Map(),
   });
-  const saveFilesToAppwrite = async () => ({
+  const saveFilesToBackend = async () => ({
     savedFiles: [],
     erroredFiles: [],
   });
+  const readShareLink = async () => null;
+  const createShareLink = async () => {};
   return {
-    loadFromAppwrite,
-    saveToAppwrite,
-    isSavedToAppwrite,
-    loadFilesFromAppwrite,
-    saveFilesToAppwrite,
+    BACKEND_URL,
+    BackendError,
+    bytesToBase64,
+    loadFromBackend,
+    saveToBackend,
+    isSavedToBackend,
+    loadFilesFromBackend,
+    saveFilesToBackend,
+    readShareLink,
+    createShareLink,
   };
 });
 
-vi.mock("socket.io-client", () => {
-  return {
-    default: () => {
-      return {
-        close: () => {},
-        on: () => {},
-        once: () => {},
-        off: () => {},
-        emit: () => {},
-      };
-    },
-  };
-});
+vi.mock("../collab/CollabSocket", () => ({
+  CollabSocket: class {
+    id = "test-client";
+    connect() {}
+    close() {}
+    sendUpdate() {}
+    setFollowing() {}
+    on() {}
+    off() {}
+  },
+}));
 
 /**
  * These test would deserve to be extended by testing collab with (at least) two clients simultanouesly,
