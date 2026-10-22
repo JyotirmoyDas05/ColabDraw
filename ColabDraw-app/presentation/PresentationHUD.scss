@@ -61,7 +61,9 @@
     }
   }
 
-  &__slide-trigger-wrap {
+  &__slide-trigger-wrap,
+  &__share-wrap,
+  &__settings-wrap {
     position: relative;
   }
 
@@ -119,10 +121,6 @@
       width: 13px;
       height: 13px;
     }
-  }
-
-  &__settings-wrap {
-    position: relative;
   }
 }
 
@@ -186,43 +184,387 @@
   }
 }
 
-/* Settings popup */
-.presentation-hud-settings-menu {
+@keyframes hudPopoverFadeInRight {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Toggle Switch */
+.presentation-toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+  }
+
+  &__slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #212529;
+    transition: 0.18s ease-in-out;
+    border-radius: 20px;
+
+    &:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: 0.18s ease-in-out;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+  }
+
+  input:checked + &__slider {
+    background-color: var(--color-primary, #6965db);
+  }
+
+  input:checked + &__slider:before {
+    transform: translateX(16px);
+  }
+}
+
+/* Presentation Sharing Popover (👤+) */
+.presentation-hud-share-popover {
   position: absolute;
-  bottom: calc(100% + 12px);
-  right: 0;
-  width: 220px;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 310px;
   background: var(--island-bg-color, #ffffff);
   border: 1px solid var(--sidebar-border-color, rgba(0, 0, 0, 0.12));
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
-  padding: 12px;
-  z-index: 1001;
-  font-size: 12px;
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  animation: hudDrawerFadeIn 0.12s ease-out;
+  z-index: 1001;
+  box-sizing: border-box;
+  animation: hudDrawerFadeIn 0.15s ease-out;
 
-  &__title {
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+
+  &__label {
+    font-size: 15px;
     font-weight: 600;
+    color: var(--text-primary-color, #212529);
+  }
+
+  &__toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__status {
     font-size: 13px;
-    color: var(--text-primary-color, inherit);
-  }
-
-  &__item {
     font-weight: 500;
-    color: var(--text-primary-color, inherit);
+    color: #868e96;
+
+    &.is-enabled {
+      color: var(--text-primary-color, #212529);
+    }
   }
 
-  &__hint {
+  &__desc {
+    font-size: 12px;
+    line-height: 1.45;
+    color: #6c757d;
+    margin-top: 6px;
+  }
+
+  &__divider {
+    height: 1px;
+    background: var(--sidebar-border-color, rgba(0, 0, 0, 0.08));
+    margin: 14px 0;
+    width: 100%;
+  }
+
+  &__attendees {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    color: var(--text-primary-color, inherit);
-    opacity: 0.75;
-    font-size: 11px;
-    line-height: 1.4;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 0 18px;
+  }
+
+  &__empty-avatar {
+    width: 54px;
+    height: 54px;
+    margin-bottom: 8px;
+    color: #868e96;
+  }
+
+  &__empty-text {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary-color, #495057);
+  }
+
+  &__attendees-list {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+
+  &__attendee-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  &__attendee-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--color-primary, #6965db);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  &__attendee-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary-color, #212529);
+  }
+
+  &__footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    gap: 6px;
+  }
+
+  &__copied-text {
+    font-size: 12px;
+    font-weight: 600;
+    color: #2b8a3e;
+    text-align: center;
+  }
+
+  &__copy-btn {
+    width: 100%;
+    padding: 10px 0;
+    border-radius: 8px;
+    border: none;
+    background: var(--color-primary, #6965db);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.08s ease;
+
+    &:hover {
+      background: #5b57ce;
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+}
+
+/* Settings popover (⚙) */
+.presentation-hud-settings-popover {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  right: 0;
+  width: 320px;
+  background: var(--island-bg-color, #ffffff);
+  border: 1px solid var(--sidebar-border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 1001;
+  box-sizing: border-box;
+  animation: hudPopoverFadeInRight 0.15s ease-out;
+
+  &__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    span {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary-color, #212529);
+    }
+  }
+
+  &__download-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  &__download-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary-color, #212529);
+  }
+
+  &__download-buttons {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+  }
+
+  &__download-btn {
+    flex: 1;
+    padding: 8px 0;
+    border-radius: 8px;
+    border: 1px solid var(--sidebar-border-color, rgba(0, 0, 0, 0.18));
+    background: transparent;
+    color: var(--text-primary-color, #212529);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s ease;
+
+    &:hover {
+      background: var(--button-hover-bg, rgba(0, 0, 0, 0.05));
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+
+  &__divider {
+    height: 1px;
+    background: var(--sidebar-border-color, rgba(0, 0, 0, 0.08));
+    margin: 4px 0;
+    width: 100%;
+  }
+
+  &__remote-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__remote-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+
+    span {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary-color, #212529);
+    }
+
+    svg {
+      width: 16px;
+      height: 16px;
+      transition: transform 0.2s ease;
+      color: #868e96;
+
+      &.is-collapsed {
+        transform: rotate(180deg);
+      }
+    }
+  }
+
+  &__remote-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    animation: hudDrawerFadeIn 0.12s ease-out;
+  }
+
+  &__remote-desc {
+    font-size: 12px;
+    line-height: 1.45;
+    color: #6c757d;
+  }
+
+  &__qr-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 12px;
+    background: #ffffff;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+
+    .ShareDialog__active__qrcode {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
+      svg {
+        width: 140px;
+        height: 140px;
+      }
+    }
+  }
+
+  &__copied-text {
+    font-size: 12px;
+    font-weight: 600;
+    color: #2b8a3e;
+    text-align: center;
+  }
+
+  &__remote-copy-btn {
+    width: 100%;
+    padding: 10px 0;
+    border-radius: 8px;
+    border: none;
+    background: var(--color-primary, #6965db);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.08s ease;
+
+    &:hover {
+      background: #5b57ce;
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
   }
 }
 
@@ -278,30 +620,46 @@
   background: var(--island-bg-color, #ffffff);
   border: 1px solid var(--sidebar-border-color, rgba(0, 0, 0, 0.1));
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary-color, #333333);
   z-index: 999;
+  backdrop-filter: blur(8px);
   pointer-events: none;
+  animation: hudDrawerFadeIn 0.2s ease-out;
+}
 
-  &__title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary-color, inherit);
+/* Hide cursor when presentation is active and showCursor is false */
+body.presentation-hide-cursor {
+  cursor: none !important;
+
+  .excalidraw-container,
+  .excalidraw-container canvas {
+    cursor: none !important;
+  }
+
+  .presentation-hud,
+  .presentation-hud *,
+  .presentation-laser-floating-btn {
+    cursor: auto !important;
   }
 }
 
-/* Live notification banner */
+/* Remote presentation broadcast notification toast */
 .presentation-live-notification {
   position: fixed;
   top: 24px;
   right: 24px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 10px 14px;
+  border-radius: 12px;
   background: var(--island-bg-color, #ffffff);
   border: 1px solid var(--sidebar-border-color, rgba(0, 0, 0, 0.12));
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
-  z-index: 1000;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.16);
+  z-index: 1100;
+  animation: slideInRight 0.2s ease-out;
 
   &__content {
     display: flex;
@@ -312,21 +670,24 @@
   &__title {
     font-size: 13px;
     font-weight: 600;
+    color: var(--text-primary-color, #333333);
   }
 
   &__subtitle {
     font-size: 11px;
+    color: var(--text-primary-color, #333333);
     opacity: 0.7;
   }
 
   &__actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+    margin-left: 6px;
   }
 
   &__join-btn {
-    padding: 4px 10px;
+    padding: 6px 14px;
     border-radius: 6px;
     border: none;
     background: var(--color-primary, #6965db);
@@ -336,47 +697,21 @@
     cursor: pointer;
 
     &:hover {
-      background: var(--color-primary-darker, #5b57d1);
+      background: var(--color-primary-darker, #5b57ce);
     }
   }
 
   &__dismiss-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 4px;
     border: none;
     background: transparent;
-    color: inherit;
-    cursor: pointer;
+    color: var(--text-primary-color, #333333);
     opacity: 0.6;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
 
     &:hover {
       opacity: 1;
-    }
-  }
-}
-
-.presentation-hud__pulse-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #e03131;
-  animation: livePulse 1.5s infinite;
-}
-
-/* Dark mode adjustments */
-:root[data-theme="dark"] {
-  .presentation-hud {
-    &__end-btn {
-      background: rgba(224, 49, 49, 0.22);
-      color: #ff8787;
-
-      &:hover {
-        background: rgba(224, 49, 49, 0.32);
-      }
     }
   }
 }

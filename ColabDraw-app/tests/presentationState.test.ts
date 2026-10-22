@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { appJotaiStore } from "../app-jotai";
 import {
   activeRemotePresentationAtom,
+  DEFAULT_PRESENTATION_SETTINGS,
   DEFAULT_PRESENTATION_STATE,
   presentationModeAtom,
+  presentationSettingsAtom,
 } from "../presentation/presentationState";
+import { presentationSync } from "../presentation/presentationSync";
 import {
   findSlideIndexById,
   getOrderedSlides,
@@ -24,6 +27,62 @@ describe("presentationState & integration", () => {
       presenterSocketId: null,
       presenterUsername: null,
     });
+  });
+
+  it("has correct default presentation settings", () => {
+    expect(DEFAULT_PRESENTATION_SETTINGS).toEqual({
+      animateSlideMovement: true,
+      showCursor: false,
+      showSlideTitle: false,
+      isPublic: false,
+    });
+    expect(appJotaiStore.get(presentationSettingsAtom)).toEqual(
+      DEFAULT_PRESENTATION_SETTINGS,
+    );
+  });
+
+  it("updates presentationSettingsAtom in Jotai store", () => {
+    appJotaiStore.set(presentationSettingsAtom, {
+      animateSlideMovement: false,
+      showCursor: true,
+      showSlideTitle: true,
+      isPublic: true,
+    });
+
+    expect(appJotaiStore.get(presentationSettingsAtom)).toEqual({
+      animateSlideMovement: false,
+      showCursor: true,
+      showSlideTitle: true,
+      isPublic: true,
+    });
+
+    // Reset back
+    appJotaiStore.set(presentationSettingsAtom, DEFAULT_PRESENTATION_SETTINGS);
+  });
+
+  it("broadcasts and receives messages through presentationSync", () => {
+    const listener = vi.fn();
+    const unsub = presentationSync.subscribe(listener);
+
+    presentationSync.send({
+      type: "SYNC_STATE",
+      slideIndex: 1,
+      totalSlides: 3,
+      slideTitle: "Slide 2",
+      isActive: true,
+    });
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "SYNC_STATE",
+        slideIndex: 1,
+        totalSlides: 3,
+        slideTitle: "Slide 2",
+        isActive: true,
+      }),
+    );
+
+    unsub();
   });
 
   it("updates and resets presentationModeAtom in Jotai store", () => {

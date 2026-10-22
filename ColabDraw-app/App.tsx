@@ -89,6 +89,7 @@ import {
   useSetAtom,
 } from "./app-jotai";
 import { PresentationHUD } from "./presentation/PresentationHUD";
+import { PresentationRemoteController } from "./presentation/PresentationRemoteController";
 import { usePresentationController } from "./presentation/usePresentationController";
 import {
   activeRemotePresentationAtom,
@@ -507,6 +508,30 @@ const ExcalidrawWrapper = () => {
   // collaborators for exercising avatar/UserList UI without a real
   // collab room
   useSimulatedCollaborators(excalidrawAPI);
+
+  const [isRemotePresentation, setIsRemotePresentation] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return (
+      new URLSearchParams(window.location.search).get("presentation") ===
+      "remote"
+    );
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !excalidrawAPI) {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const presParam = params.get("presentation");
+    if (presParam === "1" || presParam === "public") {
+      const timer = setTimeout(() => {
+        presentationController.startPresentation(0, false);
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [excalidrawAPI, presentationController]);
 
   // ---------------------------------------------------------------------------
   // Hoisted loadImages
@@ -1147,6 +1172,27 @@ const ExcalidrawWrapper = () => {
             setPresentationMode(DEFAULT_PRESENTATION_STATE);
           }}
         />
+
+        {isRemotePresentation && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 9999,
+              background: "#f8f9fa",
+            }}
+          >
+            <PresentationRemoteController
+              excalidrawAPI={excalidrawAPI}
+              onExit={() => {
+                setIsRemotePresentation(false);
+                const url = new URL(window.location.href);
+                url.searchParams.delete("presentation");
+                window.history.replaceState({}, "", url.toString());
+              }}
+            />
+          </div>
+        )}
 
         {errorMessage && (
           <ErrorDialog onClose={() => setErrorMessage("")}>

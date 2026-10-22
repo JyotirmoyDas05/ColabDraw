@@ -7,7 +7,9 @@ import { useAtom } from "../app-jotai";
 import {
   DEFAULT_PRESENTATION_STATE,
   presentationModeAtom,
+  presentationSettingsAtom,
 } from "./presentationState";
+import { presentationSync } from "./presentationSync";
 import { getOrderedSlides } from "./presentationUtils";
 
 import type { CollabAPI } from "../collab/Collab";
@@ -30,6 +32,7 @@ export const usePresentationController = ({
 }: UsePresentationControllerOptions) => {
   const [presentationState, setPresentationState] =
     useAtom(presentationModeAtom);
+  const [settings, setSettings] = useAtom(presentationSettingsAtom);
 
   const prevAppStateRef = useRef<{
     frameRendering: {
@@ -54,6 +57,18 @@ export const usePresentationController = ({
     }
   }, [excalidrawAPI, presentationState.isActive]);
 
+  // Handle cursor visibility during presentation
+  useEffect(() => {
+    if (presentationState.isActive && !settings.showCursor) {
+      document.body.classList.add("presentation-hide-cursor");
+    } else {
+      document.body.classList.remove("presentation-hide-cursor");
+    }
+    return () => {
+      document.body.classList.remove("presentation-hide-cursor");
+    };
+  }, [presentationState.isActive, settings.showCursor]);
+
   const navigateToSlide = useCallback(
     (index: number) => {
       if (!excalidrawAPI) {
@@ -72,11 +87,11 @@ export const usePresentationController = ({
       const targetSlide = slides[clampedIndex];
 
       if (targetSlide) {
-        // Zoom and fit to the target slide frame
+        // Zoom and fit to the target slide frame with configured animation setting
         excalidrawAPI.setViewport({
           target: targetSlide,
           fit: "contain",
-          animation: true,
+          animation: settings.animateSlideMovement,
         });
 
         const slideTitle =
@@ -88,6 +103,16 @@ export const usePresentationController = ({
           totalSlides: slides.length,
           currentSlideId: targetSlide.id,
         }));
+
+        // Broadcast to remote controllers (cross-tab / local devices)
+        presentationSync.send({
+          type: "SYNC_STATE",
+          slideIndex: clampedIndex,
+          totalSlides: slides.length,
+          slideTitle,
+          isActive: true,
+          slideIds: slides.map((s) => s.id),
+        });
 
         if (presentationState.isLive && onLiveBroadcast) {
           onLiveBroadcast({
@@ -104,6 +129,7 @@ export const usePresentationController = ({
       onLiveBroadcast,
       presentationState.isLive,
       setPresentationState,
+      settings.animateSlideMovement,
     ],
   );
 
@@ -153,7 +179,7 @@ export const usePresentationController = ({
       excalidrawAPI.setViewport({
         target: initialSlide,
         fit: "contain",
-        animation: true,
+        animation: settings.animateSlideMovement,
       });
 
       const slideTitle =
@@ -170,6 +196,16 @@ export const usePresentationController = ({
         presenterUsername: null,
       });
 
+      // Broadcast initial presentation start to remote controllers
+      presentationSync.send({
+        type: "SYNC_STATE",
+        slideIndex: clampedIndex,
+        totalSlides: slides.length,
+        slideTitle,
+        isActive: true,
+        slideIds: slides.map((s) => s.id),
+      });
+
       if (isLive && onLiveBroadcast) {
         onLiveBroadcast({
           isLive: true,
@@ -181,10 +217,23 @@ export const usePresentationController = ({
 
       return true;
     },
-    [excalidrawAPI, onLiveBroadcast, setPresentationState],
+    [
+      excalidrawAPI,
+      onLiveBroadcast,
+      setPresentationState,
+      settings.animateSlideMovement,
+    ],
   );
 
   const stopPresentation = useCallback(() => {
+    presentationSync.send({
+      type: "SYNC_STATE",
+      slideIndex: 0,
+      totalSlides: 0,
+      slideTitle: "",
+      isActive: false,
+    });
+
     if (presentationState.isLive && onLiveBroadcast) {
       onLiveBroadcast({
         isLive: false,
@@ -201,6 +250,8 @@ export const usePresentationController = ({
         },
       });
     }
+
+    document.body.classList.remove("presentation-hide-cursor");
 
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
@@ -267,6 +318,22 @@ export const usePresentationController = ({
     setPresentationState,
   ]);
 
+  // Listen to remote controller messages
+  useEffect(() => {
+    const unsub = presentationSync.subscribe((msg) => {
+      if (msg.type === "NAVIGATE_SLIDE") {
+        navigateToSlide(msg.slideIndex);
+      } else if (msg.type === "NEXT_SLIDE") {
+        nextSlide();
+      } else if (msg.type === "PREV_SLIDE") {
+        prevSlide();
+      } else if (msg.type === "STOP_PRESENTATION") {
+        stopPresentation();
+      }
+    });
+    return unsub;
+  }, [navigateToSlide, nextSlide, prevSlide, stopPresentation]);
+
   // Keyboard navigation handler
   useEffect(() => {
     if (!presentationState.isActive) {
@@ -319,18 +386,14 @@ export const usePresentationController = ({
         }
         case "l":
         case "L": {
-          if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-            e.preventDefault();
-            toggleLaser();
-          }
+          e.preventDefault();
+          toggleLaser();
           break;
         }
         case "f":
         case "F": {
-          if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-            e.preventDefault();
-            toggleFullscreen();
-          }
+          e.preventDefault();
+          toggleFullscreen();
           break;
         }
         default:
@@ -343,17 +406,18 @@ export const usePresentationController = ({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [
-    presentationState.isActive,
-    nextSlide,
-    prevSlide,
     navigateToSlide,
+    nextSlide,
+    presentationState.isActive,
+    prevSlide,
     stopPresentation,
-    toggleLaser,
     toggleFullscreen,
+    toggleLaser,
   ]);
 
   return {
     presentationState,
+    orderedSlides: slidesRef.current,
     startPresentation,
     stopPresentation,
     navigateToSlide,
@@ -362,6 +426,7 @@ export const usePresentationController = ({
     toggleLaser,
     toggleFullscreen,
     toggleLivePresentation,
-    orderedSlides: slidesRef.current,
+    settings,
+    setSettings,
   };
 };

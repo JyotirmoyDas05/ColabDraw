@@ -4,10 +4,12 @@ import type { ExcalidrawFrameLikeElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import { useAtom } from "../app-jotai";
+import { QRCode } from "../share/QRCode";
 
 import {
   activeRemotePresentationAtom,
   type PresentationModeState,
+  presentationSettingsAtom,
 } from "./presentationState";
 import { getSlideTitle } from "./presentationUtils";
 import { SlideThumbnailCard } from "./SlideThumbnailCard";
@@ -55,15 +57,21 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
   excalidrawAPI = null,
 }) => {
   const [slidesDrawerOpen, setSlidesDrawerOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [remoteSectionOpen, setRemoteSectionOpen] = useState(true);
+  const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [copiedRemoteLink, setCopiedRemoteLink] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(
     Boolean(document.fullscreenElement),
   );
   const [remotePresentation, setRemotePresentation] = useAtom(
     activeRemotePresentationAtom,
   );
+  const [settings, setSettings] = useAtom(presentationSettingsAtom);
 
   const drawerRef = useRef<HTMLDivElement>(null);
+  const shareRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -76,26 +84,27 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
     };
   }, []);
 
-  // Close slides drawer and settings when clicking outside
+  // Close popovers when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (drawerRef.current && !drawerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (drawerRef.current && !drawerRef.current.contains(target)) {
         setSlidesDrawerOpen(false);
       }
-      if (
-        settingsRef.current &&
-        !settingsRef.current.contains(e.target as Node)
-      ) {
+      if (shareRef.current && !shareRef.current.contains(target)) {
+        setShareOpen(false);
+      }
+      if (settingsRef.current && !settingsRef.current.contains(target)) {
         setSettingsOpen(false);
       }
     };
-    if (slidesDrawerOpen || settingsOpen) {
+    if (slidesDrawerOpen || shareOpen || settingsOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [slidesDrawerOpen, settingsOpen]);
+  }, [slidesDrawerOpen, shareOpen, settingsOpen]);
 
   const currentSlide = slides[presentationState.currentSlideIndex];
   const slideTitle = getSlideTitle(
@@ -104,6 +113,58 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
   );
   const isFirstSlide = presentationState.currentSlideIndex <= 0;
   const isLastSlide = presentationState.currentSlideIndex >= slides.length - 1;
+
+  // Collaborators in room
+  const collaboratorsMap = excalidrawAPI?.getAppState().collaborators;
+  const collaboratorsList = collaboratorsMap
+    ? Array.from(collaboratorsMap.entries()).map(([id, c]) => ({
+        id,
+        username: c.username,
+      }))
+    : [];
+
+  const handleCopyPresentationLink = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("presentation", "1");
+    if (settings.isPublic) {
+      url.searchParams.set("access", "public");
+    } else {
+      url.searchParams.delete("access");
+    }
+    navigator.clipboard.writeText(url.toString()).then(() => {
+      setCopiedShareLink(true);
+      setTimeout(() => setCopiedShareLink(false), 3000);
+    });
+  };
+
+  const remoteControlUrl = (() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set("presentation", "remote");
+    return url.toString();
+  })();
+
+  const handleCopyRemoteLink = () => {
+    navigator.clipboard.writeText(remoteControlUrl).then(() => {
+      setCopiedRemoteLink(true);
+      setTimeout(() => setCopiedRemoteLink(false), 3000);
+    });
+  };
+
+  const handleDownloadPDF = () => {
+    window.print();
+  };
+
+  const handleDownloadPPTX = () => {
+    if (excalidrawAPI) {
+      excalidrawAPI.setToast({
+        message: "PPTX export will be available in an upcoming update.",
+        duration: 3000,
+      });
+    }
+  };
 
   // Remote presentation invitation toast for room participants who aren't presenting
   const showRemotePrompt =
@@ -153,8 +214,8 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
         </div>
       )}
 
-      {/* Top slide title pill during active presentation */}
-      {presentationState.isActive && (
+      {/* Top slide title pill during active presentation (if enabled in settings) */}
+      {presentationState.isActive && settings.showSlideTitle && (
         <div className="presentation-top-banner">
           <span className="presentation-top-banner__title">{slideTitle}</span>
         </div>
@@ -278,54 +339,128 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
             {/* Divider line | */}
             <div className="presentation-hud__divider" />
 
-            {/* Follow / Collab live broadcast button 👤+ */}
-            <button
-              type="button"
-              className={`presentation-hud__button ${
-                presentationState.isLive ? "is-live" : ""
-              }`}
-              onClick={onToggleLive}
-              title={
-                isCollaborating
-                  ? presentationState.isLive
-                    ? "Live presenting to room (Click to stop broadcasting)"
-                    : "Broadcast live presentation to room"
-                  : "Collaborative live presenting"
-              }
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            {/* Presentation Sharing and Audience popover trigger 👤+ */}
+            <div className="presentation-hud__share-wrap" ref={shareRef}>
+              <button
+                type="button"
+                className={`presentation-hud__button ${
+                  shareOpen ? "is-active" : ""
+                } ${presentationState.isLive ? "is-live" : ""}`}
+                onClick={() => setShareOpen(!shareOpen)}
+                title="Audience & sharing"
               >
-                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="8.5" cy="7" r="4" />
-                <line x1="20" y1="8" x2="20" y2="14" />
-                <line x1="23" y1="11" x2="17" y2="11" />
-              </svg>
-            </button>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="8.5" cy="7" r="4" />
+                  <line x1="20" y1="8" x2="20" y2="14" />
+                  <line x1="23" y1="11" x2="17" y2="11" />
+                </svg>
+              </button>
 
-            {/* Call / Room Audio button 📞 */}
-            <button
-              type="button"
-              className="presentation-hud__button"
-              title="Voice hangout (Feature disabled)"
-              style={{ opacity: 0.65 }}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-              </svg>
-            </button>
+              {/* Sharing Popover (Members only vs Public) */}
+              {shareOpen && (
+                <div className="presentation-hud-share-popover">
+                  <div className="presentation-hud-share-popover__header">
+                    <span className="presentation-hud-share-popover__label">
+                      Public
+                    </span>
+                    <div className="presentation-hud-share-popover__toggle-group">
+                      <span
+                        className={`presentation-hud-share-popover__status ${
+                          settings.isPublic ? "is-enabled" : ""
+                        }`}
+                      >
+                        {settings.isPublic ? "Enabled" : "Disabled"}
+                      </span>
+                      <label className="presentation-toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={settings.isPublic}
+                          onChange={(e) => {
+                            setSettings((prev) => ({
+                              ...prev,
+                              isPublic: e.target.checked,
+                            }));
+                            setCopiedShareLink(false);
+                          }}
+                        />
+                        <span className="presentation-toggle-switch__slider" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="presentation-hud-share-popover__desc">
+                    {settings.isPublic
+                      ? "Everyone with the link can view this presentation."
+                      : "Only members with access to this scene can see this presentation."}
+                  </div>
+
+                  <div className="presentation-hud-share-popover__divider" />
+
+                  {/* Center Attendees Section */}
+                  <div className="presentation-hud-share-popover__attendees">
+                    {collaboratorsList.length > 0 ? (
+                      <div className="presentation-hud-share-popover__attendees-list">
+                        {collaboratorsList.map((c) => (
+                          <div
+                            key={c.id}
+                            className="presentation-hud-share-popover__attendee-row"
+                          >
+                            <span className="presentation-hud-share-popover__attendee-avatar">
+                              {c.username ? c.username[0].toUpperCase() : "U"}
+                            </span>
+                            <span className="presentation-hud-share-popover__attendee-name">
+                              {c.username || "Collaborator"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="presentation-hud-share-popover__empty-attendees">
+                        <svg
+                          className="presentation-hud-share-popover__empty-avatar"
+                          viewBox="0 0 64 64"
+                          fill="none"
+                          stroke="#868e96"
+                          strokeWidth="3.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <circle cx="32" cy="22" r="12" />
+                          <path d="M12 54c0-11 9-20 20-20s20 9 20 20" />
+                        </svg>
+                        <div className="presentation-hud-share-popover__empty-text">
+                          No one else here yet
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Copy presentation link button & feedback */}
+                  <div className="presentation-hud-share-popover__footer">
+                    {copiedShareLink && (
+                      <div className="presentation-hud-share-popover__copied-text">
+                        Link copied!
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="presentation-hud-share-popover__copy-btn"
+                      onClick={handleCopyPresentationLink}
+                    >
+                      Copy presentation link
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Dark / Light mode toggle 🌙 / ☀️ */}
             <button
@@ -428,20 +563,135 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
                 </svg>
               </button>
 
+              {/* Settings Popover per Excalidraw Promo Video */}
               {settingsOpen && (
-                <div className="presentation-hud-settings-menu">
-                  <div className="presentation-hud-settings-menu__title">
-                    Settings
+                <div className="presentation-hud-settings-popover">
+                  {/* Animate slide movement */}
+                  <div className="presentation-hud-settings-popover__row">
+                    <span>Animate slide movement</span>
+                    <label className="presentation-toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={settings.animateSlideMovement}
+                        onChange={(e) =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            animateSlideMovement: e.target.checked,
+                          }))
+                        }
+                      />
+                      <span className="presentation-toggle-switch__slider" />
+                    </label>
                   </div>
-                  <div className="presentation-hud-settings-menu__item">
-                    <span>Keyboard shortcuts:</span>
+
+                  {/* Show cursor */}
+                  <div className="presentation-hud-settings-popover__row">
+                    <span>Show cursor</span>
+                    <label className="presentation-toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={settings.showCursor}
+                        onChange={(e) =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            showCursor: e.target.checked,
+                          }))
+                        }
+                      />
+                      <span className="presentation-toggle-switch__slider" />
+                    </label>
                   </div>
-                  <div className="presentation-hud-settings-menu__hint">
-                    <div>Next: →, ↓, Space, PageDown</div>
-                    <div>Prev: ←, ↑, PageUp</div>
-                    <div>Laser pointer: L</div>
-                    <div>Fullscreen: F</div>
-                    <div>Exit: Esc</div>
+
+                  {/* Show slide title */}
+                  <div className="presentation-hud-settings-popover__row">
+                    <span>Show slide title</span>
+                    <label className="presentation-toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={settings.showSlideTitle}
+                        onChange={(e) =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            showSlideTitle: e.target.checked,
+                          }))
+                        }
+                      />
+                      <span className="presentation-toggle-switch__slider" />
+                    </label>
+                  </div>
+
+                  {/* Download as: */}
+                  <div className="presentation-hud-settings-popover__download-section">
+                    <div className="presentation-hud-settings-popover__download-label">
+                      Download as:
+                    </div>
+                    <div className="presentation-hud-settings-popover__download-buttons">
+                      <button
+                        type="button"
+                        className="presentation-hud-settings-popover__download-btn"
+                        onClick={handleDownloadPDF}
+                      >
+                        PDF
+                      </button>
+                      <button
+                        type="button"
+                        className="presentation-hud-settings-popover__download-btn"
+                        onClick={handleDownloadPPTX}
+                      >
+                        PPTX
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="presentation-hud-settings-popover__divider" />
+
+                  {/* Remote control section with collapsible chevron */}
+                  <div className="presentation-hud-settings-popover__remote-section">
+                    <div
+                      className="presentation-hud-settings-popover__remote-header"
+                      onClick={() => setRemoteSectionOpen(!remoteSectionOpen)}
+                    >
+                      <span>Remote control</span>
+                      <svg
+                        className={`presentation-hud-settings-popover__chevron ${
+                          !remoteSectionOpen ? "is-collapsed" : ""
+                        }`}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="18 15 12 9 6 15" />
+                      </svg>
+                    </div>
+
+                    {remoteSectionOpen && (
+                      <div className="presentation-hud-settings-popover__remote-body">
+                        <div className="presentation-hud-settings-popover__remote-desc">
+                          Scan the QR code below with your mobile device to
+                          remote control the presentation
+                        </div>
+
+                        <div className="presentation-hud-settings-popover__qr-wrap">
+                          <QRCode value={remoteControlUrl} />
+                        </div>
+
+                        {copiedRemoteLink && (
+                          <div className="presentation-hud-settings-popover__copied-text">
+                            Link copied!
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          className="presentation-hud-settings-popover__remote-copy-btn"
+                          onClick={handleCopyRemoteLink}
+                        >
+                          Copy remote control link
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -461,7 +711,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
             </button>
           </div>
 
-          {/* Floating Laser Pointer Wand Tool 🪄 at bottom-right corner */}
+          {/* Floating Laser Wand Tool at bottom-right corner */}
           <button
             type="button"
             className={`presentation-laser-floating-btn ${
@@ -469,9 +719,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
             }`}
             onClick={onToggleLaser}
             title={
-              isLaserActive
-                ? "Laser pointer active (Click or press L to disable)"
-                : "Laser pointer (L)"
+              isLaserActive ? "Laser pointer active (L)" : "Laser pointer (L)"
             }
           >
             <svg
@@ -482,13 +730,13 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="m14 10 7.5-7.5" />
-              <path d="m8.5 15.5 3 3" />
-              <path d="m2 22 7.5-7.5" />
-              <path d="M6 3v3" />
-              <path d="M4.5 4.5h3" />
-              <path d="M18 15v3" />
-              <path d="M16.5 16.5h3" />
+              <path d="m15 4 4 4" />
+              <path d="M2 20h.01" />
+              <path d="m5 17 2-2" />
+              <path d="m9 13 2-2" />
+              <path d="m13 9 2-2" />
+              <path d="M19 12v3" />
+              <path d="M19 15a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3h-3a3 3 0 0 0-3 3v3" />
             </svg>
           </button>
         </>

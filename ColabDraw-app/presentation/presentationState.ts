@@ -19,6 +19,13 @@ export interface RemotePresentationInfo {
   slideTitle?: string;
 }
 
+export interface PresentationSettings {
+  animateSlideMovement: boolean;
+  showCursor: boolean;
+  showSlideTitle: boolean;
+  isPublic: boolean;
+}
+
 export const DEFAULT_PRESENTATION_STATE: PresentationModeState = {
   isActive: false,
   currentSlideIndex: 0,
@@ -30,10 +37,21 @@ export const DEFAULT_PRESENTATION_STATE: PresentationModeState = {
   presenterUsername: null,
 };
 
+export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
+  animateSlideMovement: true,
+  showCursor: false,
+  showSlideTitle: false,
+  isPublic: false,
+};
+
 export const presentationModeAtom = atom<PresentationModeState>(
   DEFAULT_PRESENTATION_STATE,
 );
 
 export const activeRemotePresentationAtom = atom<RemotePresentationInfo | null>(
   null,
+);
+
+export const presentationSettingsAtom = atom<PresentationSettings>(
+  DEFAULT_PRESENTATION_SETTINGS,
 );
