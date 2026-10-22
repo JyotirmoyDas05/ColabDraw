@@ -178,6 +178,7 @@ export const handleTrialGenerate = async (
   try {
     const models = getModels(env);
     let geminiRes: Response | null = null;
+    const apiKey = env.GEMINI_API_KEY.trim();
 
     for (const model of models) {
       const stall = new AbortController();
@@ -188,7 +189,7 @@ export const handleTrialGenerate = async (
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-goog-api-key": env.GEMINI_API_KEY,
+            "x-goog-api-key": apiKey,
           },
           body: JSON.stringify({
             contents: geminiRequest.contents,
@@ -215,6 +216,8 @@ export const handleTrialGenerate = async (
     }
 
     if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      console.error("Gemini upstream failed:", geminiRes.status, errText);
       await refund();
       const code = geminiRes.status === 429 ? "trial_busy" : "upstream_error";
       return fail(geminiRes.status === 429 ? 429 : 502, code);
