@@ -54,6 +54,28 @@ export const usePresentationController = ({
     ),
   );
 
+  // Periodic heartbeat broadcast while presenting in a room to sync late-joining remotes
+  useEffect(() => {
+    if (!presentationState.isActive || !onLiveBroadcast) {
+      return;
+    }
+    const interval = setInterval(() => {
+      onLiveBroadcast({
+        isLive: true,
+        slideIndex: presentationState.currentSlideIndex,
+        totalSlides: presentationState.totalSlides,
+        slideTitle: presentationState.currentSlideId || undefined,
+      });
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [
+    presentationState.isActive,
+    presentationState.currentSlideIndex,
+    presentationState.totalSlides,
+    presentationState.currentSlideId,
+    onLiveBroadcast,
+  ]);
+
   // Keep slides list updated
   useEffect(() => {
     if (excalidrawAPI) {
@@ -136,7 +158,7 @@ export const usePresentationController = ({
           slideIds: slides.map((s) => s.id),
         });
 
-        if (presentationState.isLive && onLiveBroadcast) {
+        if (onLiveBroadcast) {
           onLiveBroadcast({
             isLive: true,
             slideIndex: clampedIndex,
@@ -149,7 +171,6 @@ export const usePresentationController = ({
     [
       excalidrawAPI,
       onLiveBroadcast,
-      presentationState.isLive,
       setPresentationState,
       settings.animateSlideMovement,
       customSlideOrder,
@@ -235,7 +256,7 @@ export const usePresentationController = ({
         slideIds: slides.map((s) => s.id),
       });
 
-      if (isLive && onLiveBroadcast) {
+      if (onLiveBroadcast) {
         onLiveBroadcast({
           isLive: true,
           slideIndex: clampedIndex,

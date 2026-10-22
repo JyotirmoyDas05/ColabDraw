@@ -55,9 +55,16 @@ export class CollabSocket {
     roomId: string,
     options?: { isViewOnly?: boolean },
   ) {
-    this.url = `${baseUrl.replace(/^http/, "ws")}/rooms/${encodeURIComponent(
-      roomId,
-    )}`;
+    const rawUrl =
+      baseUrl ||
+      import.meta.env.VITE_APP_BACKEND_URL ||
+      "https://colabdraw-backend.jyotimoydas.workers.dev";
+    const cleanUrl = (
+      rawUrl || "https://colabdraw-backend.jyotimoydas.workers.dev"
+    )
+      .replace(/\/+$/, "")
+      .replace(/^http/, "ws");
+    this.url = `${cleanUrl}/rooms/${encodeURIComponent(roomId)}`;
     this.isViewOnly = options?.isViewOnly ?? false;
   }
 

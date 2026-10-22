@@ -226,7 +226,7 @@ export const getCollaborationLink = (data: {
 
 /** the view-only variant of an existing collaboration link */
 export const getViewOnlyCollaborationLink = (link: string) => {
-  return `${link.replace(/,view$/, "")},view`;
+  return `${(link || "").replace(/,view$/, "")},view`;
 };
 
 // Modern clean format: /share/:id#:key

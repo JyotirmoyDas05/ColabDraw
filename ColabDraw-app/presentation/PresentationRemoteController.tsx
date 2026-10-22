@@ -85,8 +85,41 @@ export const PresentationRemoteController: React.FC<
       typeof remotePresentation.slideIndex === "number"
     ) {
       setCurrentSlideIndex(remotePresentation.slideIndex);
+      if (remotePresentation.totalSlides && slides.length === 0) {
+        const placeholderSlides = Array.from({
+          length: remotePresentation.totalSlides,
+        }).map((_, i) => ({
+          id: `remote-slide-${i}`,
+          type: "frame" as const,
+          name: `Slide ${i + 1}`,
+          x: 0,
+          y: 0,
+          width: 1920,
+          height: 1080,
+          angle: 0,
+          strokeColor: "#000000",
+          backgroundColor: "transparent",
+          fillStyle: "solid" as const,
+          strokeWidth: 2,
+          strokeStyle: "solid" as const,
+          roughness: 1,
+          opacity: 100,
+          groupIds: [],
+          frameId: null,
+          roundness: null,
+          seed: i,
+          version: 1,
+          versionNonce: 1,
+          isDeleted: false,
+          boundElements: null,
+          updated: Date.now(),
+          link: null,
+          locked: false,
+        })) as unknown as ExcalidrawFrameLikeElement[];
+        setSlides(placeholderSlides);
+      }
     }
-  }, [remotePresentation]);
+  }, [remotePresentation, slides.length]);
 
   // Sync state over BroadcastChannel / localStorage for same-origin tabs
   useEffect(() => {

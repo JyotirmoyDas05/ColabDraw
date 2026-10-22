@@ -30,7 +30,10 @@ import type { CollabSocket } from "../collab/CollabSocket";
 // Backend configuration
 // -----------------------------------------------------------------------------
 
-export const BACKEND_URL = import.meta.env.VITE_APP_BACKEND_URL;
+export const BACKEND_URL = (
+  import.meta.env.VITE_APP_BACKEND_URL ||
+  "https://colabdraw-backend.jyotimoydas.workers.dev"
+).replace(/\/+$/, "");
 
 /**
  * Carries the HTTP status so callers can distinguish "too big" from "the
