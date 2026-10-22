@@ -122,4 +122,56 @@ describe("presentationState & integration", () => {
     expect(getSlideTitle(slides[0], 0)).toBe("Slide 1");
     expect(findSlideIndexById(slides, "s2")).toBe(1);
   });
+
+  it("supports custom drag-and-drop slide reordering", () => {
+    const mockElements = [
+      {
+        id: "s1",
+        type: "frame",
+        x: 0,
+        y: 0,
+        width: 800,
+        height: 600,
+        name: "First",
+        isDeleted: false,
+      },
+      {
+        id: "s2",
+        type: "frame",
+        x: 1000,
+        y: 0,
+        width: 800,
+        height: 600,
+        name: "Second",
+        isDeleted: false,
+      },
+      {
+        id: "s3",
+        type: "frame",
+        x: 2000,
+        y: 0,
+        width: 800,
+        height: 600,
+        name: "Third",
+        isDeleted: false,
+      },
+    ] as any[];
+
+    const natural = getOrderedSlides(mockElements);
+    expect(natural.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
+
+    // Move index 0 to index 2: [s2, s3, s1]
+    const currentOrder = natural.map((s) => s.id);
+    const moved = currentOrder.splice(0, 1)[0];
+    currentOrder.splice(2, 0, moved);
+
+    expect(currentOrder).toEqual(["s2", "s3", "s1"]);
+
+    const slideMap = new Map(natural.map((s) => [s.id, s]));
+    const reordered = currentOrder.map((id) => slideMap.get(id)!);
+
+    expect(reordered[0].name).toBe("Second");
+    expect(reordered[1].name).toBe("Third");
+    expect(reordered[2].name).toBe("First");
+  });
 });

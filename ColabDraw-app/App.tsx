@@ -1117,6 +1117,11 @@ const ExcalidrawWrapper = () => {
             excalidrawAPI?.getAppState().activeTool.type === "laser"
           }
           isCollaborating={isCollaborating}
+          appTheme={appTheme}
+          onToggleTheme={() =>
+            setAppTheme(appTheme === "dark" ? "light" : "dark")
+          }
+          excalidrawAPI={excalidrawAPI}
           onJoinRemotePresentation={({
             presenterSocketId,
             presenterUsername,
