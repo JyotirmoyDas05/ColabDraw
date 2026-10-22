@@ -19,14 +19,14 @@ export class Room {
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     if (typeof message !== "string") {
       if (message.byteLength > MAX_FRAME_BYTES) {
-        ws.close(1009, "frame too large");
+        this.closeOversize(ws);
         return;
       }
       this.relay(ws, message);
       return;
     }
     if (message.length > MAX_CONTROL_BYTES) {
-      ws.close(1009, "frame too large");
+      this.closeOversize(ws);
       return;
     }
 
@@ -60,19 +60,16 @@ export class Room {
     }
 
     const clientId = (payload as { clientId: string }).clientId;
-    // A socket claiming an id already in the room is a stale reconnect: evict
-    // it, keep the reconnect rule intact (a same-id socket must not make
-    // `first` false), and keep it out of the membership computed below — its
-    // attachment lingers until the close completes.
-    const evicted = new Set<WebSocket>();
     let first = true;
     for (const [socket, attachment] of this.attachments()) {
       if (socket === ws) {
         continue;
       }
       if (attachment.id === clientId) {
+        // Same client reconnecting: evict the stale socket. Closing it is
+        // enough — it stops being `OPEN` immediately, so `attachments()`
+        // leaves it out of every membership computation below.
         socket.close(4001, "replaced");
-        evicted.add(socket);
         continue;
       }
       first = false;
@@ -86,17 +83,17 @@ export class Room {
     this.send(ws, {
       t: "joined",
       first,
-      members: this.members(evicted).sort(),
+      members: this.members().sort(),
     });
     if (!first) {
       for (const [socket] of this.attachments()) {
-        if (socket === ws || evicted.has(socket)) {
+        if (socket === ws) {
           continue;
         }
         this.send(socket, { t: "new-user", id: clientId });
       }
     }
-    this.broadcastMembers(undefined, evicted);
+    this.broadcastMembers();
   }
 
   async webSocketClose(ws: WebSocket) {
@@ -190,26 +187,29 @@ export class Room {
     }
   }
 
-  /**
-   * Sends the room membership, sorted, to every member except `excludeId` and
-   * any socket in `evicted`. Evictions must also be dropped from the id list:
-   * the evicted socket's attachment lingers while it is closing, which would
-   * otherwise broadcast a duplicate id.
-   */
-  private broadcastMembers(excludeId?: string, evicted?: Set<WebSocket>) {
-    const skip = evicted ?? new Set<WebSocket>();
-    const ids = this.members(skip).sort();
+  /** Sends the room membership, sorted, to every member except `excludeId`. */
+  private broadcastMembers(excludeId?: string) {
+    const ids = this.members().sort();
     for (const [socket, { id }] of this.attachments()) {
-      if (id === excludeId || skip.has(socket)) {
+      if (excludeId !== undefined && id === excludeId) {
         continue;
       }
       this.send(socket, { t: "members", ids });
     }
   }
 
+  /**
+   * Every socket that is both `OPEN` and attached: a server-initiated close
+   * (`4001`, `1009`) fires no `webSocketClose` handler and its socket lingers
+   * in `getWebSockets()`, so non-`OPEN` sockets must be dropped here or they
+   * would remain members forever.
+   */
   private attachments(): Array<[WebSocket, Attachment]> {
     const result: Array<[WebSocket, Attachment]> = [];
     for (const socket of this.state.getWebSockets()) {
+      if (socket.readyState !== WebSocket.OPEN) {
+        continue;
+      }
       const attachment = socket.deserializeAttachment() as Attachment | null;
       if (attachment && isClientId(attachment.id)) {
         result.push([socket, attachment]);
@@ -218,11 +218,20 @@ export class Room {
     return result;
   }
 
-  /** Every attached socket's id except those in `excluded`, in accept order. */
-  private members(excluded?: Set<WebSocket>): string[] {
-    return this.attachments()
-      .filter(([socket]) => !excluded?.has(socket))
-      .map(([, attachment]) => attachment.id);
+  /** Every attached socket's id, in accept order. */
+  private members(): string[] {
+    return this.attachments().map(([, attachment]) => attachment.id);
+  }
+
+  /** Closes an oversize frame and, if the socket had joined, tells the room. */
+  private closeOversize(ws: WebSocket) {
+    ws.close(1009, "frame too large");
+    const attachment = ws.deserializeAttachment() as Attachment | null;
+    if (attachment) {
+      // A server-initiated close fires no `webSocketClose`, so the departure
+      // must be broadcast here for the members to drop the ghost in time.
+      this.broadcastMembers(attachment.id);
+    }
   }
 
   /** Sends a control frame as JSON, or a scene frame as-is, to an open socket. */

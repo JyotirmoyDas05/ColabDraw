@@ -2,7 +2,7 @@
 import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
-import { IV_BYTES } from "../src/protocol";
+import { IV_BYTES, MAX_CONTROL_BYTES } from "../src/protocol";
 
 const ORIGIN = "https://colab-draw-with-nextjs.vercel.app";
 const ALICE = "11111111-1111-4111-8111-111111111111";
@@ -336,11 +336,37 @@ describe("room", () => {
     const max = 4 * 1024 * 1024;
 
     alice.ws.send(frame(1, new Uint8Array(max - 1 - IV_BYTES)));
-    expect(bytes(await bob.next()).byteLength).toBe(max);
+    const relayed = bytes(await bob.next());
+    expect(relayed.byteLength).toBe(max);
+    expect(relayed[0]).toBe(1);
+    expect(relayed.slice(1, 1 + IV_BYTES)).toEqual(IV);
 
     const closeCode = closed(alice.ws);
     alice.ws.send(frame(1, new Uint8Array(max - IV_BYTES)));
     expect((await closeCode).code).toBe(1009);
+    // nothing was relayed; the oversize close reaches the room as a departure:
+    // the ghost socket (which never fires a close handler) leaves membership
+    expect(JSON.parse((await bob.next()) as string)).toEqual({
+      t: "members",
+      ids: [BOB],
+    });
+    await ping(bob.ws, bob.next);
+  });
+
+  it("closes a control frame padded past the cap", async () => {
+    const { alice, bob } = await twoIn("room-control-cap");
+    const oversized = JSON.stringify({ t: "ping", pad: "x".repeat(4100) });
+    expect(oversized.length).toBeGreaterThan(MAX_CONTROL_BYTES);
+
+    const closeCode = closed(alice.ws);
+    alice.ws.send(oversized);
+
+    expect((await closeCode).code).toBe(1009);
+    expect(JSON.parse((await bob.next()) as string)).toEqual({
+      t: "members",
+      ids: [BOB],
+    });
+    await ping(bob.ws, bob.next);
   });
 
   it("replaces an older socket that claims the same client id", async () => {
