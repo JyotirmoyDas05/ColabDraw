@@ -136,7 +136,11 @@ export class CollabSocket {
     this.listenerGroups.get(event)?.delete(handler as AnyListener);
   }
 
-  private sendControl(message: { t: string; target?: string }): void {
+  private sendControl(message: {
+    t: string;
+    target?: string;
+    clientId?: string;
+  }): void {
     if (this.socket?.readyState !== WebSocket.OPEN) {
       return;
     }
@@ -194,13 +198,17 @@ export class CollabSocket {
   };
 
   private startHeartbeat(): void {
-    clearInterval(this.pingInterval);
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+    }
     this.pingInterval = setInterval(() => {
       if (this.socket?.readyState !== WebSocket.OPEN) {
         return;
       }
       this.sendControl({ t: "ping" });
-      clearTimeout(this.pongTimer);
+      if (this.pongTimer) {
+        clearTimeout(this.pongTimer);
+      }
       this.pongTimer = setTimeout(() => {
         this.socket?.close();
       }, PONG_TIMEOUT_MS);
@@ -208,49 +216,57 @@ export class CollabSocket {
   }
 
   private clearTimers(): void {
-    clearInterval(this.pingInterval);
-    this.pingInterval = null;
-    clearTimeout(this.pongTimer);
-    this.pongTimer = null;
-    clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = null;
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+    if (this.pongTimer) {
+      clearTimeout(this.pongTimer);
+      this.pongTimer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
   }
 
   private handleControl(text: string): void {
-    let control: unknown;
+    let control: any;
     try {
-      control = JSON.parse(text) as unknown;
+      control = JSON.parse(text);
     } catch {
       return;
     }
     if (typeof control !== "object" || control === null) {
       return;
     }
-    control = control as ServerControl;
-    switch (control.t) {
+    const c = control as ServerControl;
+    switch (c.t) {
       case "joined":
         this.emit("joined", {
-          first: control.first === true,
-          members: this.filterIds(control.members),
+          first: c.first === true,
+          members: this.filterIds(c.members),
         });
         return;
       case "members":
-        this.emit("members", this.filterIds(control.ids));
+        this.emit("members", this.filterIds(c.ids));
         return;
       case "new-user":
-        if (typeof control.id === "string") {
-          this.emit("newUser", control.id);
+        if (typeof c.id === "string") {
+          this.emit("newUser", c.id);
         }
         return;
       case "followers":
-        this.emit("followers", this.filterIds(control.ids));
+        this.emit("followers", this.filterIds(c.ids));
         return;
       case "unfollowed":
         this.emit("unfollowed");
         return;
       case "pong":
-        clearTimeout(this.pongTimer);
-        this.pongTimer = null;
+        if (this.pongTimer) {
+          clearTimeout(this.pongTimer);
+          this.pongTimer = null;
+        }
         break;
     }
   }
@@ -268,7 +284,7 @@ export class CollabSocket {
       return;
     }
     for (const listener of listeners) {
-      (listener as CollabSocketEvents[K])(...args);
+      (listener as (...args: any[]) => void)(...args);
     }
   }
 }
