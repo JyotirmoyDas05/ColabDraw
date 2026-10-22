@@ -21,14 +21,20 @@ const inbox = (ws: WebSocket) => {
   const waiting: ((message: string | ArrayBuffer) => void)[] = [];
   ws.addEventListener("message", (event) => {
     const handler = waiting.shift();
-    if (handler) handler(event.data as string | ArrayBuffer);
-    else queued.push(event.data as string | ArrayBuffer);
+    if (handler) {
+      handler(event.data as string | ArrayBuffer);
+    } else {
+      queued.push(event.data as string | ArrayBuffer);
+    }
   });
   return () =>
     new Promise<string | ArrayBuffer>((resolve) => {
       const message = queued.shift();
-      if (message !== undefined) resolve(message);
-      else waiting.push(resolve);
+      if (message !== undefined) {
+        resolve(message);
+      } else {
+        waiting.push(resolve);
+      }
     });
 };
 

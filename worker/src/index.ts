@@ -50,7 +50,7 @@ const handleRoom = (
   if (!isRoomId(roomId)) {
     return fail(404, "not_found");
   }
-  if (request.headers.get("upgrade") !== "websocket") {
+  if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
     return fail(426, "upgrade_required");
   }
   if (!isAllowedOrigin(request.headers.get("origin"))) {
