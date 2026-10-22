@@ -173,6 +173,18 @@ describe("room", () => {
       expect(res.status).toBe(404);
     }
   });
+
+  it("refuses a plain request and a foreign origin", async () => {
+    const plain = await SELF.fetch("https://api.test/rooms/room-plain", {
+      headers: { Origin: ORIGIN },
+    });
+    expect(plain.status).toBe(426);
+
+    const foreign = await SELF.fetch("https://api.test/rooms/room-foreign", {
+      headers: { Upgrade: "websocket", Origin: "https://evil.example" },
+    });
+    expect(foreign.status).toBe(403);
+  });
 });
 ```
 
@@ -253,7 +265,7 @@ Use the constructor form rather than `extends DurableObject` from `cloudflare:wo
 1. ignore it unless `isClientId(payload.clientId)`;
 2. close any other socket whose attachment has the same id with code `4001` and reason `replaced`;
 3. write `{ id, viewOnly: false, following: null }` with `ws.serializeAttachment`;
-4. send `{"t":"joined","first":<no other member existed>,"members":[…ids…, id]}`.
+4. send `{"t":"joined","first":<no other member existed>,"members":<sorted ids, the joiner included>}`.
 
 Add a private `members()` that maps `this.state.getWebSockets()` through `deserializeAttachment()` and drops sockets without an attachment. Add `private send(ws, control: ServerControl)` doing `ws.send(JSON.stringify(control))`.
 
@@ -300,7 +312,7 @@ async fetch(request: Request, env: Env): Promise<Response> {
 
 - [ ] **Step 10: Run the tests to verify they pass**
 
-Run: `bun run test:worker` Expected: PASS, 3 tests.
+Run: `bun run test:worker` Expected: PASS, 4 tests.
 
 - [ ] **Step 11: Add the CI step**
 
@@ -459,7 +471,7 @@ async webSocketClose(ws: WebSocket) {
 }
 ```
 
-`broadcastMembers(excludeId?)` sends `{"t":"members","ids":[…]}` to every member except the excluded one. A close from a socket with no attachment returns early, which is what keeps the ghost test quiet.
+`broadcastMembers(excludeId?)` sends `{"t":"members","ids":<sorted ids>}` to every member except the excluded one. Member ids are sorted ascending everywhere (in `joined` too) so the frame is deterministic; `getWebSockets()` order is an implementation detail. A close from a socket with no attachment returns early, which is what keeps the ghost test quiet.
 
 Also handle `{"t":"ping"}` by sending `{"t":"pong"}`.
 
@@ -640,18 +652,17 @@ git commit -m "feat(worker): relay scene frames and follow state between room me
 
 ---
 
-### Task 4: Frame limits, duplicate ids, and connection guards
+### Task 4: Frame limits and duplicate ids
 
 **Files:**
 
 - Modify: `worker/src/room.ts`
-- Modify: `worker/src/index.ts`
 - Modify: `worker/tests/room.worker.test.ts`
 
 **Interfaces:**
 
 - Consumes: everything from Tasks 1–3.
-- Produces: close codes `1009` (frame too large) and `4001` (replaced); `426` and `403` responses from the room route.
+- Produces: close codes `1009` (frame too large) and `4001` (replaced).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -692,41 +703,28 @@ it("replaces an older socket that claims the same client id", async () => {
     members: [ALICE],
   });
 });
-
-it("refuses a plain request and a foreign origin", async () => {
-  const plain = await SELF.fetch("https://api.test/rooms/room-plain", {
-    headers: { Origin: ORIGIN },
-  });
-  expect(plain.status).toBe(426);
-
-  const foreign = await SELF.fetch("https://api.test/rooms/room-foreign", {
-    headers: { Upgrade: "websocket", Origin: "https://evil.example" },
-  });
-  expect(foreign.status).toBe(403);
-});
 ```
 
 Import `IV_BYTES` from `../src/protocol` in the test file.
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `bun run test:worker` Expected: FAIL — no close code is produced for an oversized frame, a duplicate id yields `first: false`, and `/rooms/room-plain` returns `101` instead of `426`.
+Run: `bun run test:worker` Expected: FAIL — no close code is produced for an oversized frame, and a duplicate id yields `first: false` instead of replacing the older socket.
 
 - [ ] **Step 3: Implement the limits**
 
 - At the top of `webSocketMessage`, if the message is an `ArrayBuffer` whose `byteLength` exceeds `MAX_FRAME_BYTES`, call `ws.close(1009, "frame too large")` and return; if it is a string longer than `MAX_CONTROL_BYTES`, close the same way.
 - In `join`, after validating the id, iterate `members()` and close any socket with the same id (other than the one joining) with `4001`, `"replaced"`, and exclude it from the `first`/`members` computation.
-- In the Worker's room route, reject a request without `upgrade: websocket` with `426` and a disallowed origin with `403`, before touching the namespace.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `bun run test:worker` Expected: PASS, 16 tests.
+Run: `bun run test:worker` Expected: PASS, 15 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add worker/src/room.ts worker/tests/room.worker.test.ts
-git commit -m "feat(worker): cap frame size, replace duplicate clients, answer heartbeats"
+git commit -m "feat(worker): cap frame size and replace duplicate clients"
 ```
 
 ---
@@ -1162,6 +1160,7 @@ git commit -m "feat(app): speak the Durable Object protocol from the collab clie
 - Create: `worker/tests/trial.test.ts`
 - Modify: `worker/src/index.ts`
 - Modify: `worker/src/types.ts`
+- Modify: `worker/wrangler.jsonc`
 - Modify: `worker/tests/fakes.ts`
 - Modify: `ColabDraw-app/ai/aiClient.ts:9`
 
@@ -1348,6 +1347,8 @@ CREATE TABLE trial_usage (
 
 `worker/src/types.ts` gains the five optional env fields. `worker/src/index.ts` routes `GET /ai/trial` and `POST /ai/trial/generate` to the new handlers (with CORS, like the other routes).
 
+`worker/wrangler.jsonc` gains the limits as plain vars: `GEMINI_MODELS: "gemini-3.5-flash-lite"`, `AI_TRIAL_PER_DEVICE: "20"`, `AI_TRIAL_PER_IP: "40"`, `AI_TRIAL_GLOBAL: "400"`. `GEMINI_API_KEY` stays a secret (`wrangler secret put`, Task 10) and never appears in the config.
+
 - [ ] **Step 5: Point the client at the Worker**
 
 In `ColabDraw-app/ai/aiClient.ts`: import `BACKEND_URL` from `../data/backend` and set `const TRIAL_URL = \`${BACKEND_URL}/ai/trial\`;`.
@@ -1359,7 +1360,7 @@ Run: `bunx vitest run trial` Expected: PASS, 8 tests.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add worker/src/trial.ts worker/src/types.ts worker/src/index.ts worker/migrations/0002_trial_usage.sql worker/tests/trial.test.ts worker/tests/fakes.ts ColabDraw-app/ai/aiClient.ts
+git add worker/src/trial.ts worker/src/types.ts worker/src/index.ts worker/wrangler.jsonc worker/migrations/0002_trial_usage.sql worker/tests/trial.test.ts worker/tests/fakes.ts ColabDraw-app/ai/aiClient.ts
 git commit -m "feat(worker): serve the Gemini trial from D1-backed counters"
 ```
 
