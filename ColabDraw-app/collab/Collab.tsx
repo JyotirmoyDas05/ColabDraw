@@ -88,6 +88,11 @@ import {
 import { resetBrowserStateVersions } from "../data/tabSync";
 
 import { collabErrorIndicatorAtom } from "./CollabError";
+import {
+  activeRemotePresentationAtom,
+  DEFAULT_PRESENTATION_STATE,
+  presentationModeAtom,
+} from "../presentation/presentationState";
 import Portal from "./Portal";
 import { CollabSocket } from "./CollabSocket";
 
@@ -128,6 +133,13 @@ export interface CollabAPI {
   getActiveRoomLink: CollabInstance["getActiveRoomLink"];
   setCollabError: CollabInstance["setErrorDialog"];
   setUserToFollow: CollabInstance["setUserToFollow"];
+  broadcastPresentation: (payload: {
+    isLive: boolean;
+    slideIndex: number;
+    totalSlides: number;
+    slideTitle?: string;
+  }) => void;
+  relayVisibleSceneBounds: (props?: { force: boolean }) => void;
 }
 
 interface CollabProps {
@@ -246,6 +258,9 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       getActiveRoomLink: this.getActiveRoomLink,
       setCollabError: this.setErrorDialog,
       setUserToFollow: this.setUserToFollow,
+      broadcastPresentation: (payload) =>
+        this.portal.broadcastPresentation(payload),
+      relayVisibleSceneBounds: (props) => this.relayVisibleSceneBounds(props),
     };
 
     appJotaiStore.set(collabAPIAtom, collabAPI);
@@ -703,6 +718,58 @@ class Collab extends PureComponent<CollabProps, CollabState> {
             userState,
             username,
           });
+          break;
+        }
+
+        case WS_SUBTYPES.PRESENTATION_BROADCAST: {
+          const {
+            socketId,
+            username,
+            isLive,
+            slideIndex,
+            totalSlides,
+            slideTitle,
+          } = decryptedData.payload;
+
+          if (isLive) {
+            appJotaiStore.set(activeRemotePresentationAtom, {
+              presenterSocketId: socketId,
+              presenterUsername: username || "Presenter",
+              slideIndex,
+              totalSlides,
+              slideTitle,
+            });
+
+            const currentPresState = appJotaiStore.get(presentationModeAtom);
+            if (
+              currentPresState.isFollower &&
+              currentPresState.presenterSocketId === socketId
+            ) {
+              appJotaiStore.set(presentationModeAtom, (prev) => ({
+                ...prev,
+                currentSlideIndex: slideIndex,
+                totalSlides,
+              }));
+            }
+          } else {
+            const currentRemote = appJotaiStore.get(
+              activeRemotePresentationAtom,
+            );
+            if (currentRemote?.presenterSocketId === socketId) {
+              appJotaiStore.set(activeRemotePresentationAtom, null);
+            }
+            const currentPresState = appJotaiStore.get(presentationModeAtom);
+            if (
+              currentPresState.isFollower &&
+              currentPresState.presenterSocketId === socketId
+            ) {
+              this.setUserToFollow(null);
+              appJotaiStore.set(
+                presentationModeAtom,
+                DEFAULT_PRESENTATION_STATE,
+              );
+            }
+          }
           break;
         }
 

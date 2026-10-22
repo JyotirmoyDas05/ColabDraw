@@ -248,6 +248,32 @@ class Portal {
     }
   };
 
+  broadcastPresentation = (payload: {
+    isLive: boolean;
+    slideIndex: number;
+    totalSlides: number;
+    slideTitle?: string;
+  }) => {
+    if (this.socket?.id) {
+      const data: SocketUpdateDataSource["PRESENTATION_BROADCAST"] = {
+        type: WS_SUBTYPES.PRESENTATION_BROADCAST,
+        payload: {
+          socketId: this.socket.id as SocketId,
+          username: this.collab.state.username,
+          isLive: payload.isLive,
+          slideIndex: payload.slideIndex,
+          totalSlides: payload.totalSlides,
+          slideTitle: payload.slideTitle,
+        },
+      };
+
+      return this._broadcastSocketData(
+        data as SocketUpdateData,
+        true, // volatile
+      );
+    }
+  };
+
   broadcastUserFollowed = (payload: OnUserFollowedPayload) => {
     if (this.socket) {
       this.socket.setFollowing(

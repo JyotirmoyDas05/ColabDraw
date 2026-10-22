@@ -45,6 +45,7 @@ import {
   DiscordIcon,
   usersIcon,
   share,
+  presentationIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { isElementLink } from "@excalidraw/element";
 import {
@@ -85,7 +86,15 @@ import {
   useAtomValue,
   useAtomWithInitialValue,
   appJotaiStore,
+  useSetAtom,
 } from "./app-jotai";
+import { PresentationHUD } from "./presentation/PresentationHUD";
+import { usePresentationController } from "./presentation/usePresentationController";
+import {
+  activeRemotePresentationAtom,
+  DEFAULT_PRESENTATION_STATE,
+  presentationModeAtom,
+} from "./presentation/presentationState";
 import { STORAGE_KEYS, SYNC_BROWSER_TABS_TIMEOUT } from "./app_constants";
 import Collab, {
   collabAPIAtom,
@@ -261,10 +270,7 @@ const initializeScene = async (opts: {
       (await openConfirmModal(shareableLinkConfirmDialog))
     ) {
       if (shareData) {
-        const imported = await importFromBackend(
-          shareData.id,
-          shareData.key,
-        );
+        const imported = await importFromBackend(shareData.id, shareData.key);
 
         scene = {
           elements: bumpElementVersions(
@@ -411,6 +417,14 @@ const ExcalidrawWrapper = () => {
 
   const [, setShareDialogState] = useAtom(shareDialogStateAtom);
   const [collabAPI] = useAtom(collabAPIAtom);
+  const setPresentationMode = useSetAtom(presentationModeAtom);
+  const presentationController = usePresentationController({
+    excalidrawAPI,
+    collabAPI,
+    onLiveBroadcast: (payload) => {
+      collabAPI?.broadcastPresentation(payload);
+    },
+  });
   const [isCollaborating] = useAtomWithInitialValue(isCollaboratingAtom, () => {
     return isCollaborationLink(window.location.href);
   });
@@ -1014,6 +1028,9 @@ const ExcalidrawWrapper = () => {
             setEmbedsOpen(!embedsOpen);
             forceRefresh((prev) => !prev);
           }}
+          onStartPresentation={() => {
+            presentationController.startPresentation(0, false);
+          }}
         />
         <AppWelcomeScreen
           onCollabDialogOpen={onCollabDialogOpen}
@@ -1079,7 +1096,53 @@ const ExcalidrawWrapper = () => {
           }}
         />
 
-        <AppSidebar />
+        <AppSidebar
+          excalidrawAPI={excalidrawAPI}
+          onStartPresentation={(startIndex, isLive) => {
+            presentationController.startPresentation(startIndex, isLive);
+          }}
+          isCollaborating={isCollaborating}
+        />
+
+        <PresentationHUD
+          presentationState={presentationController.presentationState}
+          slides={presentationController.orderedSlides}
+          onNext={presentationController.nextSlide}
+          onPrev={presentationController.prevSlide}
+          onGoToSlide={presentationController.navigateToSlide}
+          onStop={presentationController.stopPresentation}
+          onToggleLaser={presentationController.toggleLaser}
+          onToggleFullscreen={presentationController.toggleFullscreen}
+          onToggleLive={presentationController.toggleLivePresentation}
+          isLaserActive={
+            excalidrawAPI?.getAppState().activeTool.type === "laser"
+          }
+          isCollaborating={isCollaborating}
+          onJoinRemotePresentation={({
+            presenterSocketId,
+            presenterUsername,
+          }) => {
+            collabAPI?.setUserToFollow({
+              socketId: presenterSocketId as any,
+              username: presenterUsername,
+            });
+            const remotePres = appJotaiStore.get(activeRemotePresentationAtom);
+            setPresentationMode({
+              isActive: false,
+              currentSlideIndex: remotePres?.slideIndex ?? 0,
+              totalSlides: remotePres?.totalSlides ?? 0,
+              currentSlideId: null,
+              isLive: false,
+              isFollower: true,
+              presenterSocketId,
+              presenterUsername,
+            });
+          }}
+          onStopFollowing={() => {
+            collabAPI?.setUserToFollow(null);
+            setPresentationMode(DEFAULT_PRESENTATION_STATE);
+          }}
+        />
 
         {errorMessage && (
           <ErrorDialog onClose={() => setErrorMessage("")}>
@@ -1089,6 +1152,22 @@ const ExcalidrawWrapper = () => {
 
         <CommandPalette
           customCommandPaletteItems={[
+            {
+              label: "Start presentation",
+              category: DEFAULT_CATEGORIES.app,
+              predicate: true,
+              icon: presentationIcon,
+              keywords: [
+                "presentation",
+                "slides",
+                "present",
+                "deck",
+                "fullscreen",
+              ],
+              perform: () => {
+                presentationController.startPresentation(0, false);
+              },
+            },
             {
               label: t("labels.liveCollaboration"),
               category: DEFAULT_CATEGORIES.app,

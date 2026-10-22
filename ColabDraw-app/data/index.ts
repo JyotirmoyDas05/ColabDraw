@@ -40,7 +40,7 @@ import {
   saveFilesToBackend,
 } from "./backend";
 
-import type { WS_SUBTYPES } from "../app_constants";
+import { WS_SUBTYPES } from "../app_constants";
 
 export type SyncableExcalidrawElement = OrderedExcalidrawElement &
   MakeBrand<"SyncableExcalidrawElement">;
@@ -59,22 +59,12 @@ export const isSyncableElement = (
 
 export const getSyncableElements = (
   elements: readonly OrderedExcalidrawElement[],
-) =>
-  elements.filter((element) =>
-    isSyncableElement(element),
-  ) as SyncableExcalidrawElement[];
-
-// Collaboration links carry the room key in the URL hash; nothing is shared here.
+) => elements.filter((element) => isSyncableElement(element));
 
 const generateRoomId = async () => {
   const buffer = new Uint8Array(ROOM_ID_BYTES);
   window.crypto.getRandomValues(buffer);
   return bytesToHexString(buffer);
-};
-
-export type EncryptedData = {
-  data: ArrayBuffer;
-  iv: Uint8Array;
 };
 
 export type SocketUpdateDataSource = {
@@ -117,6 +107,17 @@ export type SocketUpdateDataSource = {
       socketId: SocketId;
       userState: UserIdleState;
       username: string;
+    };
+  };
+  PRESENTATION_BROADCAST: {
+    type: WS_SUBTYPES.PRESENTATION_BROADCAST;
+    payload: {
+      socketId: SocketId;
+      username: string;
+      isLive: boolean;
+      slideIndex: number;
+      totalSlides: number;
+      slideTitle?: string;
     };
   };
 };
