@@ -5,7 +5,7 @@
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
-          "value": "https://colab-draw-with-nextjs.vercel.app, https://colabdraw.onrender.com"
+          "value": "https://colab-draw-with-nextjs.vercel.app"
         },
         {
           "key": "X-Content-Type-Options",

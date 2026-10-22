@@ -69,7 +69,7 @@ The ColabDraw editor supports:
 - 💯 Free & open-source
 - 🎨 Infinite, canvas-based whiteboard
 - ✍️ Hand-drawn like style
-- 🌓 Dark mode
+- 🌘 Dark mode
 - 🏗️ Customizable
 - 📷 Image support
 - 😀 Shape libraries support
@@ -85,7 +85,7 @@ The ColabDraw editor supports:
 
 - ⚡ **Powered by Bun** (ultra-fast builds and installs)
 - 📡 PWA support (works offline)
-- 🤼 Real-time collaboration via Cloudflare Workers
+- 🤼 Real-time collaboration via Cloudflare Workers & Durable Objects
 - 🔒 End-to-end encryption
 - 📊 Web Analytics with Vercel Integration
 - 💾 Local-first support (autosaves to the browser)
@@ -108,7 +108,7 @@ bun install
 cp .env.development.example .env.development
 # Edit .env.development if your backend URL is not http://localhost:8787
 
-# Start development server (App + Room)
+# Start development server
 bun run dev
 
 # Build for production
@@ -117,7 +117,7 @@ bun run build
 
 ### Available Scripts
 
-- `bun run dev` - Start development server (Frontend + Backend)
+- `bun run dev` - Start development server (Frontend)
 - `bun run build` - Build for production (All packages + App)
 - `bun run test` - Run tests
 - `bun run fix` - Auto-fix linting and formatting issues
@@ -148,64 +148,10 @@ docker build -t colabdraw .
 docker run -p 80:80 colabdraw
 ```
 
-## Technology Stack
-
-- **Package Manager**: Bun 🚀
-- **Frontend**: React 19 with TypeScript
-- **Build Tool**: Vite
-- **State Management**: Jotai
-- **Real-time Communication**: Socket.io
-- **Backend/Storage**: Cloudflare Workers + D1 + R2
-- **Analytics**: Vercel Web Analytics 📊
-
-## Project Structure
-
-```
-ColabDraw/
-├── ColabDraw-app/      # Main application
-├── ColabDraw-room/     # Collaboration backend
-├── packages/
-│   ├── ColabDraw/      # Core drawing library
-│   ├── math/           # Math utilities
-│   ├── element/        # Element handling
-│   ├── utils/          # Shared utilities
-│   └── common/         # Common packages
-├── examples/           # Example integrations
-└── public/             # Static assets
-```
-
-## Translation
-
-ColabDraw supports multiple languages through the i18n system. Translation files are located in `packages/excalidraw/locales/`.
-
-The project uses [Crowdin](https://crowdin.com) for translation management, which offers free services for open-source projects.
-
-## Monitoring (Future)
-
-This project is configured to support [Uptime Kuma](https://github.com/louislam/uptime-kuma), a self-hosted monitoring solution. Setup instructions will be provided when deploying to production.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues or pull requests.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ### Attribution
 
-ColabDraw has taken some Components from [Excalidraw](https://github.com/excalidraw/excalidraw):
-
-- Copyright (c) 2020 Excalidraw
-- Copyright (c) 2025 JyotirmoyDas05 (ColabDraw modifications)
-
-## Acknowledgments
-
-- Original Excalidraw team and contributors (for their Great Components and Documentation)
-- All open-source libraries used in this project
+ColabDraw includes code from [Excalidraw](https://github.com/excalidraw/excalidraw), which is also licensed under the MIT License. See [LICENSE](LICENSE) for full copyright notices.

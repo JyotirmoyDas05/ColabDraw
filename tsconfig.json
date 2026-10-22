@@ -38,5 +38,5 @@
     }
   },
   "include": ["*.ts", "*.js", "scripts/**/*.ts", "scripts/**/*.js", "packages/*/global.d.ts", "packages/*/vite-env.d.ts"],
-  "exclude": ["**/node_modules", "node_modules", "examples", "dist", "build", ".next", "types", "tests", "public", "scripts", "dev-docs", "ColabDraw-room"]
+  "exclude": ["**/node_modules", "node_modules", "examples", "dist", "build", ".next", "types", "tests", "public", "scripts", "dev-docs"]
 }
