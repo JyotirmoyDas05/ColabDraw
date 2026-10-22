@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+
 import type { ExcalidrawFrameLikeElement } from "@excalidraw/element/types";
+
 import {
   extractSlideNumber,
   findSlideIndexById,
   getOrderedSlides,
   getSlideTitle,
-  sortFramesGeometrically,
 } from "../presentation/presentationUtils";
 
 const createMockFrame = (

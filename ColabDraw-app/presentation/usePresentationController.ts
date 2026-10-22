@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef } from "react";
+
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { CollabAPI } from "../collab/Collab";
+
 import { useAtom } from "../app-jotai";
+
 import {
   DEFAULT_PRESENTATION_STATE,
   presentationModeAtom,
 } from "./presentationState";
 import { getOrderedSlides } from "./presentationUtils";
+
+import type { CollabAPI } from "../collab/Collab";
 
 interface UsePresentationControllerOptions {
   excalidrawAPI: ExcalidrawImperativeAPI | null;

@@ -87,12 +87,13 @@ import {
 } from "../data/localStorage";
 import { resetBrowserStateVersions } from "../data/tabSync";
 
-import { collabErrorIndicatorAtom } from "./CollabError";
 import {
   activeRemotePresentationAtom,
   DEFAULT_PRESENTATION_STATE,
   presentationModeAtom,
 } from "../presentation/presentationState";
+
+import { collabErrorIndicatorAtom } from "./CollabError";
 import Portal from "./Portal";
 import { CollabSocket } from "./CollabSocket";
 

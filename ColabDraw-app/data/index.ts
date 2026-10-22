@@ -29,6 +29,7 @@ import {
   DELETED_ELEMENT_TIMEOUT,
   FILE_UPLOAD_MAX_BYTES,
   ROOM_ID_BYTES,
+  type WS_SUBTYPES,
 } from "../app_constants";
 
 import { encodeFilesForUpload } from "./FileManager";
@@ -39,8 +40,6 @@ import {
   readShareLink,
   saveFilesToBackend,
 } from "./backend";
-
-import { WS_SUBTYPES } from "../app_constants";
 
 export type SyncableExcalidrawElement = OrderedExcalidrawElement &
   MakeBrand<"SyncableExcalidrawElement">;
@@ -133,11 +132,19 @@ export type SocketUpdateData =
 // Modern clean format: /room/:roomId#:roomKey[,view]
 const RE_COLLAB_PATH = /^\/room\/([a-zA-Z0-9_-]+)\/?$/;
 const RE_COLLAB_HASH = /^#([a-zA-Z0-9_-]+)(,view)?$/;
+const RE_LEGACY_COLLAB_LINK =
+  /^#room=([a-zA-Z0-9_-]+),([a-zA-Z0-9_-]+)(,view)?$/;
 
 export const isCollaborationLink = (link: string) => {
   try {
     const url = new URL(link);
-    return RE_COLLAB_PATH.test(url.pathname) && RE_COLLAB_HASH.test(url.hash);
+    if (RE_COLLAB_PATH.test(url.pathname) && RE_COLLAB_HASH.test(url.hash)) {
+      return true;
+    }
+    if (RE_LEGACY_COLLAB_LINK.test(url.hash)) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -149,24 +156,37 @@ export const getCollaborationLinkData = (link: string) => {
     const pathMatch = url.pathname.match(RE_COLLAB_PATH);
     const hashMatch = url.hash.match(RE_COLLAB_HASH);
 
-    if (!pathMatch || !hashMatch) {
-      return null;
+    if (pathMatch && hashMatch) {
+      const roomId = pathMatch[1];
+      const roomKey = hashMatch[1];
+      const isViewOnly = !!hashMatch[2];
+
+      if (roomKey.length !== 22) {
+        window.alert(t("alerts.invalidEncryptionKey"));
+        return null;
+      }
+
+      return {
+        roomId,
+        roomKey,
+        isViewOnly,
+      };
     }
 
-    const roomId = pathMatch[1];
-    const roomKey = hashMatch[1];
-    const isViewOnly = !!hashMatch[2];
-
-    if (roomKey.length !== 22) {
-      window.alert(t("alerts.invalidEncryptionKey"));
-      return null;
+    const legacyMatch = url.hash.match(RE_LEGACY_COLLAB_LINK);
+    if (legacyMatch) {
+      if (legacyMatch[2].length !== 22) {
+        window.alert(t("alerts.invalidEncryptionKey"));
+        return null;
+      }
+      return {
+        roomId: legacyMatch[1],
+        roomKey: legacyMatch[2],
+        isViewOnly: !!legacyMatch[3],
+      };
     }
 
-    return {
-      roomId,
-      roomKey,
-      isViewOnly,
-    };
+    return null;
   } catch {
     return null;
   }

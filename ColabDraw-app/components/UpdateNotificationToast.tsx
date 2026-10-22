@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { registerSW } from "virtual:pwa-register";
 
 import { LocalData } from "../data/LocalData";
+
 import "./UpdateNotificationToast.scss";
 
 // Refresh icon (SVG arrow circular path)
@@ -22,7 +23,9 @@ const RefreshIcon = () => (
 
 export const UpdateNotificationToast = () => {
   const [needRefresh, setNeedRefresh] = useState(false);
-  const [updateFunction, setUpdateFunction] = useState<(() => Promise<void>) | null>(null);
+  const [updateFunction, setUpdateFunction] = useState<
+    (() => Promise<void>) | null
+  >(null);
 
   useEffect(() => {
     // Only register SW in environments where service worker is supported
@@ -65,11 +68,7 @@ export const UpdateNotificationToast = () => {
   }
 
   return (
-    <div
-      className="update-available-toast"
-      role="alert"
-      aria-live="polite"
-    >
+    <div className="update-available-toast" role="alert" aria-live="polite">
       <div className="update-available-toast__icon">
         <RefreshIcon />
       </div>

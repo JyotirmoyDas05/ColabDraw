@@ -120,7 +120,6 @@ import {
   getShareLinkData,
   importFromBackend,
   isCollaborationLink,
-  isShareLink,
   loadFilesFromBackend,
 } from "./data";
 

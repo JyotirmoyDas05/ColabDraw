@@ -1,10 +1,14 @@
 import React, { useMemo } from "react";
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
 import { presentationIcon } from "@excalidraw/excalidraw/components/icons";
+
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
 import {
   getOrderedSlides,
   getSlideTitle,
 } from "../presentation/presentationUtils";
+
 import "./PresentationSidebarTab.scss";
 
 interface PresentationSidebarTabProps {

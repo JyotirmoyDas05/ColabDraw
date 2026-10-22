@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
+
 import type { ExcalidrawFrameLikeElement } from "@excalidraw/element/types";
-import { useAtom, useAtomValue } from "../app-jotai";
+
+import { useAtom } from "../app-jotai";
+
 import {
   activeRemotePresentationAtom,
   type PresentationModeState,

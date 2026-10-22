@@ -1,7 +1,9 @@
 import React from "react";
 import { DefaultSidebar, Sidebar } from "@excalidraw/excalidraw";
 import { presentationIcon } from "@excalidraw/excalidraw/components/icons";
+
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
 import { PresentationSidebarTab } from "./PresentationSidebarTab";
 
 import "./AppSidebar.scss";

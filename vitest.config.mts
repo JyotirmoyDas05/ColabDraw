@@ -6,6 +6,13 @@ export default defineConfig({
   resolve: {
     alias: [
       {
+        find: "virtual:pwa-register",
+        replacement: path.resolve(
+          __dirname,
+          "./ColabDraw-app/tests/mocks/virtualPwaRegister.ts",
+        ),
+      },
+      {
         find: /^@excalidraw\/common$/,
         replacement: path.resolve(__dirname, "./packages/common/src/index.ts"),
       },
