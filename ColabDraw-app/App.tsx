@@ -92,6 +92,7 @@ import Collab, {
   isCollaboratingAtom,
   isOfflineAtom,
   isViewOnlyAtom,
+  syncUnavailableAtom,
   userToFollowAtom,
 } from "./collab/Collab";
 import ViewOnlyBadge from "./collab/ViewOnlyBadge";
@@ -843,6 +844,7 @@ const ExcalidrawWrapper = () => {
   };
 
   const isOffline = useAtomValue(isOfflineAtom);
+  const syncUnavailable = useAtomValue(syncUnavailableAtom);
 
   const localStorageQuotaExceeded = useAtomValue(localStorageQuotaExceededAtom);
 
@@ -1034,8 +1036,13 @@ const ExcalidrawWrapper = () => {
 
         <TTDDialogTrigger />
         {isCollaborating && isOffline && (
-          <div className="alertalert--warning">
+          <div className="alert alert--warning">
             {t("alerts.collabOfflineWarning")}
+          </div>
+        )}
+        {isCollaborating && syncUnavailable && (
+          <div className="alert alert--warning">
+            {t("alerts.collabSyncUnavailable")}
           </div>
         )}
         {localStorageQuotaExceeded && (
