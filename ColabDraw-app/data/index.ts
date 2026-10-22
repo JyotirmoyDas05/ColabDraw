@@ -129,28 +129,46 @@ export type SocketUpdateData =
     _brand: "socketUpdateData";
   };
 
-// `,view` marks a read-only link. Older links have no suffix and stay editable.
-const RE_COLLAB_LINK = /^#room=([a-zA-Z0-9_-]+),([a-zA-Z0-9_-]+)(,view)?$/;
+// Modern clean format: /room/:roomId#:roomKey[,view]
+const RE_COLLAB_PATH = /^\/room\/([a-zA-Z0-9_-]+)\/?$/;
+const RE_COLLAB_HASH = /^#([a-zA-Z0-9_-]+)(,view)?$/;
 
 export const isCollaborationLink = (link: string) => {
-  const hash = new URL(link).hash;
-  return RE_COLLAB_LINK.test(hash);
+  try {
+    const url = new URL(link);
+    return RE_COLLAB_PATH.test(url.pathname) && RE_COLLAB_HASH.test(url.hash);
+  } catch {
+    return false;
+  }
 };
 
 export const getCollaborationLinkData = (link: string) => {
-  const hash = new URL(link).hash;
-  const match = hash.match(RE_COLLAB_LINK);
-  if (match && match[2].length !== 22) {
-    window.alert(t("alerts.invalidEncryptionKey"));
+  try {
+    const url = new URL(link);
+    const pathMatch = url.pathname.match(RE_COLLAB_PATH);
+    const hashMatch = url.hash.match(RE_COLLAB_HASH);
+
+    if (!pathMatch || !hashMatch) {
+      return null;
+    }
+
+    const roomId = pathMatch[1];
+    const roomKey = hashMatch[1];
+    const isViewOnly = !!hashMatch[2];
+
+    if (roomKey.length !== 22) {
+      window.alert(t("alerts.invalidEncryptionKey"));
+      return null;
+    }
+
+    return {
+      roomId,
+      roomKey,
+      isViewOnly,
+    };
+  } catch {
     return null;
   }
-  return match
-    ? {
-        roomId: match[1],
-        roomKey: match[2],
-        isViewOnly: !!match[3],
-      }
-    : null;
 };
 
 export const generateCollaborationLinkData = async () => {
@@ -169,9 +187,9 @@ export const getCollaborationLink = (data: {
   roomKey: string;
   viewOnly?: boolean;
 }) => {
-  return `${window.location.origin}${window.location.pathname}#room=${
-    data.roomId
-  },${data.roomKey}${data.viewOnly ? ",view" : ""}`;
+  return `${window.location.origin}/room/${data.roomId}#${data.roomKey}${
+    data.viewOnly ? ",view" : ""
+  }`;
 };
 
 /** the view-only variant of an existing collaboration link */
@@ -179,7 +197,37 @@ export const getViewOnlyCollaborationLink = (link: string) => {
   return `${link.replace(/,view$/, "")},view`;
 };
 
-// legacy_decodeFromBackend removed; new shares live in our own backend.
+// Modern clean format: /share/:id#:key
+const RE_SHARE_PATH = /^\/share\/([a-zA-Z0-9_-]+)\/?$/;
+const RE_SHARE_HASH = /^#([a-zA-Z0-9_-]+)$/;
+
+export const isShareLink = (link: string) => {
+  try {
+    const url = new URL(link);
+    return RE_SHARE_PATH.test(url.pathname) && RE_SHARE_HASH.test(url.hash);
+  } catch {
+    return false;
+  }
+};
+
+export const getShareLinkData = (link: string) => {
+  try {
+    const url = new URL(link);
+    const pathMatch = url.pathname.match(RE_SHARE_PATH);
+    const hashMatch = url.hash.match(RE_SHARE_HASH);
+
+    if (!pathMatch || !hashMatch) {
+      return null;
+    }
+
+    return {
+      id: pathMatch[1],
+      key: hashMatch[1],
+    };
+  } catch {
+    return null;
+  }
+};
 
 export const importFromBackend = async (
   id: string,
@@ -283,13 +331,11 @@ export const exportToBackend = async (
 
     await createShareLink(id, ciphertextBase64);
 
-    const url = new URL(window.location.href);
-    url.hash = `json=${id},${encryptionKey}`;
-    const urlString = url.toString();
+    const shareUrl = `${window.location.origin}/share/${id}#${encryptionKey}`;
 
     await saveFilesToBackend({ files: filesToUpload, ownerId: id });
 
-    return { url: urlString, errorMessage: null };
+    return { url: shareUrl, errorMessage: null };
   } catch (error: any) {
     console.error(error);
 

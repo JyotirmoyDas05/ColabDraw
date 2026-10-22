@@ -48,6 +48,16 @@
       ]
     }
   ],
+  "rewrites": [
+    {
+      "source": "/room/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/share/:path*",
+      "destination": "/index.html"
+    }
+  ],
   "redirects": [],
   "buildCommand": "bun run build",
   "outputDirectory": "ColabDraw-app/build",

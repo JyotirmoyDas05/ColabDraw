@@ -108,8 +108,10 @@ import { TopErrorBoundary } from "./components/TopErrorBoundary";
 import {
   exportToBackend,
   getCollaborationLinkData,
+  getShareLinkData,
   importFromBackend,
   isCollaborationLink,
+  isShareLink,
   loadFilesFromBackend,
 } from "./data";
 
@@ -227,9 +229,7 @@ const initializeScene = async (opts: {
 > => {
   const searchParams = new URLSearchParams(window.location.search);
   const id = searchParams.get("id");
-  const jsonBackendMatch = window.location.hash.match(
-    /^#json=([a-zA-Z0-9_-]+),([a-zA-Z0-9_-]+)$/,
-  );
+  const shareData = getShareLinkData(window.location.href);
   const externalUrlMatch = window.location.hash.match(/^#url=(.*)$/);
 
   const localDataState = importFromLocalStorage();
@@ -250,7 +250,7 @@ const initializeScene = async (opts: {
   };
 
   let roomLinkData = getCollaborationLinkData(window.location.href);
-  const isExternalScene = !!(id || jsonBackendMatch || roomLinkData);
+  const isExternalScene = !!(id || shareData || roomLinkData);
   if (isExternalScene) {
     if (
       // don't prompt if scene is empty
@@ -260,10 +260,10 @@ const initializeScene = async (opts: {
       // otherwise, prompt whether user wants to override current scene
       (await openConfirmModal(shareableLinkConfirmDialog))
     ) {
-      if (jsonBackendMatch) {
+      if (shareData) {
         const imported = await importFromBackend(
-          jsonBackendMatch[1],
-          jsonBackendMatch[2],
+          shareData.id,
+          shareData.key,
         );
 
         scene = {
@@ -364,12 +364,12 @@ const initializeScene = async (opts: {
       key: roomLinkData.roomKey,
     };
   } else if (scene) {
-    return isExternalScene && jsonBackendMatch
+    return isExternalScene && shareData
       ? {
           scene,
           isExternalScene,
-          id: jsonBackendMatch[1],
-          key: jsonBackendMatch[2],
+          id: shareData.id,
+          key: shareData.key,
         }
       : { scene, isExternalScene: false };
   }
