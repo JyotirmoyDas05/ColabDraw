@@ -142,6 +142,17 @@ export const isSavedToBackend = (
  */
 const fileKey = (ownerId: string, fileId: FileId) => `${ownerId}_${fileId}`;
 
+export const bytesToBase64 = (bytes: Uint8Array) => {
+  // spreading a large array into String.fromCharCode overflows the call stack,
+  // which is why this goes in chunks
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+};
+
 export const saveFilesToBackend = async ({
   ownerId,
   files,
@@ -155,9 +166,15 @@ export const saveFilesToBackend = async ({
   await Promise.all(
     files.map(async ({ id, buffer }) => {
       try {
+        const bodyBuffer = buffer.buffer.slice(
+          buffer.byteOffset,
+          buffer.byteOffset + buffer.byteLength,
+        ) as ArrayBuffer;
+
         await request(`/files/${fileKey(ownerId, id)}`, {
           method: "PUT",
-          body: buffer,
+          headers: { "content-type": "application/octet-stream" },
+          body: bodyBuffer,
         });
         savedFiles.set(id, true);
       } catch (error: any) {
@@ -177,11 +194,8 @@ const createSceneDocument = async (
   const sceneVersion = getSceneVersion(elements);
   const { ciphertext, iv } = await encryptElements(roomKey, elements);
 
-  // Encode ArrayBuffer and Uint8Array to base64
-  const ciphertextBase64 = btoa(
-    String.fromCharCode(...new Uint8Array(ciphertext)),
-  );
-  const ivBase64 = btoa(String.fromCharCode(...iv));
+  const ciphertextBase64 = bytesToBase64(new Uint8Array(ciphertext));
+  const ivBase64 = bytesToBase64(iv);
 
   return {
     roomId,
@@ -288,7 +302,7 @@ export const loadFilesFromBackend = async (
             },
           );
 
-          const dataURL = new TextDecoder().decode(data) as DataURL;
+          const dataURL = new TextDecoder("utf-8").decode(data) as DataURL;
 
           loadedFiles.push({
             mimeType: metadata.mimeType || MIME_TYPES.binary,

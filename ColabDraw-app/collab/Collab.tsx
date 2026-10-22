@@ -181,27 +181,25 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           ownerId: roomId,
         });
 
+        const savedFilesMap = new Map<FileId, BinaryFileData>();
+        for (const id of savedFiles.keys()) {
+          const fileData = addedFiles.get(id);
+          if (fileData) {
+            savedFilesMap.set(id, fileData);
+          }
+        }
+
+        const erroredFilesMap = new Map<FileId, BinaryFileData>();
+        for (const id of erroredFiles.keys()) {
+          const fileData = addedFiles.get(id);
+          if (fileData) {
+            erroredFilesMap.set(id, fileData);
+          }
+        }
+
         return {
-          savedFiles: savedFiles.reduce(
-            (acc: Map<FileId, BinaryFileData>, id) => {
-              const fileData = addedFiles.get(id);
-              if (fileData) {
-                acc.set(id, fileData);
-              }
-              return acc;
-            },
-            new Map(),
-          ),
-          erroredFiles: erroredFiles.reduce(
-            (acc: Map<FileId, BinaryFileData>, id) => {
-              const fileData = addedFiles.get(id);
-              if (fileData) {
-                acc.set(id, fileData);
-              }
-              return acc;
-            },
-            new Map(),
-          ),
+          savedFiles: savedFilesMap,
+          erroredFiles: erroredFilesMap,
         };
       },
     });
@@ -474,12 +472,16 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   };
 
   private decryptPayload = async (
-    iv: Uint8Array<ArrayBuffer>,
+    iv: Uint8Array,
     encryptedData: ArrayBuffer,
     decryptionKey: string,
   ): Promise<ValueOf<SocketUpdateDataSource>> => {
     try {
-      const decrypted = await decryptData(iv, encryptedData, decryptionKey);
+      const decrypted = await decryptData(
+        iv as Uint8Array<ArrayBuffer>,
+        encryptedData,
+        decryptionKey,
+      );
 
       const decodedData = new TextDecoder("utf-8").decode(
         new Uint8Array(decrypted),

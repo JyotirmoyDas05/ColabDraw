@@ -30,7 +30,7 @@ const BASE_BACKOFF_MS = 1_000;
 const PING_INTERVAL_MS = 25_000;
 const PONG_TIMEOUT_MS = 10_000;
 
-type AnyListener = (...args: never[]) => void;
+type AnyListener = (...args: any[]) => void;
 
 export class CollabSocket {
   readonly id = crypto.randomUUID();
@@ -51,52 +51,109 @@ export class CollabSocket {
   private pongTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
-    baseUrl: string,
-    roomId: string,
+    urlOrBackend: string,
+    roomIdOrOptions?: string | { isViewOnly?: boolean },
     options?: { isViewOnly?: boolean },
   ) {
-    this.url = `${baseUrl.replace(/^http/, "ws")}/rooms/${encodeURIComponent(
-      roomId,
-    )}`;
-    this.isViewOnly = options?.isViewOnly ?? false;
+    if (typeof roomIdOrOptions === "string") {
+      const baseWsUrl = urlOrBackend
+        .replace(/^https:\/\//i, "wss://")
+        .replace(/^http:\/\//i, "ws://")
+        .replace(/\/+$/, "");
+      this.url = `${baseWsUrl}/rooms/${encodeURIComponent(roomIdOrOptions)}`;
+      this.isViewOnly = options?.isViewOnly ?? false;
+    } else {
+      this.url = urlOrBackend;
+      this.isViewOnly = roomIdOrOptions?.isViewOnly ?? options?.isViewOnly ?? false;
+    }
+  }
+
+  open(): void {
+    if (this.closed) {
+      this.closed = false;
+    }
+    this.connect();
   }
 
   connect(): void {
-    if (this.socket || this.closed) {
-      return;
+    this.clearTimers();
+    if (this.socket) {
+      try {
+        this.socket.close();
+      } catch {
+        // WebSocket may already be closing or closed
+      }
+      this.socket = null;
     }
-    this.emit("status", "connecting");
-    const socket = new WebSocket(this.url);
-    socket.binaryType = "arraybuffer";
-    this.socket = socket;
-    socket.addEventListener("open", this.handleOpen);
-    socket.addEventListener("message", this.handleMessage);
-    socket.addEventListener("close", this.handleClose);
+    try {
+      const socket = new WebSocket(this.url);
+      socket.binaryType = "arraybuffer";
+      socket.onopen = this.handleOpen;
+      socket.onclose = this.handleClose;
+      socket.onerror = this.handleError;
+      socket.onmessage = this.handleMessage;
+      this.socket = socket;
+    } catch {
+      this.scheduleReconnect();
+    }
   }
 
   close(): void {
     this.closed = true;
     this.clearTimers();
-    const socket = this.socket;
-    this.socket = null;
-    if (socket) {
-      socket.close();
+    if (this.socket) {
+      try {
+        this.socket.close();
+      } catch {
+        // WebSocket may already be closing or closed
+      }
+      this.socket = null;
     }
   }
 
   sendUpdate(
-    data: ArrayBuffer,
+    ciphertext: ArrayBuffer,
     iv: Uint8Array,
     options?: { volatile?: boolean; followersOnly?: boolean },
+  ): void {
+    if (options?.followersOnly) {
+      this.broadcastVolatileToFollowers(iv, ciphertext);
+    } else if (options?.volatile) {
+      this.broadcastVolatile(iv, ciphertext);
+    } else {
+      this.broadcastScene(iv, ciphertext);
+    }
+  }
+
+  /**
+   * Broadcast a full scene update (opcode 1).
+   */
+  broadcastScene(iv: Uint8Array, ciphertext: ArrayBuffer): void {
+    this.sendBinaryFrame(SCENE_OPCODE, iv, ciphertext);
+  }
+
+  /**
+   * Broadcast mouse / volatile pointer data (opcode 2).
+   */
+  broadcastVolatile(iv: Uint8Array, ciphertext: ArrayBuffer): void {
+    this.sendBinaryFrame(VOLATILE_OPCODE, iv, ciphertext);
+  }
+
+  /**
+   * Broadcast mouse position to followers only (opcode 3).
+   */
+  broadcastVolatileToFollowers(iv: Uint8Array, ciphertext: ArrayBuffer): void {
+    this.sendBinaryFrame(VOLATILE_TO_FOLLOWERS_OPCODE, iv, ciphertext);
+  }
+
+  private sendBinaryFrame(
+    opcode: number,
+    iv: Uint8Array,
+    data: ArrayBuffer,
   ): void {
     if (this.socket?.readyState !== WebSocket.OPEN) {
       return;
     }
-    const opcode = options?.followersOnly
-      ? VOLATILE_TO_FOLLOWERS_OPCODE
-      : options?.volatile
-      ? VOLATILE_OPCODE
-      : SCENE_OPCODE;
     const frame = new Uint8Array(FRAME_HEADER_BYTES + data.byteLength);
     frame[0] = opcode;
     frame.set(iv.subarray(0, IV_BYTES), 1);
@@ -136,7 +193,7 @@ export class CollabSocket {
     this.listenerGroups.get(event)?.delete(handler as AnyListener);
   }
 
-  private sendControl(message: { t: string; target?: string }): void {
+  private sendControl(message: { t: string; [key: string]: unknown }): void {
     if (this.socket?.readyState !== WebSocket.OPEN) {
       return;
     }
@@ -153,34 +210,32 @@ export class CollabSocket {
     this.startHeartbeat();
   };
 
-  private handleMessage = (event: MessageEvent): void => {
-    if (typeof event.data === "string") {
-      this.handleControl(event.data);
-      return;
-    }
-    if (!(event.data instanceof ArrayBuffer)) {
-      return;
-    }
-    const bytes = new Uint8Array(event.data);
-    if (bytes.length < FRAME_HEADER_BYTES) {
-      return;
-    }
-    const opcode = bytes[0];
-    if (opcode !== SCENE_OPCODE && opcode !== VOLATILE_OPCODE) {
-      return;
-    }
-    this.emit("scene", {
-      opcode: opcode as SceneOpcode,
-      iv: bytes.slice(1, FRAME_HEADER_BYTES),
-      data: bytes.slice(FRAME_HEADER_BYTES),
-    });
-  };
-
   private handleClose = (): void => {
     this.clearTimers();
     this.socket = null;
     if (this.closed) {
       return;
+    }
+    this.scheduleReconnect();
+  };
+
+  private handleError = (): void => {
+    // Errors are followed by close; let close handle reconnection.
+  };
+
+  private handleMessage = (event: MessageEvent): void => {
+    if (typeof event.data === "string") {
+      this.handleControl(event.data);
+      return;
+    }
+    if (event.data instanceof ArrayBuffer) {
+      this.handleBinary(event.data);
+    }
+  };
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
     }
     this.emit("status", "connecting");
     this.attempt += 1;
@@ -191,16 +246,20 @@ export class CollabSocket {
       Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** (this.attempt - 1)) *
       (1 + (Math.random() - 0.5) / 2);
     this.reconnectTimer = setTimeout(() => this.connect(), backoff);
-  };
+  }
 
   private startHeartbeat(): void {
-    clearInterval(this.pingInterval);
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+    }
     this.pingInterval = setInterval(() => {
       if (this.socket?.readyState !== WebSocket.OPEN) {
         return;
       }
       this.sendControl({ t: "ping" });
-      clearTimeout(this.pongTimer);
+      if (this.pongTimer) {
+        clearTimeout(this.pongTimer);
+      }
       this.pongTimer = setTimeout(() => {
         this.socket?.close();
       }, PONG_TIMEOUT_MS);
@@ -208,25 +267,31 @@ export class CollabSocket {
   }
 
   private clearTimers(): void {
-    clearInterval(this.pingInterval);
-    this.pingInterval = null;
-    clearTimeout(this.pongTimer);
-    this.pongTimer = null;
-    clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = null;
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+    if (this.pongTimer) {
+      clearTimeout(this.pongTimer);
+      this.pongTimer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
   }
 
   private handleControl(text: string): void {
-    let control: unknown;
+    let raw: unknown;
     try {
-      control = JSON.parse(text) as unknown;
+      raw = JSON.parse(text) as unknown;
     } catch {
       return;
     }
-    if (typeof control !== "object" || control === null) {
+    if (typeof raw !== "object" || raw === null) {
       return;
     }
-    control = control as ServerControl;
+    const control = raw as Partial<ServerControl> & { ids?: unknown; id?: unknown };
     switch (control.t) {
       case "joined":
         this.emit("joined", {
@@ -249,14 +314,30 @@ export class CollabSocket {
         this.emit("unfollowed");
         return;
       case "pong":
-        clearTimeout(this.pongTimer);
-        this.pongTimer = null;
+        if (this.pongTimer) {
+          clearTimeout(this.pongTimer);
+          this.pongTimer = null;
+        }
         break;
     }
   }
 
   private filterIds(ids: unknown): string[] {
     return Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
+  }
+
+  private handleBinary(buffer: ArrayBuffer): void {
+    if (buffer.byteLength < FRAME_HEADER_BYTES) {
+      return;
+    }
+    const header = new Uint8Array(buffer, 0, FRAME_HEADER_BYTES);
+    const opcode = header[0];
+    if (opcode !== SCENE_OPCODE && opcode !== VOLATILE_OPCODE) {
+      return;
+    }
+    const iv = header.subarray(1, FRAME_HEADER_BYTES);
+    const data = new Uint8Array(buffer, FRAME_HEADER_BYTES);
+    this.emit("scene", { opcode: opcode as SceneOpcode, iv, data });
   }
 
   private emit<K extends keyof CollabSocketEvents>(
@@ -268,7 +349,7 @@ export class CollabSocket {
       return;
     }
     for (const listener of listeners) {
-      (listener as CollabSocketEvents[K])(...args);
+      (listener as (...a: unknown[]) => void)(...args);
     }
   }
 }
