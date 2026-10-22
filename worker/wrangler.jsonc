@@ -10,5 +10,9 @@
       "database_id": "61ea32c6-c7ab-4482-87d0-4dcf86a83df9"
     }
   ],
-  "r2_buckets": [{ "binding": "FILES", "bucket_name": "colabdraw-files" }]
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "colabdraw-files" }],
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }]
 }

@@ -3,12 +3,15 @@ import { describe, expect, it } from "vitest";
 import { MAX_JSON_BYTES } from "../src/http";
 import worker from "../src/index";
 
-import { fakeD1, fakeR2, streamedRequest } from "./fakes";
+import { fakeD1, fakeR2, fakeRooms, streamedRequest } from "./fakes";
 
 const envWith = (opts: { first?: unknown; changes?: number } = {}) => {
   const d1 = fakeD1(opts);
   const r2 = fakeR2();
-  return { env: { DB: d1.db, FILES: r2.bucket }, statements: d1.statements };
+  return {
+    env: { DB: d1.db, FILES: r2.bucket, ROOMS: fakeRooms() },
+    statements: d1.statements,
+  };
 };
 
 const put = (roomId: string, body: unknown) =>

@@ -54,6 +54,17 @@ export const fakeR2 = () => {
 };
 
 /**
+ * A Durable Object namespace stand-in. The REST routes never open one, so any
+ * attempt to reach one from these tests is a mistake worth failing loudly.
+ */
+export const fakeRooms = () =>
+  ({
+    getByName: () => {
+      throw new Error("Room Durable Objects are not faked; use worker tests");
+    },
+  } as unknown as DurableObjectNamespace);
+
+/**
  * A request whose body arrives as a stream, so it carries no `content-length`.
  * This is the shape a chunked upload has, and the only way to exercise the
  * measured size check rather than the declared one.

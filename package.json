@@ -9,6 +9,7 @@
   ],
   "devDependencies": {
     "@babel/preset-env": "7.26.9",
+    "@cloudflare/vitest-pool-workers": "0.12.0",
     "@cloudflare/workers-types": "5.20261021.1",
     "@excalidraw/eslint-config": "1.0.3",
     "@excalidraw/prettier-config": "1.0.2",
@@ -21,6 +22,7 @@
     "@vitejs/plugin-react": "3.1.0",
     "@vitest/coverage-v8": "3.0.7",
     "@vitest/ui": "2.0.5",
+    "@vitest/utils": "3.0.6",
     "chai": "4.3.6",
     "concurrently": "9.2.1",
     "dotenv": "16.0.1",
@@ -75,6 +77,7 @@
     "test:code": "eslint --max-warnings=0 --ext .js,.ts,.tsx .",
     "test:other": "bun run prettier --list-different",
     "test:typecheck": "tsc && tsc -p worker/tsconfig.json",
+    "test:worker": "cd worker && vitest run",
     "test:update": "bun run test:app --update --watch=false",
     "test": "bun run test:app",
     "test:coverage": "vitest --coverage",

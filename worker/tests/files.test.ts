@@ -3,12 +3,15 @@ import { describe, expect, it } from "vitest";
 import { MAX_FILE_BYTES } from "../src/http";
 import worker from "../src/index";
 
-import { fakeD1, fakeR2, streamedRequest } from "./fakes";
+import { fakeD1, fakeR2, fakeRooms, streamedRequest } from "./fakes";
 
 const envWith = (opts: { first?: unknown; changes?: number } = {}) => {
   const d1 = fakeD1(opts);
   const r2 = fakeR2();
-  return { env: { DB: d1.db, FILES: r2.bucket }, objects: r2.objects };
+  return {
+    env: { DB: d1.db, FILES: r2.bucket, ROOMS: fakeRooms() },
+    objects: r2.objects,
+  };
 };
 
 const putFile = (id: string, bytes: Uint8Array) =>

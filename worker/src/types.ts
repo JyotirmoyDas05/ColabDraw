@@ -1,6 +1,7 @@
 export type Env = {
   DB: D1Database;
   FILES: R2Bucket;
+  ROOMS: DurableObjectNamespace;
 };
 
 export type SceneRecord = {

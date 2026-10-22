@@ -1,11 +1,15 @@
 import { getFile, putFile } from "./files";
 import { corsHeaders, fail, HttpError, isValidId } from "./http";
+import { isRoomId } from "./protocol";
 import { getScene, putScene } from "./scenes";
 import { getShareLink, putShareLink } from "./shareLinks";
 
 import type { Env } from "./types";
 
+export { Room } from "./room";
+
 const ROUTE = /^\/(scenes|share-links|files)\/([^/]+)$/;
+const ROOM = /^\/rooms\/([^/]+)$/;
 
 const withCors = (response: Response): Response => {
   const headers = new Headers(response.headers);
@@ -13,6 +17,46 @@ const withCors = (response: Response): Response => {
     headers.set(name, value);
   }
   return new Response(response.body, { status: response.status, headers });
+};
+
+const vercelPrefixes = new Set([
+  "https://colab-draw-with-nextjs.vercel.app",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+]);
+
+/** Checked on upgrade because a 200 origin check after connect would leak the room. */
+const isAllowedOrigin = (origin: string | null): boolean => {
+  if (!origin) {
+    return false;
+  }
+  if (vercelPrefixes.has(origin)) {
+    return true;
+  }
+  let host: string;
+  try {
+    host = new URL(origin).host;
+  } catch {
+    return false;
+  }
+  return host.endsWith(".vercel.app");
+};
+
+const handleRoom = (
+  request: Request,
+  env: Env,
+  roomId: string,
+): Response | Promise<Response> => {
+  if (!isRoomId(roomId)) {
+    return fail(404, "not_found");
+  }
+  if (request.headers.get("upgrade") !== "websocket") {
+    return fail(426, "upgrade_required");
+  }
+  if (!isAllowedOrigin(request.headers.get("origin"))) {
+    return fail(403, "forbidden_origin");
+  }
+  return env.ROOMS.getByName(roomId).fetch(request);
 };
 
 const route = async (request: Request, env: Env): Promise<Response> => {
@@ -58,6 +102,13 @@ const route = async (request: Request, env: Env): Promise<Response> => {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const room = ROOM.exec(new URL(request.url).pathname);
+    if (room) {
+      // Returned untouched: a 101 response carries `webSocket`, and rebuilding
+      // it inside `new Response` would drop that property.
+      return handleRoom(request, env, room[1]);
+    }
+
     if (request.method === "OPTIONS") {
       return withCors(new Response(null, { status: 204 }));
     }

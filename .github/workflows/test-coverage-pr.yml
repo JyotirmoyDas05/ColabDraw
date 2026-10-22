@@ -22,6 +22,9 @@ jobs:
       - name: Test Coverage
         run: bun run test:coverage
 
+      - name: Durable Object tests
+        run: bun run test:worker
+
       - name: Report Coverage
         if: always() # Also generate the report if tests are failing
         uses: davelosert/vitest-coverage-report-action@2500dafcee7dd64f85ab689c0b83798a8359770e # v2

@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import worker from "../src/index";
 
-import { fakeD1, fakeR2 } from "./fakes";
+import { fakeD1, fakeR2, fakeRooms } from "./fakes";
 
 const envWith = (opts: { first?: unknown; changes?: number } = {}) => {
   const d1 = fakeD1(opts);
   const r2 = fakeR2();
   return {
-    env: { DB: d1.db, FILES: r2.bucket },
+    env: { DB: d1.db, FILES: r2.bucket, ROOMS: fakeRooms() },
     statements: d1.statements,
     objects: r2.objects,
   };
