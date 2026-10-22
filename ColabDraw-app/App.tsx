@@ -149,6 +149,7 @@ import { AIBuddyButton } from "./components/AIBuddyButton";
 import { AIKeyDialog } from "./components/AIKeyDialog";
 import "./index.scss";
 import { AppSidebar } from "./components/AppSidebar";
+import { UpdateNotificationToast } from "./components/UpdateNotificationToast";
 
 import type { CollabAPI } from "./collab/Collab";
 
@@ -1253,6 +1254,7 @@ const ExcalidrawApp = () => {
           <ExcalidrawWrapper />
         </ExcalidrawAPIProvider>
         <Analytics />
+        <UpdateNotificationToast />
       </Provider>
     </TopErrorBoundary>
   );
