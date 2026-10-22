@@ -9,7 +9,28 @@ export class Room {
     private readonly env: Env,
   ) {}
 
-  async fetch(): Promise<Response> {
+  async fetch(request?: Request): Promise<Response> {
+    if (request) {
+      const url = new URL(request.url);
+      if (url.pathname === "/ai-proxy") {
+        const { model, apiKey, body } = (await request.json()) as {
+          model: string;
+          apiKey: string;
+          body: unknown;
+        };
+        return fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": apiKey,
+            },
+            body: JSON.stringify(body),
+          },
+        );
+      }
+    }
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.state.acceptWebSocket(server);

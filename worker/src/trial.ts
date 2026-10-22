@@ -180,10 +180,41 @@ export const handleTrialGenerate = async (
     let geminiRes: Response | null = null;
     const apiKey = env.GEMINI_API_KEY.trim();
 
-    for (const model of models) {
-      const stall = new AbortController();
-      const stallTimer = setTimeout(() => stall.abort(), GEMINI_STALL_MS);
-      geminiRes = await fetch(
+    const sendGeminiRequest = async (
+      model: string,
+      useDoProxy = false,
+      signal?: AbortSignal,
+    ): Promise<Response | null> => {
+      const payload = {
+        contents: geminiRequest.contents,
+        systemInstruction: geminiRequest.systemInstruction,
+        generationConfig: geminiRequest.generationConfig,
+        tools: Array.isArray(geminiRequest.tools)
+          ? geminiRequest.tools
+          : undefined,
+      };
+
+      if (
+        useDoProxy &&
+        env.ROOMS &&
+        typeof env.ROOMS.newUniqueId === "function"
+      ) {
+        try {
+          const stub = env.ROOMS.get(env.ROOMS.newUniqueId(), {
+            locationHint: "wnam",
+          });
+          return await stub.fetch("https://do/ai-proxy", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model, apiKey, body: payload }),
+            signal,
+          });
+        } catch (e) {
+          console.error("DO ai-proxy error:", e);
+        }
+      }
+
+      return fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           method: "POST",
@@ -191,19 +222,30 @@ export const handleTrialGenerate = async (
             "Content-Type": "application/json",
             "x-goog-api-key": apiKey,
           },
-          body: JSON.stringify({
-            contents: geminiRequest.contents,
-            systemInstruction: geminiRequest.systemInstruction,
-            generationConfig: geminiRequest.generationConfig,
-            tools: Array.isArray(geminiRequest.tools)
-              ? geminiRequest.tools
-              : undefined,
-          }),
-          signal: stall.signal,
+          body: JSON.stringify(payload),
+          signal,
         },
-      )
-        .catch(() => null)
-        .finally(() => clearTimeout(stallTimer));
+      ).catch(() => null);
+    };
+
+    for (const model of models) {
+      const stall = new AbortController();
+      const stallTimer = setTimeout(() => stall.abort(), GEMINI_STALL_MS);
+      try {
+        geminiRes = await sendGeminiRequest(model, false, stall.signal);
+        if (geminiRes && geminiRes.status === 400) {
+          const cloned = geminiRes.clone();
+          const errBody = await cloned.text().catch(() => "");
+          if (errBody.includes("User location is not supported")) {
+            console.warn(
+              "Location not supported from current edge colo, retrying via US Durable Object proxy...",
+            );
+            geminiRes = await sendGeminiRequest(model, true, stall.signal);
+          }
+        }
+      } finally {
+        clearTimeout(stallTimer);
+      }
 
       if (geminiRes && geminiRes.status !== 503) {
         break;
