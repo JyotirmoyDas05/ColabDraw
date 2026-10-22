@@ -13,6 +13,8 @@ import type {
 import { FILE_UPLOAD_TIMEOUT, WS_SUBTYPES } from "../app_constants";
 import { isSyncableElement } from "../data";
 
+import type { PresentationSettings } from "../presentation/presentationState";
+
 import type {
   SocketUpdateData,
   SocketUpdateDataSource,
@@ -88,6 +90,7 @@ class Portal {
     data: SocketUpdateData,
     volatile: boolean = false,
     followersOnly: boolean = false,
+    allowViewers: boolean = false,
   ) {
     // viewers are read-only: never send scene updates, cursors or presence
     if (this.isViewOnly) {
@@ -244,6 +247,59 @@ class Portal {
         data as SocketUpdateData,
         true, // volatile
         true, // followersOnly
+      );
+    }
+  };
+
+  broadcastPresentationLive = (payload: {
+    isLive: boolean;
+    slideIndex: number;
+    totalSlides: number;
+    slideTitle?: string;
+    settings?: Partial<PresentationSettings>;
+  }) => {
+    if (this.socket?.id) {
+      const data: SocketUpdateDataSource["PRESENTATION_BROADCAST"] = {
+        type: WS_SUBTYPES.PRESENTATION_BROADCAST,
+        payload: {
+          socketId: this.socket.id as SocketId,
+          username: this.collab.state.username,
+          isLive: payload.isLive,
+          slideIndex: payload.slideIndex,
+          totalSlides: payload.totalSlides,
+          slideTitle: payload.slideTitle,
+          settings: payload.settings,
+        },
+      };
+
+      return this._broadcastSocketData(
+        data as SocketUpdateData,
+        true, // volatile
+      );
+    }
+  };
+
+  broadcastPresentationControl = (payload: {
+    action:
+      | "NAVIGATE_SLIDE"
+      | "NEXT_SLIDE"
+      | "PREV_SLIDE"
+      | "STOP_PRESENTATION"
+      | "UPDATE_SETTINGS";
+    slideIndex?: number;
+    settings?: Partial<PresentationSettings>;
+  }) => {
+    if (this.socket?.id) {
+      const data: SocketUpdateDataSource["PRESENTATION_CONTROL"] = {
+        type: WS_SUBTYPES.PRESENTATION_CONTROL,
+        payload,
+      };
+
+      return this._broadcastSocketData(
+        data as SocketUpdateData,
+        true, // volatile
+        false, // followersOnly
+        true, // allowViewers
       );
     }
   };

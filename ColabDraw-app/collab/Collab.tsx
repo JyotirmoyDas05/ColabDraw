@@ -87,10 +87,19 @@ import {
 } from "../data/localStorage";
 import { resetBrowserStateVersions } from "../data/tabSync";
 
+import {
+  activeRemotePresentationAtom,
+  DEFAULT_PRESENTATION_STATE,
+  presentationModeAtom,
+  presentationSettingsAtom,
+} from "../presentation/presentationState";
+import { presentationSync } from "../presentation/presentationSync";
+
 import { collabErrorIndicatorAtom } from "./CollabError";
 import Portal from "./Portal";
 import { CollabSocket } from "./CollabSocket";
 
+import type { PresentationSettings } from "../presentation/presentationState";
 import type {
   SocketUpdateDataSource,
   SyncableExcalidrawElement,
@@ -128,6 +137,24 @@ export interface CollabAPI {
   getActiveRoomLink: CollabInstance["getActiveRoomLink"];
   setCollabError: CollabInstance["setErrorDialog"];
   setUserToFollow: CollabInstance["setUserToFollow"];
+  broadcastPresentation: (payload: {
+    isLive: boolean;
+    slideIndex: number;
+    totalSlides: number;
+    slideTitle?: string;
+    settings?: Partial<PresentationSettings>;
+  }) => void;
+  broadcastPresentationControl: (payload: {
+    action:
+      | "NAVIGATE_SLIDE"
+      | "NEXT_SLIDE"
+      | "PREV_SLIDE"
+      | "STOP_PRESENTATION"
+      | "UPDATE_SETTINGS";
+    slideIndex?: number;
+    settings?: Partial<PresentationSettings>;
+  }) => Promise<void> | void;
+  relayVisibleSceneBounds: (props?: { force: boolean }) => void;
 }
 
 interface CollabProps {
@@ -246,6 +273,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       getActiveRoomLink: this.getActiveRoomLink,
       setCollabError: this.setErrorDialog,
       setUserToFollow: this.setUserToFollow,
+      broadcastPresentation: (payload) =>
+        this.portal.broadcastPresentationLive(payload),
+      broadcastPresentationControl: (payload) =>
+        this.portal.broadcastPresentationControl(payload),
+      relayVisibleSceneBounds: (props) => this.relayVisibleSceneBounds(props),
     };
 
     appJotaiStore.set(collabAPIAtom, collabAPI);
@@ -703,6 +735,102 @@ class Collab extends PureComponent<CollabProps, CollabState> {
             userState,
             username,
           });
+          break;
+        }
+
+        case WS_SUBTYPES.PRESENTATION_BROADCAST: {
+          const {
+            socketId,
+            username,
+            isLive,
+            slideIndex,
+            totalSlides,
+            slideTitle,
+          } = decryptedData.payload;
+
+          if (isLive) {
+            appJotaiStore.set(activeRemotePresentationAtom, {
+              presenterSocketId: socketId,
+              presenterUsername: username || "Presenter",
+              slideIndex,
+              totalSlides,
+              slideTitle,
+              settings: decryptedData.payload.settings,
+            });
+
+            const currentPresState = appJotaiStore.get(presentationModeAtom);
+            if (
+              currentPresState.isFollower &&
+              currentPresState.presenterSocketId === socketId
+            ) {
+              appJotaiStore.set(presentationModeAtom, (prev) => ({
+                ...prev,
+                currentSlideIndex: slideIndex,
+                totalSlides,
+              }));
+            }
+          } else {
+            const currentRemote = appJotaiStore.get(
+              activeRemotePresentationAtom,
+            );
+            if (currentRemote?.presenterSocketId === socketId) {
+              appJotaiStore.set(activeRemotePresentationAtom, null);
+            }
+            const currentPresState = appJotaiStore.get(presentationModeAtom);
+            if (
+              currentPresState.isFollower &&
+              currentPresState.presenterSocketId === socketId
+            ) {
+              this.setUserToFollow(null);
+              appJotaiStore.set(
+                presentationModeAtom,
+                DEFAULT_PRESENTATION_STATE,
+              );
+            }
+          }
+          break;
+        }
+
+        case WS_SUBTYPES.PRESENTATION_CONTROL: {
+          const { action, slideIndex, settings } = decryptedData.payload;
+          const currentPres = appJotaiStore.get(presentationModeAtom);
+
+          if (action === "UPDATE_SETTINGS" && settings) {
+            appJotaiStore.set(presentationSettingsAtom, (prev) => ({
+              ...prev,
+              ...settings,
+            }));
+            presentationSync.send({
+              type: "UPDATE_SETTINGS",
+              settings,
+            });
+            break;
+          }
+
+          if (action === "STOP_PRESENTATION") {
+            presentationSync.send({ type: "STOP_PRESENTATION" });
+            appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
+            appJotaiStore.set(activeRemotePresentationAtom, null);
+            this.portal.broadcastPresentationLive({
+              isLive: false,
+              slideIndex: 0,
+              totalSlides: 0,
+            });
+            break;
+          }
+
+          if (currentPres.isActive) {
+            if (action === "NEXT_SLIDE") {
+              presentationSync.send({ type: "NEXT_SLIDE" });
+            } else if (action === "PREV_SLIDE") {
+              presentationSync.send({ type: "PREV_SLIDE" });
+            } else if (
+              action === "NAVIGATE_SLIDE" &&
+              typeof slideIndex === "number"
+            ) {
+              presentationSync.send({ type: "NAVIGATE_SLIDE", slideIndex });
+            }
+          }
           break;
         }
 

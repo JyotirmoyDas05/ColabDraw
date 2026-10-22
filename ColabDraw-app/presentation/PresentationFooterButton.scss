@@ -1,0 +1,42 @@
+.presentation-footer-button-wrap {
+  display: flex;
+  align-items: center;
+  margin-inline-start: 0.5rem;
+}
+
+.presentation-footer-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lg-button-size, 2.25rem);
+  height: var(--lg-button-size, 2.25rem);
+  background-color: var(--color-surface-low, #f1f3f5);
+  border-radius: var(--border-radius-lg, 8px);
+  box-shadow: 0 0 0 1px var(--color-surface-lowest, #dee2e6);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--color-on-surface, #343a40);
+  transition: background-color 0.15s ease-in-out, color 0.15s ease-in-out,
+    transform 0.1s ease-in-out;
+
+  &:hover {
+    background-color: var(--button-hover-bg, #e9ecef);
+  }
+
+  &:active {
+    background-color: var(--button-active-bg, #dee2e6);
+    transform: scale(0.96);
+  }
+
+  &.is-active {
+    background-color: var(--color-primary-light, #ececfc);
+    color: var(--color-primary, #6965db);
+    box-shadow: 0 0 0 1.5px var(--color-primary, #6965db);
+  }
+
+  svg {
+    width: var(--lg-icon-size, 1.25rem);
+    height: var(--lg-icon-size, 1.25rem);
+  }
+}

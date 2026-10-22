@@ -75,8 +75,8 @@ const ActiveRoomDialog = ({
   const isShareSupported = "share" in navigator;
   const { onCopy, copyStatus, resetCopyStatus } = useCopyStatus();
 
-  const editLink = activeRoomLink.replace(/,view$/, "");
-  const viewLink = getViewOnlyCollaborationLink(activeRoomLink);
+  const editLink = (activeRoomLink || "").replace(/,view$/, "");
+  const viewLink = getViewOnlyCollaborationLink(activeRoomLink || "");
   const activeLink = canEdit && !isViewOnly ? editLink : viewLink;
 
   const copyRoomLink = async () => {

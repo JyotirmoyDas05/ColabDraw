@@ -29,6 +29,7 @@ import {
   DELETED_ELEMENT_TIMEOUT,
   FILE_UPLOAD_MAX_BYTES,
   ROOM_ID_BYTES,
+  type WS_SUBTYPES,
 } from "../app_constants";
 
 import { encodeFilesForUpload } from "./FileManager";
@@ -40,7 +41,7 @@ import {
   saveFilesToBackend,
 } from "./backend";
 
-import type { WS_SUBTYPES } from "../app_constants";
+import type { PresentationSettings } from "../presentation/presentationState";
 
 export type SyncableExcalidrawElement = OrderedExcalidrawElement &
   MakeBrand<"SyncableExcalidrawElement">;
@@ -59,22 +60,12 @@ export const isSyncableElement = (
 
 export const getSyncableElements = (
   elements: readonly OrderedExcalidrawElement[],
-) =>
-  elements.filter((element) =>
-    isSyncableElement(element),
-  ) as SyncableExcalidrawElement[];
-
-// Collaboration links carry the room key in the URL hash; nothing is shared here.
+) => elements.filter((element) => isSyncableElement(element));
 
 const generateRoomId = async () => {
   const buffer = new Uint8Array(ROOM_ID_BYTES);
   window.crypto.getRandomValues(buffer);
   return bytesToHexString(buffer);
-};
-
-export type EncryptedData = {
-  data: ArrayBuffer;
-  iv: Uint8Array;
 };
 
 export type SocketUpdateDataSource = {
@@ -119,6 +110,31 @@ export type SocketUpdateDataSource = {
       username: string;
     };
   };
+  PRESENTATION_BROADCAST: {
+    type: WS_SUBTYPES.PRESENTATION_BROADCAST;
+    payload: {
+      socketId: SocketId;
+      username: string;
+      isLive: boolean;
+      slideIndex: number;
+      totalSlides: number;
+      slideTitle?: string;
+      settings?: Partial<PresentationSettings>;
+    };
+  };
+  PRESENTATION_CONTROL: {
+    type: WS_SUBTYPES.PRESENTATION_CONTROL;
+    payload: {
+      action:
+        | "NAVIGATE_SLIDE"
+        | "NEXT_SLIDE"
+        | "PREV_SLIDE"
+        | "STOP_PRESENTATION"
+        | "UPDATE_SETTINGS";
+      slideIndex?: number;
+      settings?: Partial<PresentationSettings>;
+    };
+  };
 };
 
 export type SocketUpdateDataIncoming =
@@ -132,11 +148,19 @@ export type SocketUpdateData =
 // Modern clean format: /room/:roomId#:roomKey[,view]
 const RE_COLLAB_PATH = /^\/room\/([a-zA-Z0-9_-]+)\/?$/;
 const RE_COLLAB_HASH = /^#([a-zA-Z0-9_-]+)(,view)?$/;
+const RE_LEGACY_COLLAB_LINK =
+  /^#room=([a-zA-Z0-9_-]+),([a-zA-Z0-9_-]+)(,view)?$/;
 
 export const isCollaborationLink = (link: string) => {
   try {
     const url = new URL(link);
-    return RE_COLLAB_PATH.test(url.pathname) && RE_COLLAB_HASH.test(url.hash);
+    if (RE_COLLAB_PATH.test(url.pathname) && RE_COLLAB_HASH.test(url.hash)) {
+      return true;
+    }
+    if (RE_LEGACY_COLLAB_LINK.test(url.hash)) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -148,24 +172,37 @@ export const getCollaborationLinkData = (link: string) => {
     const pathMatch = url.pathname.match(RE_COLLAB_PATH);
     const hashMatch = url.hash.match(RE_COLLAB_HASH);
 
-    if (!pathMatch || !hashMatch) {
-      return null;
+    if (pathMatch && hashMatch) {
+      const roomId = pathMatch[1];
+      const roomKey = hashMatch[1];
+      const isViewOnly = !!hashMatch[2];
+
+      if (roomKey.length !== 22) {
+        window.alert(t("alerts.invalidEncryptionKey"));
+        return null;
+      }
+
+      return {
+        roomId,
+        roomKey,
+        isViewOnly,
+      };
     }
 
-    const roomId = pathMatch[1];
-    const roomKey = hashMatch[1];
-    const isViewOnly = !!hashMatch[2];
-
-    if (roomKey.length !== 22) {
-      window.alert(t("alerts.invalidEncryptionKey"));
-      return null;
+    const legacyMatch = url.hash.match(RE_LEGACY_COLLAB_LINK);
+    if (legacyMatch) {
+      if (legacyMatch[2].length !== 22) {
+        window.alert(t("alerts.invalidEncryptionKey"));
+        return null;
+      }
+      return {
+        roomId: legacyMatch[1],
+        roomKey: legacyMatch[2],
+        isViewOnly: !!legacyMatch[3],
+      };
     }
 
-    return {
-      roomId,
-      roomKey,
-      isViewOnly,
-    };
+    return null;
   } catch {
     return null;
   }
@@ -194,7 +231,7 @@ export const getCollaborationLink = (data: {
 
 /** the view-only variant of an existing collaboration link */
 export const getViewOnlyCollaborationLink = (link: string) => {
-  return `${link.replace(/,view$/, "")},view`;
+  return `${(link || "").replace(/,view$/, "")},view`;
 };
 
 // Modern clean format: /share/:id#:key

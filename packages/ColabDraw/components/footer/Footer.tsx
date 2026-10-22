@@ -26,7 +26,8 @@ const Footer = ({
   defaultUIEnabled: boolean;
   zoomUIEnabled: boolean;
 }) => {
-  const { FooterCenterTunnel, WelcomeScreenHelpHintTunnel } = useTunnels();
+  const { FooterCenterTunnel, FooterLeftTunnel, WelcomeScreenHelpHintTunnel } =
+    useTunnels();
   const app = useApp();
 
   return (
@@ -45,13 +46,23 @@ const Footer = ({
               )}
 
               {defaultUIEnabled && !appState.viewModeEnabled && (
-                <UndoRedoActions
-                  renderAction={actionManager.renderAction}
-                  className={clsx("zen-mode-transition", {
-                    "layer-ui__wrapper__footer-left--transition-bottom":
-                      appState.zenModeEnabled,
-                  })}
-                />
+                <div
+                  className={clsx(
+                    "undo-redo-container-row zen-mode-transition",
+                    {
+                      "layer-ui__wrapper__footer-left--transition-bottom":
+                        appState.zenModeEnabled,
+                    },
+                  )}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <UndoRedoActions renderAction={actionManager.renderAction} />
+                  <FooterLeftTunnel.Out />
+                </div>
               )}
             </Section>
           </Stack.Col>
@@ -88,4 +99,3 @@ const Footer = ({
 };
 
 export default Footer;
-Footer.displayName = "Footer";

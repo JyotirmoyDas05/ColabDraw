@@ -2,6 +2,7 @@ import {
   EmbedIcon,
   brainIcon,
   eyeIcon,
+  presentationIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { MainMenu } from "@excalidraw/excalidraw/index";
 import React from "react";
@@ -25,6 +26,7 @@ export const AppMainMenu: React.FC<{
   refresh: () => void;
   embedsOpen: boolean;
   onToggleEmbeds: () => void;
+  onStartPresentation?: () => void;
 }> = React.memo((props) => {
   const openAISettings = useSetAtom(aiKeyDialogOpenAtom);
   return (
@@ -33,6 +35,15 @@ export const AppMainMenu: React.FC<{
       <MainMenu.DefaultItems.SaveToActiveFile />
       <MainMenu.DefaultItems.Export />
       <MainMenu.DefaultItems.SaveAsImage />
+      {props.onStartPresentation && (
+        <MainMenu.Item
+          icon={presentationIcon}
+          onSelect={props.onStartPresentation}
+          shortcut="Alt+P"
+        >
+          Presentation mode
+        </MainMenu.Item>
+      )}
       {props.isCollabEnabled && (
         <MainMenu.DefaultItems.LiveCollaborationTrigger
           isCollaborating={props.isCollaborating}
