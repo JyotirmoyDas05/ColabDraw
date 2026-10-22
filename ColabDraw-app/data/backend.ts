@@ -140,13 +140,13 @@ export const isSavedToBackend = (
  * Files are stored under the id of the thing that encrypted them.
  * A scene file uses the roomId; a share-link file uses the share-link id.
  */
-const fileKey = (ownerId: string, fileId: FileId) => `${ownerId}/${fileId}`;
+const fileKey = (ownerId: string, fileId: FileId) => `${ownerId}_${fileId}`;
 
 export const saveFilesToBackend = async ({
-  prefix,
+  ownerId,
   files,
 }: {
-  prefix: string;
+  ownerId: string;
   files: { id: FileId; buffer: Uint8Array }[];
 }) => {
   const savedFiles = new Map<FileId, true>();
@@ -155,7 +155,7 @@ export const saveFilesToBackend = async ({
   await Promise.all(
     files.map(async ({ id, buffer }) => {
       try {
-        await request(`/files/${fileKey(prefix, id)}`, {
+        await request(`/files/${fileKey(ownerId, id)}`, {
           method: "PUT",
           body: buffer,
         });
