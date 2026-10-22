@@ -17,6 +17,7 @@ export interface RemotePresentationInfo {
   slideIndex: number;
   totalSlides: number;
   slideTitle?: string;
+  settings?: Partial<PresentationSettings>;
 }
 
 export interface PresentationSettings {

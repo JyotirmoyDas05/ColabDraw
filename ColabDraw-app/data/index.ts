@@ -41,6 +41,8 @@ import {
   saveFilesToBackend,
 } from "./backend";
 
+import type { PresentationSettings } from "../presentation/presentationState";
+
 export type SyncableExcalidrawElement = OrderedExcalidrawElement &
   MakeBrand<"SyncableExcalidrawElement">;
 
@@ -117,6 +119,7 @@ export type SocketUpdateDataSource = {
       slideIndex: number;
       totalSlides: number;
       slideTitle?: string;
+      settings?: Partial<PresentationSettings>;
     };
   };
   PRESENTATION_CONTROL: {
@@ -126,8 +129,10 @@ export type SocketUpdateDataSource = {
         | "NAVIGATE_SLIDE"
         | "NEXT_SLIDE"
         | "PREV_SLIDE"
-        | "STOP_PRESENTATION";
+        | "STOP_PRESENTATION"
+        | "UPDATE_SETTINGS";
       slideIndex?: number;
+      settings?: Partial<PresentationSettings>;
     };
   };
 };

@@ -1,8 +1,10 @@
+import type { PresentationSettings } from "./presentationState";
 export type PresentationSyncMessage =
   | { type: "NAVIGATE_SLIDE"; slideIndex: number }
   | { type: "NEXT_SLIDE" }
   | { type: "PREV_SLIDE" }
   | { type: "STOP_PRESENTATION" }
+  | { type: "UPDATE_SETTINGS"; settings: Partial<PresentationSettings> }
   | {
       type: "SYNC_STATE";
       slideIndex: number;

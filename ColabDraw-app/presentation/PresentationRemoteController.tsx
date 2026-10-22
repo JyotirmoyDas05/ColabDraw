@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import type { ExcalidrawFrameLikeElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -7,6 +7,7 @@ import { useAtom } from "../app-jotai";
 
 import {
   activeRemotePresentationAtom,
+  DEFAULT_PRESENTATION_STATE,
   presentationModeAtom,
   presentationSettingsAtom,
 } from "./presentationState";
@@ -17,6 +18,7 @@ import { SlideThumbnailCard } from "./SlideThumbnailCard";
 import "./PresentationRemoteController.scss";
 
 import type { CollabAPI } from "../collab/Collab";
+import type { PresentationSettings } from "./presentationState";
 
 interface PresentationRemoteControllerProps {
   excalidrawAPI?: ExcalidrawImperativeAPI | null;
@@ -37,7 +39,12 @@ export const PresentationRemoteController: React.FC<
     useAtom(presentationModeAtom);
   const [settings, setSettings] = useAtom(presentationSettingsAtom);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [remotePresentation] = useAtom(activeRemotePresentationAtom);
+  const [remotePresentation, setRemotePresentation] = useAtom(
+    activeRemotePresentationAtom,
+  );
+
+  const settingsModalRef = useRef<HTMLDivElement>(null);
+  const settingsBtnRef = useRef<HTMLButtonElement>(null);
 
   const [slides, setSlides] = useState<readonly ExcalidrawFrameLikeElement[]>(
     () => {
@@ -53,6 +60,37 @@ export const PresentationRemoteController: React.FC<
   const [currentSlideIndex, setCurrentSlideIndex] = useState(
     presentationState.currentSlideIndex || 0,
   );
+
+  // Close settings popup when clicking outside
+  useEffect(() => {
+    if (!settingsOpen) {
+      return;
+    }
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        settingsModalRef.current &&
+        !settingsModalRef.current.contains(e.target as Node) &&
+        settingsBtnRef.current &&
+        !settingsBtnRef.current.contains(e.target as Node)
+      ) {
+        setSettingsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [settingsOpen]);
+
+  // Sync settings when broadcast from host
+  useEffect(() => {
+    if (remotePresentation?.settings) {
+      setSettings((prev) => ({
+        ...prev,
+        ...remotePresentation.settings,
+      }));
+    }
+  }, [remotePresentation?.settings, setSettings]);
 
   // Continuously sync slides from excalidrawAPI as scene elements load from room / server
   useEffect(() => {
@@ -161,6 +199,8 @@ export const PresentationRemoteController: React.FC<
         }
       } else if (msg.type === "NAVIGATE_SLIDE") {
         setCurrentSlideIndex(msg.slideIndex);
+      } else if (msg.type === "UPDATE_SETTINGS" && msg.settings) {
+        setSettings((prev) => ({ ...prev, ...msg.settings }));
       } else if (msg.type === "STOP_PRESENTATION") {
         if (onExit) {
           onExit();
@@ -169,7 +209,7 @@ export const PresentationRemoteController: React.FC<
     });
 
     return unsub;
-  }, [onExit, slides.length]);
+  }, [onExit, setSettings, slides.length]);
 
   const goToSlide = (index: number) => {
     if (!slides.length) {
@@ -210,11 +250,39 @@ export const PresentationRemoteController: React.FC<
     });
   };
 
-  const handleExit = () => {
-    presentationSync.send({ type: "STOP_PRESENTATION" });
-    collabAPI?.broadcastPresentationControl?.({
-      action: "STOP_PRESENTATION",
+  const handleSettingChange = (
+    key: keyof PresentationSettings,
+    value: boolean,
+  ) => {
+    setSettings((prev) => {
+      const updated = { ...prev, [key]: value };
+      presentationSync.send({
+        type: "UPDATE_SETTINGS",
+        settings: { [key]: value },
+      });
+      collabAPI?.broadcastPresentationControl?.({
+        action: "UPDATE_SETTINGS",
+        settings: { [key]: value },
+      });
+      return updated;
     });
+  };
+
+  const handleExit = async () => {
+    presentationSync.send({ type: "STOP_PRESENTATION" });
+    try {
+      await collabAPI?.broadcastPresentationControl?.({
+        action: "STOP_PRESENTATION",
+      });
+    } catch (err) {
+      console.warn("Failed to broadcast STOP_PRESENTATION", err);
+    }
+    setPresentationState(DEFAULT_PRESENTATION_STATE);
+    setRemotePresentation(null);
+
+    // Buffer 150ms for encrypted socket packet to leave client before unmount/route navigation
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
     if (onExit) {
       onExit();
     } else {
@@ -236,6 +304,7 @@ export const PresentationRemoteController: React.FC<
         <h1 className="presentation-remote__title">{projectName}</h1>
         <div className="presentation-remote__actions">
           <button
+            ref={settingsBtnRef}
             type="button"
             className="presentation-remote__btn presentation-remote__btn--settings"
             onClick={() => setSettingsOpen(!settingsOpen)}
@@ -268,7 +337,10 @@ export const PresentationRemoteController: React.FC<
 
       {/* Settings Modal */}
       {settingsOpen && (
-        <div className="presentation-remote__settings-modal">
+        <div
+          className="presentation-remote__settings-modal"
+          ref={settingsModalRef}
+        >
           <div className="presentation-remote__settings-row">
             <span>Animate slide movement</span>
             <label className="presentation-toggle-switch">
@@ -276,10 +348,7 @@ export const PresentationRemoteController: React.FC<
                 type="checkbox"
                 checked={settings.animateSlideMovement}
                 onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    animateSlideMovement: e.target.checked,
-                  }))
+                  handleSettingChange("animateSlideMovement", e.target.checked)
                 }
               />
               <span className="presentation-toggle-switch__slider" />
@@ -292,10 +361,7 @@ export const PresentationRemoteController: React.FC<
                 type="checkbox"
                 checked={settings.showCursor}
                 onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    showCursor: e.target.checked,
-                  }))
+                  handleSettingChange("showCursor", e.target.checked)
                 }
               />
               <span className="presentation-toggle-switch__slider" />
@@ -308,10 +374,7 @@ export const PresentationRemoteController: React.FC<
                 type="checkbox"
                 checked={settings.showSlideTitle}
                 onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    showSlideTitle: e.target.checked,
-                  }))
+                  handleSettingChange("showSlideTitle", e.target.checked)
                 }
               />
               <span className="presentation-toggle-switch__slider" />
@@ -329,6 +392,7 @@ export const PresentationRemoteController: React.FC<
             totalSlides={slides.length}
             isSelected={true}
             excalidrawAPI={excalidrawAPI}
+            collabAPI={collabAPI}
             onSelect={() => goToSlide(currentSlideIndex)}
             showActions={false}
             previewOnly={true}
@@ -367,6 +431,7 @@ export const PresentationRemoteController: React.FC<
                   totalSlides={slides.length}
                   isSelected={isCurrent}
                   excalidrawAPI={excalidrawAPI}
+                  collabAPI={collabAPI}
                   onSelect={() => goToSlide(index)}
                   showActions={false}
                   previewOnly={false}

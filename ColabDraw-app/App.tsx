@@ -1196,6 +1196,7 @@ const ExcalidrawWrapper = () => {
               collabAPI={collabAPI}
               onExit={() => {
                 setIsRemotePresentation(false);
+                setPresentationMode(DEFAULT_PRESENTATION_STATE);
                 const url = new URL(window.location.href);
                 url.searchParams.delete("presentation");
                 window.history.replaceState({}, "", url.toString());

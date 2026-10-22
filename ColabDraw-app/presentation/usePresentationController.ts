@@ -14,6 +14,7 @@ import { presentationSync } from "./presentationSync";
 import { getOrderedSlides } from "./presentationUtils";
 
 import type { CollabAPI } from "../collab/Collab";
+import type { PresentationSettings } from "./presentationState";
 
 interface UsePresentationControllerOptions {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
@@ -23,6 +24,7 @@ interface UsePresentationControllerOptions {
     slideIndex: number;
     totalSlides: number;
     slideTitle?: string;
+    settings?: Partial<PresentationSettings>;
   }) => void;
 }
 
@@ -65,6 +67,7 @@ export const usePresentationController = ({
         slideIndex: presentationState.currentSlideIndex,
         totalSlides: presentationState.totalSlides,
         slideTitle: presentationState.currentSlideId || undefined,
+        settings,
       });
     }, 2000);
     return () => clearInterval(interval);
@@ -73,6 +76,7 @@ export const usePresentationController = ({
     presentationState.currentSlideIndex,
     presentationState.totalSlides,
     presentationState.currentSlideId,
+    settings,
     onLiveBroadcast,
   ]);
 
@@ -164,6 +168,7 @@ export const usePresentationController = ({
             slideIndex: clampedIndex,
             totalSlides: slides.length,
             slideTitle,
+            settings,
           });
         }
       }
@@ -172,7 +177,7 @@ export const usePresentationController = ({
       excalidrawAPI,
       onLiveBroadcast,
       setPresentationState,
-      settings.animateSlideMovement,
+      settings,
       customSlideOrder,
     ],
   );
@@ -262,6 +267,7 @@ export const usePresentationController = ({
           slideIndex: clampedIndex,
           totalSlides: slides.length,
           slideTitle,
+          settings,
         });
       }
 
@@ -271,7 +277,7 @@ export const usePresentationController = ({
       excalidrawAPI,
       onLiveBroadcast,
       setPresentationState,
-      settings.animateSlideMovement,
+      settings,
       customSlideOrder,
     ],
   );
@@ -285,7 +291,7 @@ export const usePresentationController = ({
       isActive: false,
     });
 
-    if (presentationState.isLive && onLiveBroadcast) {
+    if (onLiveBroadcast) {
       onLiveBroadcast({
         isLive: false,
         slideIndex: 0,
@@ -311,12 +317,7 @@ export const usePresentationController = ({
     }
 
     setPresentationState(DEFAULT_PRESENTATION_STATE);
-  }, [
-    excalidrawAPI,
-    onLiveBroadcast,
-    presentationState.isLive,
-    setPresentationState,
-  ]);
+  }, [excalidrawAPI, onLiveBroadcast, setPresentationState]);
 
   const nextSlide = useCallback(() => {
     navigateToSlide(presentationState.currentSlideIndex + 1);
@@ -382,10 +383,12 @@ export const usePresentationController = ({
         prevSlide();
       } else if (msg.type === "STOP_PRESENTATION") {
         stopPresentation();
+      } else if (msg.type === "UPDATE_SETTINGS" && msg.settings) {
+        setSettings((prev) => ({ ...prev, ...msg.settings }));
       }
     });
     return unsub;
-  }, [navigateToSlide, nextSlide, prevSlide, stopPresentation]);
+  }, [navigateToSlide, nextSlide, prevSlide, stopPresentation, setSettings]);
 
   // Keyboard navigation handler
   useEffect(() => {

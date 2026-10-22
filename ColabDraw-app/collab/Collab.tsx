@@ -91,6 +91,7 @@ import {
   activeRemotePresentationAtom,
   DEFAULT_PRESENTATION_STATE,
   presentationModeAtom,
+  presentationSettingsAtom,
 } from "../presentation/presentationState";
 import { presentationSync } from "../presentation/presentationSync";
 
@@ -98,6 +99,7 @@ import { collabErrorIndicatorAtom } from "./CollabError";
 import Portal from "./Portal";
 import { CollabSocket } from "./CollabSocket";
 
+import type { PresentationSettings } from "../presentation/presentationState";
 import type {
   SocketUpdateDataSource,
   SyncableExcalidrawElement,
@@ -140,15 +142,18 @@ export interface CollabAPI {
     slideIndex: number;
     totalSlides: number;
     slideTitle?: string;
+    settings?: Partial<PresentationSettings>;
   }) => void;
   broadcastPresentationControl: (payload: {
     action:
       | "NAVIGATE_SLIDE"
       | "NEXT_SLIDE"
       | "PREV_SLIDE"
-      | "STOP_PRESENTATION";
+      | "STOP_PRESENTATION"
+      | "UPDATE_SETTINGS";
     slideIndex?: number;
-  }) => void;
+    settings?: Partial<PresentationSettings>;
+  }) => Promise<void> | void;
   relayVisibleSceneBounds: (props?: { force: boolean }) => void;
 }
 
@@ -269,7 +274,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       setCollabError: this.setErrorDialog,
       setUserToFollow: this.setUserToFollow,
       broadcastPresentation: (payload) =>
-        this.portal.broadcastPresentation(payload),
+        this.portal.broadcastPresentationLive(payload),
       broadcastPresentationControl: (payload) =>
         this.portal.broadcastPresentationControl(payload),
       relayVisibleSceneBounds: (props) => this.relayVisibleSceneBounds(props),
@@ -750,6 +755,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
               slideIndex,
               totalSlides,
               slideTitle,
+              settings: decryptedData.payload.settings,
             });
 
             const currentPresState = appJotaiStore.get(presentationModeAtom);
@@ -786,8 +792,33 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         }
 
         case WS_SUBTYPES.PRESENTATION_CONTROL: {
-          const { action, slideIndex } = decryptedData.payload;
+          const { action, slideIndex, settings } = decryptedData.payload;
           const currentPres = appJotaiStore.get(presentationModeAtom);
+
+          if (action === "UPDATE_SETTINGS" && settings) {
+            appJotaiStore.set(presentationSettingsAtom, (prev) => ({
+              ...prev,
+              ...settings,
+            }));
+            presentationSync.send({
+              type: "UPDATE_SETTINGS",
+              settings,
+            });
+            break;
+          }
+
+          if (action === "STOP_PRESENTATION") {
+            presentationSync.send({ type: "STOP_PRESENTATION" });
+            appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
+            appJotaiStore.set(activeRemotePresentationAtom, null);
+            this.portal.broadcastPresentationLive({
+              isLive: false,
+              slideIndex: 0,
+              totalSlides: 0,
+            });
+            break;
+          }
+
           if (currentPres.isActive) {
             if (action === "NEXT_SLIDE") {
               presentationSync.send({ type: "NEXT_SLIDE" });
@@ -798,8 +829,6 @@ class Collab extends PureComponent<CollabProps, CollabState> {
               typeof slideIndex === "number"
             ) {
               presentationSync.send({ type: "NAVIGATE_SLIDE", slideIndex });
-            } else if (action === "STOP_PRESENTATION") {
-              presentationSync.send({ type: "STOP_PRESENTATION" });
             }
           }
           break;

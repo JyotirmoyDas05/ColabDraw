@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { getNonDeletedElements } from "@excalidraw/element";
+import {
+  getNonDeletedElements,
+  isInitializedImageElement,
+} from "@excalidraw/element";
 // eslint-disable-next-line no-restricted-imports
 import { exportToCanvas } from "@excalidraw/excalidraw";
 
@@ -14,6 +17,8 @@ import { getSlideTitle } from "./presentationUtils";
 
 import "./SlideThumbnailCard.scss";
 
+import type { CollabAPI } from "../collab/Collab";
+
 // Global cache for generated slide preview URLs
 const thumbnailCache = new Map<string, string>();
 
@@ -23,6 +28,7 @@ interface SlideThumbnailCardProps {
   totalSlides: number;
   isSelected?: boolean;
   excalidrawAPI: ExcalidrawImperativeAPI | null;
+  collabAPI?: CollabAPI | null;
   onSelect: () => void;
   onStartPresentation?: (index: number) => void;
   onDuplicate?: (slide: ExcalidrawFrameLikeElement) => void;
@@ -45,6 +51,7 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
   totalSlides: _totalSlides,
   isSelected = false,
   excalidrawAPI,
+  collabAPI = null,
   onSelect,
   onStartPresentation,
   onDuplicate,
@@ -65,6 +72,7 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
   const [openUpwards, setOpenUpwards] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [fileRefreshTick, setFileRefreshTick] = useState(0);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -103,6 +111,7 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
     }
 
     let isCancelled = false;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
     const elements = excalidrawAPI.getSceneElementsIncludingDeleted();
     const appState = excalidrawAPI.getAppState();
     const isDark = appState.theme === "dark";
@@ -112,13 +121,58 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
       (el) => !el.isDeleted && el.frameId === slide.id,
     );
 
+    const currentFiles = excalidrawAPI.getFiles() || {};
+    const imageElements = frameChildren.filter(isInitializedImageElement);
+    const missingImages = imageElements.filter(
+      (img) => !currentFiles[img.fileId],
+    );
+    const hasPendingImages = missingImages.length > 0;
+
+    // Proactively fetch and poll missing image files
+    if (hasPendingImages) {
+      if (collabAPI?.fetchImageFiles) {
+        collabAPI
+          .fetchImageFiles({
+            elements: imageElements,
+            forceFetchFiles: true,
+          })
+          .then(({ loadedFiles }) => {
+            if (!isCancelled && loadedFiles && loadedFiles.length > 0) {
+              excalidrawAPI.addFiles(loadedFiles);
+              setFileRefreshTick((t) => t + 1);
+            }
+          })
+          .catch(() => {});
+      }
+
+      let attempts = 0;
+      pollTimer = setInterval(() => {
+        attempts++;
+        const filesNow = excalidrawAPI.getFiles() || {};
+        const stillMissing = imageElements.some((img) => !filesNow[img.fileId]);
+        if (!stillMissing || attempts > 20) {
+          if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+          }
+          if (!isCancelled && !stillMissing) {
+            setFileRefreshTick((t) => t + 1);
+          }
+        }
+      }, 350);
+    }
+
+    const imageStatusKey = imageElements
+      .map((e) => `${e.id}:${e.fileId}:${Boolean(currentFiles[e.fileId])}`)
+      .join(";");
+
     const cacheKey = `${slide.id}_${slide.version}_${slide.width}_${
       slide.height
     }_${isDark ? "dark" : "light"}_${frameChildren
       .map((e) => `${e.id}:${e.version}`)
-      .join(";")}`;
+      .join(";")}_${imageStatusKey}`;
 
-    if (thumbnailCache.has(cacheKey)) {
+    if (!hasPendingImages && thumbnailCache.has(cacheKey)) {
       setThumbnailUrl(thumbnailCache.get(cacheKey)!);
       return;
     }
@@ -137,7 +191,7 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
           appState.viewBackgroundColor || (isDark ? "#121212" : "#ffffff"),
         exportWithDarkMode: isDark,
       },
-      files: excalidrawAPI.getFiles() || {},
+      files: currentFiles,
       exportingFrame: slide as NonDeleted<ExcalidrawFrameLikeElement>,
       maxWidthOrHeight: 360,
       exportPadding: 0,
@@ -145,7 +199,9 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
       .then((canvas) => {
         if (!isCancelled && canvas) {
           const url = canvas.toDataURL("image/webp", 0.7);
-          thumbnailCache.set(cacheKey, url);
+          if (!hasPendingImages) {
+            thumbnailCache.set(cacheKey, url);
+          }
           setThumbnailUrl(url);
         }
       })
@@ -157,8 +213,11 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
 
     return () => {
       isCancelled = true;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+      }
     };
-  }, [excalidrawAPI, slide]);
+  }, [excalidrawAPI, collabAPI, slide, fileRefreshTick]);
 
   const handleSaveRename = () => {
     const trimmed = nameDraft.trim();
