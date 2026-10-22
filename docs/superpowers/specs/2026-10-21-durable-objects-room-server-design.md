@@ -235,8 +235,8 @@ Client: `aiClient.ts` points `TRIAL_URL` at `${BACKEND_URL}/ai/trial`, so `VITE_
 - Work happens on `feat/durable-objects-rooms`, branched from `feat/cloudflare-backend` and merged into it; PR #13 and #14 land together, so production switches to Cloudflare once.
 - Render stays running until the production smoke test passes. It is deleted afterwards by the account owner, not by this change.
 - Deletions: `ColabDraw-room/`, the `dev:collab` script and `@types/socket.io-client`, `socket.io-client` from the app, the `.eslintignore` and `tsconfig.json` entries, and the socket.io mock in `collab.test.tsx`.
-- `vercel.json`: CSP `connect-src` swaps `https://colabdraw.onrender.com` for `wss://colabdraw-backend.jyotimoydas.workers.dev`.
-- `VITE_APP_WS_SERVER_URL` is removed from `.env.development.example`, `.env.production.example`, both `vite-env.d.ts` files and the Vercel project.
+- `vercel.json`: drop `https://colabdraw.onrender.com` from the `Access-Control-Allow-Origin` header value. There is no CSP `connect-src` in this project, so no `wss://` entry is needed.
+- `VITE_APP_WS_SERVER_URL` is removed from `.env.development.example`, `.env.production.example`, `ColabDraw-app/vite-env.d.ts` and the Vercel project. The declaration in `packages/ColabDraw/vite-env.d.ts` stays: it is the vendored library's own env surface and nothing in the package reads it.
 - `GEMINI_API_KEY` is set with `wrangler secret put`; D1 migration `0002_trial_usage.sql` is applied to the remote database.
 
 ## Risks
