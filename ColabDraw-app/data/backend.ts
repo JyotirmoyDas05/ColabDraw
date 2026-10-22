@@ -25,7 +25,7 @@ import { getSyncableElements } from ".";
 
 import type { SyncableExcalidrawElement } from ".";
 import type Portal from "../collab/Portal";
-import type { Socket } from "socket.io-client";
+import type { CollabSocket } from "../collab/CollabSocket";
 
 // Backend configuration
 // -----------------------------------------------------------------------------
@@ -112,12 +112,12 @@ const getStoredScene = async (roomId: string): Promise<StoredScene | null> => {
 };
 
 class SceneVersionCache {
-  private static cache = new WeakMap<Socket, number>();
-  static get = (socket: Socket) => {
+  private static cache = new WeakMap<CollabSocket, number>();
+  static get = (socket: CollabSocket) => {
     return SceneVersionCache.cache.get(socket);
   };
   static set = (
-    socket: Socket,
+    socket: CollabSocket,
     elements: readonly SyncableExcalidrawElement[],
   ) => {
     SceneVersionCache.cache.set(socket, getSceneVersion(elements));
@@ -138,62 +138,35 @@ export const isSavedToBackend = (
 
 /**
  * Files are stored under the id of the thing that encrypted them.
- *
- * An image keeps one `fileId` for its whole life — it is the SHA-1 of the
- * plaintext — but the bytes handed to the backend are encrypted with whatever
- * key the current context holds: the room key in a room, a throwaway key in a
- * share link. Two contexts therefore produce the same id for different bytes,
- * and a shared key would let whichever uploaded last overwrite the other.
+ * A scene file uses the roomId; a share-link file uses the share-link id.
  */
-const fileKey = (ownerId: string, fileId: FileId) => `${ownerId}_${fileId}`;
+const fileKey = (ownerId: string, fileId: FileId) => `${ownerId}/${fileId}`;
 
 export const saveFilesToBackend = async ({
+  prefix,
   files,
-  ownerId,
 }: {
+  prefix: string;
   files: { id: FileId; buffer: Uint8Array }[];
-  /** room id or share-link id — the owner of the key these bytes were encrypted with */
-  ownerId: string;
 }) => {
-  const erroredFiles: FileId[] = [];
-  const savedFiles: FileId[] = [];
+  const savedFiles = new Map<FileId, true>();
+  const erroredFiles = new Map<FileId, true>();
 
   await Promise.all(
     files.map(async ({ id, buffer }) => {
       try {
-        // Copy just this view's bytes: `buffer.buffer` may be a larger shared
-        // ArrayBuffer, and `slice` needs the view's own offset and length.
-        const arrayBuffer = buffer.buffer.slice(
-          buffer.byteOffset,
-          buffer.byteOffset + buffer.byteLength,
-        ) as ArrayBuffer;
-
-        await request(`/files/${fileKey(ownerId, id)}`, {
+        await request(`/files/${fileKey(prefix, id)}`, {
           method: "PUT",
-          headers: { "content-type": "application/octet-stream" },
-          body: arrayBuffer,
+          body: buffer,
         });
-
-        savedFiles.push(id);
+        savedFiles.set(id, true);
       } catch (error: any) {
-        console.error(`Failed to upload file ${id}:`, error);
-        erroredFiles.push(id);
+        erroredFiles.set(id, true);
       }
     }),
   );
 
   return { savedFiles, erroredFiles };
-};
-
-export const bytesToBase64 = (bytes: Uint8Array) => {
-  // spreading a large array into String.fromCharCode overflows the call stack,
-  // which is why this goes in chunks
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
 };
 
 const createSceneDocument = async (
@@ -204,9 +177,11 @@ const createSceneDocument = async (
   const sceneVersion = getSceneVersion(elements);
   const { ciphertext, iv } = await encryptElements(roomKey, elements);
 
-  // Convert to base64 for string storage
-  const ciphertextBase64 = bytesToBase64(new Uint8Array(ciphertext));
-  const ivBase64 = bytesToBase64(iv);
+  // Encode ArrayBuffer and Uint8Array to base64
+  const ciphertextBase64 = btoa(
+    String.fromCharCode(...new Uint8Array(ciphertext)),
+  );
+  const ivBase64 = btoa(String.fromCharCode(...iv));
 
   return {
     roomId,
@@ -268,7 +243,7 @@ export const saveToBackend = async (
 export const loadFromBackend = async (
   roomId: string,
   roomKey: string,
-  socket: Socket | null,
+  socket: CollabSocket | null,
 ): Promise<readonly SyncableExcalidrawElement[] | null> => {
   const storedScene = await getStoredScene(roomId);
 

@@ -66,19 +66,17 @@ vi.mock("../data/backend.ts", () => {
   };
 });
 
-vi.mock("socket.io-client", () => {
-  return {
-    default: () => {
-      return {
-        close: () => {},
-        on: () => {},
-        once: () => {},
-        off: () => {},
-        emit: () => {},
-      };
-    },
-  };
-});
+vi.mock("../collab/CollabSocket", () => ({
+  CollabSocket: class {
+    id = "test-client";
+    connect() {}
+    close() {}
+    sendUpdate() {}
+    setFollowing() {}
+    on() {}
+    off() {}
+  },
+}));
 
 /**
  * These test would deserve to be extended by testing collab with (at least) two clients simultanouesly,
