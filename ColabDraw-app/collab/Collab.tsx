@@ -92,6 +92,7 @@ import {
   DEFAULT_PRESENTATION_STATE,
   presentationModeAtom,
 } from "../presentation/presentationState";
+import { presentationSync } from "../presentation/presentationSync";
 
 import { collabErrorIndicatorAtom } from "./CollabError";
 import Portal from "./Portal";
@@ -139,6 +140,14 @@ export interface CollabAPI {
     slideIndex: number;
     totalSlides: number;
     slideTitle?: string;
+  }) => void;
+  broadcastPresentationControl: (payload: {
+    action:
+      | "NAVIGATE_SLIDE"
+      | "NEXT_SLIDE"
+      | "PREV_SLIDE"
+      | "STOP_PRESENTATION";
+    slideIndex?: number;
   }) => void;
   relayVisibleSceneBounds: (props?: { force: boolean }) => void;
 }
@@ -261,6 +270,8 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       setUserToFollow: this.setUserToFollow,
       broadcastPresentation: (payload) =>
         this.portal.broadcastPresentation(payload),
+      broadcastPresentationControl: (payload) =>
+        this.portal.broadcastPresentationControl(payload),
       relayVisibleSceneBounds: (props) => this.relayVisibleSceneBounds(props),
     };
 
@@ -769,6 +780,26 @@ class Collab extends PureComponent<CollabProps, CollabState> {
                 presentationModeAtom,
                 DEFAULT_PRESENTATION_STATE,
               );
+            }
+          }
+          break;
+        }
+
+        case WS_SUBTYPES.PRESENTATION_CONTROL: {
+          const { action, slideIndex } = decryptedData.payload;
+          const currentPres = appJotaiStore.get(presentationModeAtom);
+          if (currentPres.isActive) {
+            if (action === "NEXT_SLIDE") {
+              presentationSync.send({ type: "NEXT_SLIDE" });
+            } else if (action === "PREV_SLIDE") {
+              presentationSync.send({ type: "PREV_SLIDE" });
+            } else if (
+              action === "NAVIGATE_SLIDE" &&
+              typeof slideIndex === "number"
+            ) {
+              presentationSync.send({ type: "NAVIGATE_SLIDE", slideIndex });
+            } else if (action === "STOP_PRESENTATION") {
+              presentationSync.send({ type: "STOP_PRESENTATION" });
             }
           }
           break;

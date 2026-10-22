@@ -6,6 +6,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useAtom } from "../app-jotai";
 
 import {
+  activeRemotePresentationAtom,
   presentationModeAtom,
   presentationSettingsAtom,
 } from "./presentationState";
@@ -15,8 +16,11 @@ import { SlideThumbnailCard } from "./SlideThumbnailCard";
 
 import "./PresentationRemoteController.scss";
 
+import type { CollabAPI } from "../collab/Collab";
+
 interface PresentationRemoteControllerProps {
   excalidrawAPI?: ExcalidrawImperativeAPI | null;
+  collabAPI?: CollabAPI | null;
   projectName?: string;
   onExit?: () => void;
 }
@@ -25,6 +29,7 @@ export const PresentationRemoteController: React.FC<
   PresentationRemoteControllerProps
 > = ({
   excalidrawAPI = null,
+  collabAPI = null,
   projectName = "Presentation Feature",
   onExit,
 }) => {
@@ -32,6 +37,7 @@ export const PresentationRemoteController: React.FC<
     useAtom(presentationModeAtom);
   const [settings, setSettings] = useAtom(presentationSettingsAtom);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [remotePresentation] = useAtom(activeRemotePresentationAtom);
 
   const [slides, setSlides] = useState<readonly ExcalidrawFrameLikeElement[]>(
     () => {
@@ -48,23 +54,46 @@ export const PresentationRemoteController: React.FC<
     presentationState.currentSlideIndex || 0,
   );
 
-  // Sync slides from excalidrawAPI if available
+  // Continuously sync slides from excalidrawAPI as scene elements load from room / server
   useEffect(() => {
-    if (excalidrawAPI) {
-      const sceneSlides = getOrderedSlides(
-        excalidrawAPI.getSceneElementsIncludingDeleted(),
-      );
-      setSlides(sceneSlides);
+    if (!excalidrawAPI) {
+      return;
     }
+    const syncSlides = () => {
+      const els = excalidrawAPI.getSceneElementsIncludingDeleted();
+      const currentSlides = getOrderedSlides(els);
+      setSlides((prev) => {
+        if (
+          prev.length !== currentSlides.length ||
+          prev.some((s, idx) => s.id !== currentSlides[idx]?.id)
+        ) {
+          return currentSlides;
+        }
+        return prev;
+      });
+    };
+
+    syncSlides();
+    const interval = setInterval(syncSlides, 600);
+    return () => clearInterval(interval);
   }, [excalidrawAPI]);
 
-  // Sync state over BroadcastChannel / localStorage
+  // Sync slide index from remote presentation broadcasts
+  useEffect(() => {
+    if (
+      remotePresentation &&
+      typeof remotePresentation.slideIndex === "number"
+    ) {
+      setCurrentSlideIndex(remotePresentation.slideIndex);
+    }
+  }, [remotePresentation]);
+
+  // Sync state over BroadcastChannel / localStorage for same-origin tabs
   useEffect(() => {
     const unsub = presentationSync.subscribe((msg) => {
       if (msg.type === "SYNC_STATE") {
         setCurrentSlideIndex(msg.slideIndex);
         if (msg.totalSlides && slides.length === 0) {
-          // If slides aren't locally loaded in canvas, create placeholder frame references
           const placeholderSlides = Array.from({
             length: msg.totalSlides,
           }).map((_, i) => ({
@@ -121,26 +150,41 @@ export const PresentationRemoteController: React.FC<
       totalSlides: slides.length,
     }));
 
+    // Broadcast to same-machine tabs
     presentationSync.send({
       type: "NAVIGATE_SLIDE",
+      slideIndex: clamped,
+    });
+
+    // Broadcast across devices over encrypted room socket
+    collabAPI?.broadcastPresentationControl?.({
+      action: "NAVIGATE_SLIDE",
       slideIndex: clamped,
     });
   };
 
   const handleNext = () => {
     goToSlide(currentSlideIndex + 1);
+    collabAPI?.broadcastPresentationControl?.({
+      action: "NEXT_SLIDE",
+    });
   };
 
   const handlePrev = () => {
     goToSlide(currentSlideIndex - 1);
+    collabAPI?.broadcastPresentationControl?.({
+      action: "PREV_SLIDE",
+    });
   };
 
   const handleExit = () => {
     presentationSync.send({ type: "STOP_PRESENTATION" });
+    collabAPI?.broadcastPresentationControl?.({
+      action: "STOP_PRESENTATION",
+    });
     if (onExit) {
       onExit();
     } else {
-      // Remove presentation query parameter
       const url = new URL(window.location.href);
       url.searchParams.delete("presentation");
       window.location.href = url.toString();
@@ -183,13 +227,13 @@ export const PresentationRemoteController: React.FC<
             title="Exit presentation"
           >
             <svg viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="6" width="12" height="12" rx="2" />
+              <rect x="6" y="6" width="12" height="12" rx="2.5" />
             </svg>
           </button>
         </div>
       </header>
 
-      {/* Settings Modal (if opened on mobile remote) */}
+      {/* Settings Modal */}
       {settingsOpen && (
         <div className="presentation-remote__settings-modal">
           <div className="presentation-remote__settings-row">
@@ -254,6 +298,7 @@ export const PresentationRemoteController: React.FC<
             excalidrawAPI={excalidrawAPI}
             onSelect={() => goToSlide(currentSlideIndex)}
             showActions={false}
+            previewOnly={true}
           />
         ) : (
           <div className="presentation-remote__placeholder-card">
@@ -291,6 +336,7 @@ export const PresentationRemoteController: React.FC<
                   excalidrawAPI={excalidrawAPI}
                   onSelect={() => goToSlide(index)}
                   showActions={false}
+                  previewOnly={false}
                 />
               </div>
             );

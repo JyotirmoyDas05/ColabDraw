@@ -1153,6 +1153,7 @@ const ExcalidrawWrapper = () => {
             setAppTheme(appTheme === "dark" ? "light" : "dark")
           }
           excalidrawAPI={excalidrawAPI}
+          collabAPI={collabAPI}
           onJoinRemotePresentation={({
             presenterSocketId,
             presenterUsername,
@@ -1181,15 +1182,18 @@ const ExcalidrawWrapper = () => {
 
         {isRemotePresentation && (
           <div
+            className="presentation-remote-container"
             style={{
               position: "fixed",
               inset: 0,
-              zIndex: 9999,
-              background: "#f8f9fa",
+              zIndex: 999999,
+              background: "var(--color-surface-low, #f8f9fa)",
+              overflow: "hidden",
             }}
           >
             <PresentationRemoteController
               excalidrawAPI={excalidrawAPI}
+              collabAPI={collabAPI}
               onExit={() => {
                 setIsRemotePresentation(false);
                 const url = new URL(window.location.href);

@@ -274,6 +274,27 @@ class Portal {
     }
   };
 
+  broadcastPresentationControl = (payload: {
+    action:
+      | "NAVIGATE_SLIDE"
+      | "NEXT_SLIDE"
+      | "PREV_SLIDE"
+      | "STOP_PRESENTATION";
+    slideIndex?: number;
+  }) => {
+    if (this.socket?.id) {
+      const data: SocketUpdateDataSource["PRESENTATION_CONTROL"] = {
+        type: WS_SUBTYPES.PRESENTATION_CONTROL,
+        payload,
+      };
+
+      return this._broadcastSocketData(
+        data as SocketUpdateData,
+        true, // volatile
+      );
+    }
+  };
+
   broadcastUserFollowed = (payload: OnUserFollowedPayload) => {
     if (this.socket) {
       this.socket.setFollowing(

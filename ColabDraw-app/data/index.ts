@@ -119,6 +119,17 @@ export type SocketUpdateDataSource = {
       slideTitle?: string;
     };
   };
+  PRESENTATION_CONTROL: {
+    type: WS_SUBTYPES.PRESENTATION_CONTROL;
+    payload: {
+      action:
+        | "NAVIGATE_SLIDE"
+        | "NEXT_SLIDE"
+        | "PREV_SLIDE"
+        | "STOP_PRESENTATION";
+      slideIndex?: number;
+    };
+  };
 };
 
 export type SocketUpdateDataIncoming =

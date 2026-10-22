@@ -4,6 +4,7 @@ import type { ExcalidrawFrameLikeElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import { useAtom } from "../app-jotai";
+import { activeRoomLinkAtom, type CollabAPI } from "../collab/Collab";
 import { QRCode } from "../share/QRCode";
 
 import {
@@ -36,6 +37,7 @@ interface PresentationHUDProps {
   appTheme?: string;
   onToggleTheme?: () => void;
   excalidrawAPI?: ExcalidrawImperativeAPI | null;
+  collabAPI?: CollabAPI | null;
 }
 
 export const PresentationHUD: React.FC<PresentationHUDProps> = ({
@@ -55,6 +57,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
   appTheme = "light",
   onToggleTheme,
   excalidrawAPI = null,
+  collabAPI = null,
 }) => {
   const [slidesDrawerOpen, setSlidesDrawerOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -69,6 +72,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
     activeRemotePresentationAtom,
   );
   const [settings, setSettings] = useAtom(presentationSettingsAtom);
+  const [activeRoomLink] = useAtom(activeRoomLinkAtom);
 
   const drawerRef = useRef<HTMLDivElement>(null);
   const shareRef = useRef<HTMLDivElement>(null);
@@ -84,9 +88,9 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
     };
   }, []);
 
-  // Close popovers when clicking outside
+  // Close popovers when clicking outside (using capture phase on window so canvas stopPropagation cannot block it)
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent | PointerEvent) => {
       const target = e.target as Node;
       if (drawerRef.current && !drawerRef.current.contains(target)) {
         setSlidesDrawerOpen(false);
@@ -99,12 +103,29 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
       }
     };
     if (slidesDrawerOpen || shareOpen || settingsOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
+      window.addEventListener("pointerdown", handleClickOutside, true);
     }
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("pointerdown", handleClickOutside, true);
     };
   }, [slidesDrawerOpen, shareOpen, settingsOpen]);
+
+  // When remote control accordion is visible in settings, ensure a live collab room exists
+  useEffect(() => {
+    if (
+      settingsOpen &&
+      remoteSectionOpen &&
+      collabAPI &&
+      !collabAPI.isCollaborating()
+    ) {
+      collabAPI.startCollaboration(null).catch((err) => {
+        console.warn(
+          "Could not auto-start collaboration for remote presentation",
+          err,
+        );
+      });
+    }
+  }, [settingsOpen, remoteSectionOpen, collabAPI]);
 
   const currentSlide = slides[presentationState.currentSlideIndex];
   const slideTitle = getSlideTitle(
@@ -141,9 +162,16 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
     if (typeof window === "undefined") {
       return "";
     }
-    const url = new URL(window.location.href);
-    url.searchParams.set("presentation", "remote");
-    return url.toString();
+    const currentLink = activeRoomLink || window.location.href;
+    try {
+      const url = new URL(currentLink);
+      url.searchParams.set("presentation", "remote");
+      return url.toString();
+    } catch {
+      const url = new URL(window.location.href);
+      url.searchParams.set("presentation", "remote");
+      return url.toString();
+    }
   })();
 
   const handleCopyRemoteLink = () => {

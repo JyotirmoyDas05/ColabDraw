@@ -30,6 +30,7 @@ interface SlideThumbnailCardProps {
   onAddBelow?: (slide: ExcalidrawFrameLikeElement) => void;
   onDelete?: (slide: ExcalidrawFrameLikeElement) => void;
   showActions?: boolean;
+  previewOnly?: boolean;
   isDraggable?: boolean;
   onDragStart?: (e: React.DragEvent, index: number) => void;
   onDragOver?: (e: React.DragEvent, index: number) => void;
@@ -51,6 +52,7 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
   onAddBelow,
   onDelete,
   showActions = true,
+  previewOnly = false,
   isDraggable = false,
   onDragStart,
   onDragOver,
@@ -186,6 +188,43 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
     setMenuOpen(nextOpen);
     onMenuOpenChange?.(nextOpen);
   };
+
+  if (previewOnly) {
+    return (
+      <div
+        className={`presentation-slide-card presentation-slide-card--preview-only ${
+          isSelected ? "is-selected" : ""
+        }`}
+        onClick={onSelect}
+      >
+        <div className="presentation-slide-card__preview">
+          {thumbnailUrl ? (
+            <img
+              src={thumbnailUrl}
+              alt={title}
+              className="presentation-slide-card__img"
+              draggable={false}
+            />
+          ) : (
+            <div className="presentation-slide-card__placeholder">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
