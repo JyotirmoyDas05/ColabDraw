@@ -42,6 +42,7 @@ export const usePresentationController = ({
       outline: boolean;
     };
     zenModeEnabled: boolean;
+    viewModeEnabled: boolean;
   } | null>(null);
 
   const slidesRef = useRef(
@@ -56,6 +57,20 @@ export const usePresentationController = ({
       );
     }
   }, [excalidrawAPI, presentationState.isActive]);
+
+  // Toggle presentation-mode-active class on body during presentation
+  useEffect(() => {
+    const isPresenting =
+      presentationState.isActive || presentationState.isFollower;
+    if (isPresenting) {
+      document.body.classList.add("presentation-mode-active");
+    } else {
+      document.body.classList.remove("presentation-mode-active");
+    }
+    return () => {
+      document.body.classList.remove("presentation-mode-active");
+    };
+  }, [presentationState.isActive, presentationState.isFollower]);
 
   // Handle cursor visibility during presentation
   useEffect(() => {
@@ -158,6 +173,7 @@ export const usePresentationController = ({
       prevAppStateRef.current = {
         frameRendering: { ...appState.frameRendering },
         zenModeEnabled: appState.zenModeEnabled,
+        viewModeEnabled: appState.viewModeEnabled,
       };
 
       // Set clean frame rendering for presentation (clip content within frame, hide internal name label)
@@ -170,6 +186,10 @@ export const usePresentationController = ({
             outline: true,
           },
           zenModeEnabled: true,
+          viewModeEnabled: true,
+          openSidebar: null,
+          openDialog: null,
+          openMenu: null,
         },
       });
 
@@ -247,10 +267,12 @@ export const usePresentationController = ({
         appState: {
           frameRendering: prevAppStateRef.current.frameRendering,
           zenModeEnabled: prevAppStateRef.current.zenModeEnabled,
+          viewModeEnabled: prevAppStateRef.current.viewModeEnabled,
         },
       });
     }
 
+    document.body.classList.remove("presentation-mode-active");
     document.body.classList.remove("presentation-hide-cursor");
 
     if (document.fullscreenElement) {

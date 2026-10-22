@@ -311,12 +311,24 @@
     align-items: center;
     justify-content: center;
     padding: 14px 0 18px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  &__empty-attendees {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    text-align: center;
   }
 
   &__empty-avatar {
     width: 54px;
     height: 54px;
-    margin-bottom: 8px;
+    margin: 0 auto 8px auto;
+    display: block;
     color: #868e96;
   }
 
@@ -324,6 +336,8 @@
     font-size: 13px;
     font-weight: 500;
     color: var(--text-primary-color, #495057);
+    text-align: center;
+    width: 100%;
   }
 
   &__attendees-list {
@@ -713,5 +727,25 @@ body.presentation-hide-cursor {
     &:hover {
       opacity: 1;
     }
+  }
+}
+
+/* Hide all editing chrome, toolbars, and menus when presentation mode is active */
+body.presentation-mode-active {
+  .App-toolbar-container,
+  .shapes-section,
+  .App-toolbar,
+  .mobile-misc-tools-container,
+  .excalidraw-ui-top-left,
+  .layer-ui__wrapper__top-right,
+  .App-menu_top,
+  .sidebar-trigger,
+  .layer-ui__wrapper__footer-left,
+  .layer-ui__wrapper__footer-right,
+  .disable-zen-mode,
+  .welcome-screen-menu-hint,
+  .welcome-screen-decor,
+  .App-menu__left {
+    display: none !important;
   }
 }

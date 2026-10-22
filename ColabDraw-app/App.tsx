@@ -1064,7 +1064,13 @@ const ExcalidrawWrapper = () => {
           <OverwriteConfirmDialog.Actions.ExportToImage />
           <OverwriteConfirmDialog.Actions.SaveToDisk />
         </OverwriteConfirmDialog>
-        <AppFooter onChange={() => excalidrawAPI?.refresh()} />
+        <AppFooter
+          onChange={() => excalidrawAPI?.refresh()}
+          excalidrawAPI={excalidrawAPI}
+          onStartPresentation={() => {
+            presentationController.startPresentation(0, false);
+          }}
+        />
         <AIComponents />
         <SceneSidebar
           excalidrawAPI={excalidrawAPI}
