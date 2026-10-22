@@ -18,6 +18,7 @@ export class Room {
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     if (typeof message !== "string") {
+      this.relay(ws, message);
       return;
     }
 
@@ -30,12 +31,20 @@ export class Room {
     if (typeof payload !== "object" || payload === null) {
       return;
     }
-    // `join` and `ping` are handled here; other message kinds arrive in later tasks
-    if ((payload as ClientControl).t === "ping") {
+    const control = payload as ClientControl;
+    if (control.t === "ping") {
       this.send(ws, { t: "pong" });
       return;
     }
-    if ((payload as ClientControl).t !== "join") {
+    if (
+      control.t === "view-only" ||
+      control.t === "follow" ||
+      control.t === "unfollow"
+    ) {
+      this.updateMembershipState(ws, control);
+      return;
+    }
+    if (control.t !== "join") {
       return;
     }
     if (!isClientId((payload as { clientId?: unknown }).clientId)) {
@@ -82,7 +91,90 @@ export class Room {
     if (!attachment) {
       return;
     }
+    // Follower state is settled before the membership broadcast so that a
+    // member who followed the departing socket sees `unfollowed` first.
+    this.clearFollowersOf(attachment.id);
+    if (attachment.following !== null) {
+      this.sendFollowers(attachment.following);
+    }
     this.broadcastMembers(attachment.id);
+  }
+
+  /** Applies `view-only`, `follow` and `unfollow` from a joined member. */
+  private updateMembershipState(ws: WebSocket, control: ClientControl) {
+    const attachment = ws.deserializeAttachment() as Attachment | null;
+    if (!attachment) {
+      return;
+    }
+    if (control.t === "follow" || control.t === "unfollow") {
+      if (!isClientId(control.target)) {
+        return;
+      }
+      ws.serializeAttachment({
+        ...attachment,
+        following: control.t === "follow" ? control.target : null,
+      });
+      this.sendFollowers(control.target);
+      return;
+    }
+    ws.serializeAttachment({ ...attachment, viewOnly: true });
+  }
+
+  /**
+   * Relays a binary scene frame to `opcode` (1, 2 or 3) recipients: everyone
+   * but the sender for 1 and 2, only members following the sender for 3 (sent
+   * with opcode 2, the confirm-once opcode). Dropped for view-only senders.
+   */
+  private relay(ws: WebSocket, message: ArrayBuffer) {
+    const sender = ws.deserializeAttachment() as Attachment | null;
+    if (!sender || sender.viewOnly) {
+      return;
+    }
+    const opcode = new Uint8Array(message)[0];
+    if (opcode !== 1 && opcode !== 2 && opcode !== 3) {
+      return;
+    }
+    let frame = message;
+    if (opcode === 3) {
+      frame = message.slice(0);
+      new Uint8Array(frame)[0] = 2;
+    }
+    for (const [socket, attachment] of this.attachments()) {
+      if (socket === ws) {
+        continue;
+      }
+      if (opcode === 3 && attachment.following !== sender.id) {
+        continue;
+      }
+      this.send(socket, frame);
+    }
+  }
+
+  /** Sends the target its remaining follower ids, or `unfollowed` when none. */
+  private sendFollowers(targetId: string) {
+    const target = this.attachments().find(([, { id }]) => id === targetId);
+    if (!target) {
+      return;
+    }
+    const ids = this.attachments()
+      .filter(([, { following }]) => following === targetId)
+      .map(([, { id }]) => id)
+      .sort();
+    this.send(
+      target[0],
+      ids.length === 0 ? { t: "unfollowed" } : { t: "followers", ids },
+    );
+  }
+
+  /** Clears following state on every member of `targetId` and notifies them. */
+  private clearFollowersOf(targetId: string) {
+    for (const [socket, attachment] of this.attachments()) {
+      if (attachment.following !== targetId) {
+        continue;
+      }
+      socket.serializeAttachment({ ...attachment, following: null });
+      this.send(socket, { t: "unfollowed" });
+    }
   }
 
   /** Sends the room membership, sorted, to every member except `excludeId`. */
@@ -111,11 +203,12 @@ export class Room {
     return this.attachments().map(([, attachment]) => attachment.id);
   }
 
-  private send(ws: WebSocket, control: ServerControl) {
+  /** Sends a control frame as JSON, or a scene frame as-is, to an open socket. */
+  private send(ws: WebSocket, control: ServerControl | ArrayBuffer) {
     if (ws.readyState !== WebSocket.OPEN) {
       // A socket evicted mid-broadcast is closing; sending on it would throw.
       return;
     }
-    ws.send(JSON.stringify(control));
+    ws.send(control instanceof ArrayBuffer ? control : JSON.stringify(control));
   }
 }
