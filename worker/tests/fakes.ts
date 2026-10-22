@@ -5,7 +5,9 @@ type Statement = { sql: string; args: unknown[] };
  * scripted result. Enough to assert the SQL shape and the bound arguments
  * without pretending to be a database.
  */
-export const fakeD1 = (seed: { first?: unknown; changes?: number } = {}) => {
+export const fakeD1 = (
+  seed: { first?: unknown; changes?: number; all?: unknown[] } = {},
+) => {
   const statements: Statement[] = [];
 
   const prepare = (sql: string) => {
@@ -16,7 +18,7 @@ export const fakeD1 = (seed: { first?: unknown; changes?: number } = {}) => {
       },
       first: async () => seed.first ?? null,
       run: async () => ({ meta: { changes: seed.changes ?? 1 } }),
-      all: async () => ({ results: [] }),
+      all: async () => ({ results: seed.all ?? [] }),
     };
 
     return statement;

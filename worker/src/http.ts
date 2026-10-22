@@ -10,7 +10,7 @@ export const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 export const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, PUT, OPTIONS",
+  "access-control-allow-methods": "GET, PUT, POST, OPTIONS",
   "access-control-allow-headers": "content-type",
   "access-control-max-age": "86400",
 };

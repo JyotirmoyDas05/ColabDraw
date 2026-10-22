@@ -3,6 +3,7 @@ import { corsHeaders, fail, HttpError, isValidId } from "./http";
 import { isRoomId } from "./protocol";
 import { getScene, putScene } from "./scenes";
 import { getShareLink, putShareLink } from "./shareLinks";
+import { handleTrialGenerate, handleTrialStatus } from "./trial";
 
 import type { Env } from "./types";
 
@@ -61,6 +62,21 @@ const handleRoom = (
 
 const route = async (request: Request, env: Env): Promise<Response> => {
   const { pathname } = new URL(request.url);
+
+  if (pathname === "/ai/trial") {
+    if (request.method === "GET") {
+      return handleTrialStatus(env, request);
+    }
+    return fail(405, "method_not_allowed");
+  }
+
+  if (pathname === "/ai/trial/generate") {
+    if (request.method === "POST") {
+      return handleTrialGenerate(env, request);
+    }
+    return fail(405, "method_not_allowed");
+  }
+
   const match = ROUTE.exec(pathname);
 
   if (!match) {

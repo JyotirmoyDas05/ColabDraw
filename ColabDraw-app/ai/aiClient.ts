@@ -1,12 +1,14 @@
 import { parseSSEStream } from "@excalidraw/excalidraw";
 import { safelyParseJSON } from "@excalidraw/common";
 
+import { BACKEND_URL } from "../data/backend";
+
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
 // tried in order when a model is overloaded (503) or stalls
 const GEMINI_MODELS = [GEMINI_MODEL, "gemini-3.1-flash-lite"];
 const STALL_MS = 20000;
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const TRIAL_URL = `${import.meta.env.VITE_APP_WS_SERVER_URL}/api/ai/trial`;
+const TRIAL_URL = `${BACKEND_URL}/ai/trial`;
 
 const API_KEY_STORAGE_KEY = "colabdraw-gemini-api-key";
 const DEVICE_ID_STORAGE_KEY = "colabdraw-device-id";
