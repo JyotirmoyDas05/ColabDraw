@@ -22,6 +22,7 @@ const withCors = (response: Response): Response => {
 
 const vercelPrefixes = new Set([
   "https://colab-draw-with-nextjs.vercel.app",
+  "https://colab-draw.vercel.app",
   "http://localhost:3000",
   "http://127.0.0.1:3000",
 ]);
