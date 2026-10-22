@@ -145,12 +145,21 @@ type CollabSocketEvents = {
 };
 
 class CollabSocket {
-  readonly id: string;                       // crypto.randomUUID()
-  connect(): void;                           // opens, reconnects with backoff
+  readonly id: string; // crypto.randomUUID()
+  connect(): void; // opens, reconnects with backoff
   close(): void;
-  sendUpdate(data: Uint8Array, opts?: { volatile?: boolean; followersOnly?: boolean }): void;
-  on<K extends keyof CollabSocketEvents>(event: K, handler: CollabSocketEvents[K]): void;
-  off<K extends keyof CollabSocketEvents>(event: K, handler: CollabSocketEvents[K]): void;
+  sendUpdate(
+    data: Uint8Array,
+    opts?: { volatile?: boolean; followersOnly?: boolean },
+  ): void;
+  on<K extends keyof CollabSocketEvents>(
+    event: K,
+    handler: CollabSocketEvents[K],
+  ): void;
+  off<K extends keyof CollabSocketEvents>(
+    event: K,
+    handler: CollabSocketEvents[K],
+  ): void;
 }
 ```
 
@@ -183,7 +192,7 @@ On reopen: re-send `join` with the same `clientId`, re-send `view-only` when vie
 
 ### Blocked network
 
-Three consecutive failed opens put the session in degraded mode: the existing fallback loads the scene from D1, and a persistent pill appears near the collaborators row — *"Live sync unavailable on this network — your changes are still saved."* Editing keeps working, and `queueSaveToBackend` persists because the fallback path sets `socketInitialized`. The pill clears on the next successful open.
+Three consecutive failed opens put the session in degraded mode: the existing fallback loads the scene from D1, and a persistent pill appears near the collaborators row — _"Live sync unavailable on this network — your changes are still saved."_ Editing keeps working, and `queueSaveToBackend` persists because the fallback path sets `socketInitialized`. The pill clears on the next successful open.
 
 ## AI trial proxy
 
