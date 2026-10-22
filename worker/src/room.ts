@@ -1,4 +1,4 @@
-import { isClientId } from "./protocol";
+import { isClientId, MAX_CONTROL_BYTES, MAX_FRAME_BYTES } from "./protocol";
 
 import type { Attachment, ClientControl, ServerControl } from "./protocol";
 import type { Env } from "./types";
@@ -18,7 +18,15 @@ export class Room {
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     if (typeof message !== "string") {
+      if (message.byteLength > MAX_FRAME_BYTES) {
+        ws.close(1009, "frame too large");
+        return;
+      }
       this.relay(ws, message);
+      return;
+    }
+    if (message.length > MAX_CONTROL_BYTES) {
+      ws.close(1009, "frame too large");
       return;
     }
 
@@ -52,14 +60,19 @@ export class Room {
     }
 
     const clientId = (payload as { clientId: string }).clientId;
+    // A socket claiming an id already in the room is a stale reconnect: evict
+    // it, keep the reconnect rule intact (a same-id socket must not make
+    // `first` false), and keep it out of the membership computed below — its
+    // attachment lingers until the close completes.
+    const evicted = new Set<WebSocket>();
     let first = true;
     for (const [socket, attachment] of this.attachments()) {
       if (socket === ws) {
         continue;
       }
       if (attachment.id === clientId) {
-        // Same client reconnecting: evict the stale socket rather than count it.
         socket.close(4001, "replaced");
+        evicted.add(socket);
         continue;
       }
       first = false;
@@ -73,17 +86,17 @@ export class Room {
     this.send(ws, {
       t: "joined",
       first,
-      members: this.members().sort(),
+      members: this.members(evicted).sort(),
     });
     if (!first) {
       for (const [socket] of this.attachments()) {
-        if (socket === ws) {
+        if (socket === ws || evicted.has(socket)) {
           continue;
         }
         this.send(socket, { t: "new-user", id: clientId });
       }
     }
-    this.broadcastMembers();
+    this.broadcastMembers(undefined, evicted);
   }
 
   async webSocketClose(ws: WebSocket) {
@@ -177,11 +190,17 @@ export class Room {
     }
   }
 
-  /** Sends the room membership, sorted, to every member except `excludeId`. */
-  private broadcastMembers(excludeId?: string) {
-    const ids = this.members().sort();
+  /**
+   * Sends the room membership, sorted, to every member except `excludeId` and
+   * any socket in `evicted`. Evictions must also be dropped from the id list:
+   * the evicted socket's attachment lingers while it is closing, which would
+   * otherwise broadcast a duplicate id.
+   */
+  private broadcastMembers(excludeId?: string, evicted?: Set<WebSocket>) {
+    const skip = evicted ?? new Set<WebSocket>();
+    const ids = this.members(skip).sort();
     for (const [socket, { id }] of this.attachments()) {
-      if (excludeId !== undefined && id === excludeId) {
+      if (id === excludeId || skip.has(socket)) {
         continue;
       }
       this.send(socket, { t: "members", ids });
@@ -199,8 +218,11 @@ export class Room {
     return result;
   }
 
-  private members(): string[] {
-    return this.attachments().map(([, attachment]) => attachment.id);
+  /** Every attached socket's id except those in `excluded`, in accept order. */
+  private members(excluded?: Set<WebSocket>): string[] {
+    return this.attachments()
+      .filter(([socket]) => !excluded?.has(socket))
+      .map(([, attachment]) => attachment.id);
   }
 
   /** Sends a control frame as JSON, or a scene frame as-is, to an open socket. */

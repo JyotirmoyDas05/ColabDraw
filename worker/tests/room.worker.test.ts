@@ -2,6 +2,8 @@
 import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
+import { IV_BYTES } from "../src/protocol";
+
 const ORIGIN = "https://colab-draw-with-nextjs.vercel.app";
 const ALICE = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
@@ -95,6 +97,13 @@ const threeIn = async (roomId: string) => {
   }
   return { alice, bob, carol };
 };
+
+const closed = (ws: WebSocket) =>
+  new Promise<{ code: number; reason: string }>((resolve) =>
+    ws.addEventListener("close", (event) =>
+      resolve({ code: event.code, reason: event.reason }),
+    ),
+  );
 
 describe("room", () => {
   it("answers a join with the room membership", async () => {
@@ -308,6 +317,52 @@ describe("room", () => {
     alice.ws.close();
     expect(JSON.parse((await bob.next()) as string)).toEqual({
       t: "unfollowed",
+    });
+  });
+
+  it("relays opcode 2 unchanged", async () => {
+    const { alice, bob } = await twoIn("room-volatile");
+    const body = new Uint8Array([4, 5]);
+
+    alice.ws.send(frame(2, body));
+
+    expect(bytes(await bob.next())).toEqual(
+      new Uint8Array([2, ...IV, ...body]),
+    );
+  });
+
+  it("relays a frame of exactly 4 MiB and rejects one byte more", async () => {
+    const { alice, bob } = await twoIn("room-limit");
+    const max = 4 * 1024 * 1024;
+
+    alice.ws.send(frame(1, new Uint8Array(max - 1 - IV_BYTES)));
+    expect(bytes(await bob.next()).byteLength).toBe(max);
+
+    const closeCode = closed(alice.ws);
+    alice.ws.send(frame(1, new Uint8Array(max - IV_BYTES)));
+    expect((await closeCode).code).toBe(1009);
+  });
+
+  it("replaces an older socket that claims the same client id", async () => {
+    const first = await participant("room-duplicate", ALICE);
+
+    const second = await open("room-duplicate");
+    const secondIn = inbox(second);
+    const firstClosed = closed(first.ws);
+    join(second, ALICE);
+
+    expect((await firstClosed).code).toBe(4001);
+    expect(JSON.parse((await secondIn()) as string)).toEqual({
+      t: "joined",
+      first: true,
+      members: [ALICE],
+    });
+    // The broadcast must still reach the joiner: eviction sits earlier in
+    // accept order, so a handler that threw on the closing socket would
+    // never get this far.
+    expect(JSON.parse((await secondIn()) as string)).toEqual({
+      t: "members",
+      ids: [ALICE],
     });
   });
 });
