@@ -97,6 +97,7 @@ describe("room", () => {
     const aliceIn = inbox(alice);
     join(alice, ALICE);
     await aliceIn();
+    await aliceIn();
 
     const bob = await open("room-presence");
     const bobIn = inbox(bob);
@@ -121,6 +122,7 @@ describe("room", () => {
     const alice = await open("room-leave");
     const aliceIn = inbox(alice);
     join(alice, ALICE);
+    await aliceIn();
     await aliceIn();
 
     const bob = await open("room-leave");

@@ -66,14 +66,13 @@ export class Room {
       first,
       members: this.members().sort(),
     });
-    if (first) {
-      return;
-    }
-    for (const [socket] of this.attachments()) {
-      if (socket === ws) {
-        continue;
+    if (!first) {
+      for (const [socket] of this.attachments()) {
+        if (socket === ws) {
+          continue;
+        }
+        this.send(socket, { t: "new-user", id: clientId });
       }
-      this.send(socket, { t: "new-user", id: clientId });
     }
     this.broadcastMembers();
   }
@@ -113,6 +112,10 @@ export class Room {
   }
 
   private send(ws: WebSocket, control: ServerControl) {
+    if (ws.readyState !== WebSocket.OPEN) {
+      // A socket evicted mid-broadcast is closing; sending on it would throw.
+      return;
+    }
     ws.send(JSON.stringify(control));
   }
 }
