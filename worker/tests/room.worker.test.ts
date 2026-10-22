@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const ORIGIN = "https://colab-draw-with-nextjs.vercel.app";
 const ALICE = "11111111-1111-4111-8111-111111111111";
+const BOB = "22222222-2222-4222-8222-222222222222";
 
 const open = async (roomId: string) => {
   const res = await SELF.fetch(`https://api.test/rooms/${roomId}`, {
@@ -89,5 +90,104 @@ describe("room", () => {
       headers: { Upgrade: "websocket", Origin: "https://evil.example" },
     });
     expect(foreign.status).toBe(403);
+  });
+
+  it("tells the room about a second participant", async () => {
+    const alice = await open("room-presence");
+    const aliceIn = inbox(alice);
+    join(alice, ALICE);
+    await aliceIn();
+
+    const bob = await open("room-presence");
+    const bobIn = inbox(bob);
+    join(bob, BOB);
+
+    expect(JSON.parse((await bobIn()) as string)).toEqual({
+      t: "joined",
+      first: false,
+      members: [ALICE, BOB],
+    });
+    expect(JSON.parse((await aliceIn()) as string)).toEqual({
+      t: "new-user",
+      id: BOB,
+    });
+    expect(JSON.parse((await aliceIn()) as string)).toEqual({
+      t: "members",
+      ids: [ALICE, BOB],
+    });
+  });
+
+  it("drops a departing participant from presence", async () => {
+    const alice = await open("room-leave");
+    const aliceIn = inbox(alice);
+    join(alice, ALICE);
+    await aliceIn();
+
+    const bob = await open("room-leave");
+    const bobIn = inbox(bob);
+    join(bob, BOB);
+    await bobIn();
+    await aliceIn();
+    await aliceIn();
+
+    bob.close();
+
+    expect(JSON.parse((await aliceIn()) as string)).toEqual({
+      t: "members",
+      ids: [ALICE],
+    });
+  });
+
+  it("treats a rejoin after the room empties as first", async () => {
+    const alice = await open("room-empty");
+    const aliceIn = inbox(alice);
+    join(alice, ALICE);
+    await aliceIn();
+    alice.close();
+
+    const bob = await open("room-empty");
+    const bobIn = inbox(bob);
+    join(bob, BOB);
+
+    expect(JSON.parse((await bobIn()) as string)).toEqual({
+      t: "joined",
+      first: true,
+      members: [BOB],
+    });
+  });
+
+  it("keeps a socket that never joins out of the room", async () => {
+    const ghost = await open("room-ghost");
+    const alice = await open("room-ghost");
+    const aliceIn = inbox(alice);
+    join(alice, ALICE);
+
+    expect(JSON.parse((await aliceIn()) as string)).toEqual({
+      t: "joined",
+      first: true,
+      members: [ALICE],
+    });
+
+    // a socket with no attachment is not a member; after closing it the room must
+    // still compute membership from attachments alone
+    ghost.close();
+
+    const bob = await open("room-ghost");
+    const bobIn = inbox(bob);
+    join(bob, BOB);
+    expect(JSON.parse((await bobIn()) as string)).toEqual({
+      t: "joined",
+      first: false,
+      members: [ALICE, BOB],
+    });
+  });
+
+  it("answers a heartbeat", async () => {
+    const ws = await open("room-ping");
+    const next = inbox(ws);
+
+    ws.send(JSON.stringify({ t: "ping" }));
+
+    expect(JSON.parse((await next()) as string)).toEqual({ t: "pong" });
   });
 });
