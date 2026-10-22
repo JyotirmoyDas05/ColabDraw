@@ -6,7 +6,7 @@
   border: 1px solid var(--sidebar-border-color, rgba(0, 0, 0, 0.12));
   background: var(--island-bg-color, #ffffff);
   cursor: pointer;
-  overflow: hidden;
+  overflow: visible; /* Never clip dropdown menus or elevated states */
   box-sizing: border-box;
   transition: border-color 0.15s ease, box-shadow 0.15s ease,
     transform 0.1s ease;
@@ -31,6 +31,14 @@
     }
   }
 
+  &.has-menu-open {
+    z-index: 60;
+
+    .presentation-slide-card__more-btn {
+      opacity: 1;
+    }
+  }
+
   &.is-draggable {
     cursor: grab;
 
@@ -46,6 +54,7 @@
     align-items: center;
     justify-content: center;
     background: var(--default-canvas-bg, #fafafa);
+    border-radius: 7px;
     overflow: hidden;
   }
 
@@ -76,7 +85,7 @@
     position: absolute;
     top: 6px;
     right: 6px;
-    z-index: 10;
+    z-index: 70;
   }
 
   &__more-btn {
@@ -122,8 +131,11 @@
     );
     backdrop-filter: blur(6px);
     border-top: 1px solid rgba(0, 0, 0, 0.05);
+    border-bottom-left-radius: 7px;
+    border-bottom-right-radius: 7px;
     box-sizing: border-box;
     z-index: 5;
+    overflow: hidden;
   }
 
   &__title {
@@ -157,17 +169,22 @@
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  min-width: 175px;
+  min-width: 185px;
   background: var(--island-bg-color, #ffffff);
   border: 1px solid var(--sidebar-border-color, rgba(0, 0, 0, 0.12));
   border-radius: 8px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
   padding: 4px;
   z-index: 100;
   display: flex;
   flex-direction: column;
   gap: 2px;
   animation: slideMenuFadeIn 0.12s ease-out;
+
+  &--upwards {
+    top: auto;
+    bottom: calc(100% + 4px);
+  }
 
   &__item {
     display: flex;
@@ -216,40 +233,5 @@
     height: 1px;
     background: var(--sidebar-border-color, rgba(0, 0, 0, 0.08));
     margin: 3px 0;
-  }
-}
-
-@keyframes slideMenuFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* Dark mode adjustments */
-:root[data-theme="dark"] {
-  .presentation-slide-card {
-    &__more-btn {
-      background: rgba(40, 40, 48, 0.9);
-      border-color: rgba(255, 255, 255, 0.1);
-      color: #e9ecef;
-
-      &:hover {
-        background: #343a40;
-      }
-    }
-
-    &__bottom-bar {
-      background: linear-gradient(
-        to top,
-        rgba(30, 30, 38, 0.95) 0%,
-        rgba(30, 30, 38, 0.8) 100%
-      );
-      border-top-color: rgba(255, 255, 255, 0.08);
-    }
   }
 }

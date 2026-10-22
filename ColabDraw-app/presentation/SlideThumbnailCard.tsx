@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { getNonDeletedElements } from "@excalidraw/element";
+// eslint-disable-next-line no-restricted-imports
 import { exportToCanvas } from "@excalidraw/excalidraw";
 
 import type {
@@ -10,6 +11,7 @@ import type {
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import { getSlideTitle } from "./presentationUtils";
+
 import "./SlideThumbnailCard.scss";
 
 // Global cache for generated slide preview URLs
@@ -32,6 +34,8 @@ interface SlideThumbnailCardProps {
   onDragStart?: (e: React.DragEvent, index: number) => void;
   onDragOver?: (e: React.DragEvent, index: number) => void;
   onDrop?: (e: React.DragEvent, index: number) => void;
+  onEditingChange?: (isEditing: boolean) => void;
+  onMenuOpenChange?: (isOpen: boolean) => void;
 }
 
 export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
@@ -51,9 +55,12 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
   onDragStart,
   onDragOver,
   onDrop,
+  onEditingChange,
+  onMenuOpenChange,
 }) => {
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openUpwards, setOpenUpwards] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
 
@@ -70,13 +77,14 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
+        onMenuOpenChange?.(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [menuOpen]);
+  }, [menuOpen, onMenuOpenChange]);
 
   // Focus and select input text when entering rename mode
   useEffect(() => {
@@ -156,21 +164,36 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
       onRename(slide, trimmed);
     }
     setIsEditingName(false);
+    onEditingChange?.(false);
   };
 
   const handleStartRename = () => {
     setNameDraft(slide.name?.trim() || `Slide ${index + 1}`);
     setIsEditingName(true);
+    onEditingChange?.(true);
     setMenuOpen(false);
+    onMenuOpenChange?.(false);
+  };
+
+  const handleToggleMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextOpen = !menuOpen;
+    if (nextOpen && menuRef.current) {
+      const rect = menuRef.current.getBoundingClientRect();
+      // If near bottom of the viewport, position dropdown menu upwards
+      setOpenUpwards(rect.bottom + 220 > window.innerHeight);
+    }
+    setMenuOpen(nextOpen);
+    onMenuOpenChange?.(nextOpen);
   };
 
   return (
     <div
       className={`presentation-slide-card ${isSelected ? "is-selected" : ""} ${
         isDraggable ? "is-draggable" : ""
-      }`}
+      } ${menuOpen ? "has-menu-open" : ""}`}
       onClick={onSelect}
-      draggable={isDraggable && !isEditingName}
+      draggable={!onEditingChange && isDraggable && !isEditingName}
       onDragStart={(e) => onDragStart?.(e, index)}
       onDragOver={(e) => onDragOver?.(e, index)}
       onDrop={(e) => onDrop?.(e, index)}
@@ -208,14 +231,12 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
           className="presentation-slide-card__menu-wrapper"
           ref={menuRef}
           onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
         >
           <button
             type="button"
             className="presentation-slide-card__more-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(!menuOpen);
-            }}
+            onClick={handleToggleMenu}
             title="Slide options"
           >
             <svg viewBox="0 0 24 24" fill="currentColor">
@@ -227,12 +248,17 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
 
           {/* Context menu dropdown */}
           {menuOpen && (
-            <div className="presentation-slide-menu">
+            <div
+              className={`presentation-slide-menu ${
+                openUpwards ? "presentation-slide-menu--upwards" : ""
+              }`}
+            >
               <button
                 type="button"
                 className="presentation-slide-menu__item"
                 onClick={() => {
                   setMenuOpen(false);
+                  onMenuOpenChange?.(false);
                   onStartPresentation?.(index);
                 }}
               >
@@ -254,6 +280,7 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
                 className="presentation-slide-menu__item"
                 onClick={() => {
                   setMenuOpen(false);
+                  onMenuOpenChange?.(false);
                   onDuplicate?.(slide);
                 }}
               >
@@ -294,6 +321,7 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
                 className="presentation-slide-menu__item"
                 onClick={() => {
                   setMenuOpen(false);
+                  onMenuOpenChange?.(false);
                   onAddBelow?.(slide);
                 }}
               >
@@ -318,6 +346,7 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
                 className="presentation-slide-menu__item presentation-slide-menu__item--danger"
                 onClick={() => {
                   setMenuOpen(false);
+                  onMenuOpenChange?.(false);
                   onDelete?.(slide);
                 }}
               >
@@ -347,6 +376,11 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
             e.stopPropagation();
           }
         }}
+        onPointerDown={(e) => {
+          if (isEditingName) {
+            e.stopPropagation();
+          }
+        }}
       >
         {isEditingName ? (
           <input
@@ -360,6 +394,7 @@ export const SlideThumbnailCard: React.FC<SlideThumbnailCardProps> = ({
                 handleSaveRename();
               } else if (e.key === "Escape") {
                 setIsEditingName(false);
+                onEditingChange?.(false);
               }
             }}
             onBlur={handleSaveRename}

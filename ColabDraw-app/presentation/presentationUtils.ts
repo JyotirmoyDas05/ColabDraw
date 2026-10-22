@@ -51,6 +51,7 @@ export const sortFramesGeometrically = (
  */
 export const getOrderedSlides = (
   elements: readonly ExcalidrawElement[] | undefined | null,
+  customOrder?: readonly string[],
 ): ExcalidrawFrameLikeElement[] => {
   if (!elements || !elements.length) {
     return [];
@@ -77,7 +78,7 @@ export const getOrderedSlides = (
   const useNumericSort = numericCount >= 2 && numericCount >= frames.length / 2;
 
   if (useNumericSort) {
-    return [...frames].sort((a, b) => {
+    const numericSorted = [...frames].sort((a, b) => {
       const numA = extractSlideNumber(a.name);
       const numB = extractSlideNumber(b.name);
 
@@ -95,9 +96,52 @@ export const getOrderedSlides = (
       }
       return sortFramesGeometrically(a, b);
     });
+
+    if (!customOrder || !customOrder.length) {
+      return numericSorted;
+    }
+
+    const slideMap = new Map(numericSorted.map((s) => [s.id, s]));
+    const ordered: ExcalidrawFrameLikeElement[] = [];
+
+    for (const id of customOrder) {
+      const slide = slideMap.get(id);
+      if (slide) {
+        ordered.push(slide);
+        slideMap.delete(id);
+      }
+    }
+
+    for (const remaining of slideMap.values()) {
+      ordered.push(remaining);
+    }
+
+    return ordered;
   }
 
-  return [...frames].sort(sortFramesGeometrically);
+  const naturallySorted = [...frames].sort(sortFramesGeometrically);
+
+  if (!customOrder || !customOrder.length) {
+    return naturallySorted;
+  }
+
+  // Preserve user custom reorder if specified
+  const slideMap = new Map(naturallySorted.map((s) => [s.id, s]));
+  const ordered: ExcalidrawFrameLikeElement[] = [];
+
+  for (const id of customOrder) {
+    const slide = slideMap.get(id);
+    if (slide) {
+      ordered.push(slide);
+      slideMap.delete(id);
+    }
+  }
+
+  for (const remaining of slideMap.values()) {
+    ordered.push(remaining);
+  }
+
+  return ordered;
 };
 
 /**

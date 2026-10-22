@@ -1,6 +1,8 @@
 import React, { useMemo, useRef, useState } from "react";
 import { newFrameElement } from "@excalidraw/element";
+// eslint-disable-next-line no-restricted-imports
 import { CaptureUpdateAction, restoreElements } from "@excalidraw/excalidraw";
+import { Reorder } from "framer-motion";
 
 import type {
   ExcalidrawElement,
@@ -8,6 +10,8 @@ import type {
 } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
+import { useAtom } from "../app-jotai";
+import { presentationSlideOrderAtom } from "../presentation/presentationState";
 import { getOrderedSlides } from "../presentation/presentationUtils";
 import { SlideThumbnailCard } from "../presentation/SlideThumbnailCard";
 
@@ -26,38 +30,21 @@ export const PresentationSidebarTab: React.FC<PresentationSidebarTabProps> = ({
 }) => {
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [customSlideOrder, setCustomSlideOrder] = useState<string[]>([]);
+  const [editingSlideId, setEditingSlideId] = useState<string | null>(null);
+  const [menuOpenSlideId, setMenuOpenSlideId] = useState<string | null>(null);
+  const [customSlideOrder, setCustomSlideOrder] = useAtom(
+    presentationSlideOrderAtom,
+  );
 
   const headerMenuRef = useRef<HTMLDivElement>(null);
 
   const elements = excalidrawAPI?.getSceneElementsIncludingDeleted();
 
-  // Natural ordered slides from canvas elements
-  const naturalSlides = useMemo(() => getOrderedSlides(elements), [elements]);
-
-  // Apply custom slide order if user has reordered via drag & drop
-  const slides = useMemo(() => {
-    if (!customSlideOrder.length) {
-      return naturalSlides;
-    }
-    const slideMap = new Map(naturalSlides.map((s) => [s.id, s]));
-    const ordered: ExcalidrawFrameLikeElement[] = [];
-
-    // Add slides in custom order
-    for (const id of customSlideOrder) {
-      const slide = slideMap.get(id);
-      if (slide) {
-        ordered.push(slide);
-        slideMap.delete(id);
-      }
-    }
-    // Add any newly created slides not yet in custom order
-    for (const remaining of slideMap.values()) {
-      ordered.push(remaining);
-    }
-    return ordered;
-  }, [naturalSlides, customSlideOrder]);
+  // Natural ordered slides with custom drag & drop reorder preserved
+  const slides = useMemo(
+    () => getOrderedSlides(elements, customSlideOrder),
+    [elements, customSlideOrder],
+  );
 
   const handleSelectSlide = (slide: ExcalidrawFrameLikeElement) => {
     if (!excalidrawAPI) {
@@ -235,7 +222,7 @@ export const PresentationSidebarTab: React.FC<PresentationSidebarTabProps> = ({
         copy.splice(idx + 1, 0, newFrame.id);
         return copy;
       }
-      return [...prev, newFrame.id];
+      return [...slides.map((s) => s.id), newFrame.id];
     });
 
     excalidrawAPI.setViewport({
@@ -305,7 +292,7 @@ export const PresentationSidebarTab: React.FC<PresentationSidebarTabProps> = ({
         copy.splice(idx + 1, 0, newFrame.id);
         return copy;
       }
-      return [...prev, newFrame.id];
+      return [...slides.map((s) => s.id), newFrame.id];
     });
 
     excalidrawAPI.setViewport({
@@ -392,30 +379,8 @@ export const PresentationSidebarTab: React.FC<PresentationSidebarTabProps> = ({
     });
   };
 
-  /**
-   * Drag & drop reordering handlers
-   */
-  const handleDragStart = (_e: React.DragEvent, index: number) => {
-    setDraggedIndex(index);
-  };
-
-  const handleDragOver = (e: React.DragEvent, _index: number) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (_e: React.DragEvent, dropIndex: number) => {
-    if (draggedIndex === null || draggedIndex === dropIndex) {
-      setDraggedIndex(null);
-      return;
-    }
-
-    const currentOrder = slides.map((s) => s.id);
-    const movedId = currentOrder[draggedIndex];
-    currentOrder.splice(draggedIndex, 1);
-    currentOrder.splice(dropIndex, 0, movedId);
-
-    setCustomSlideOrder(currentOrder);
-    setDraggedIndex(null);
+  const handleReorder = (newSlides: ExcalidrawFrameLikeElement[]) => {
+    setCustomSlideOrder(newSlides.map((s) => s.id));
   };
 
   return (
@@ -527,6 +492,7 @@ export const PresentationSidebarTab: React.FC<PresentationSidebarTabProps> = ({
                       for (const slide of slides) {
                         handleDeleteSlide(slide);
                       }
+                      setCustomSlideOrder([]);
                     }
                   }}
                 >
@@ -554,37 +520,62 @@ export const PresentationSidebarTab: React.FC<PresentationSidebarTabProps> = ({
         Slides ({slides.length})
       </div>
 
-      {/* Slide cards scrollable list */}
+      {/* Slide cards scrollable list with smooth Framer Motion reordering */}
       <div className="presentation-sidebar-tab__content">
         {slides.length > 0 ? (
-          <div className="presentation-sidebar-tab__list">
+          <Reorder.Group
+            axis="y"
+            values={slides}
+            onReorder={handleReorder}
+            className="presentation-sidebar-tab__list"
+            style={{ listStyle: "none", margin: 0, padding: 0 }}
+          >
             {slides.map((slide, index) => {
               const isSelected = selectedSlideId === slide.id;
               return (
-                <SlideThumbnailCard
+                <Reorder.Item
                   key={slide.id}
-                  slide={slide}
-                  index={index}
-                  totalSlides={slides.length}
-                  isSelected={isSelected}
-                  excalidrawAPI={excalidrawAPI}
-                  onSelect={() => handleSelectSlide(slide)}
-                  onStartPresentation={(startIdx) =>
-                    onStartPresentation(startIdx, false)
-                  }
-                  onDuplicate={handleDuplicateSlide}
-                  onRename={handleRenameSlide}
-                  onAddBelow={handleAddSlideBelow}
-                  onDelete={handleDeleteSlide}
-                  showActions={true}
-                  isDraggable={true}
-                  onDragStart={handleDragStart}
-                  onDragOver={handleDragOver}
-                  onDrop={handleDrop}
-                />
+                  value={slide}
+                  dragListener={editingSlideId !== slide.id}
+                  className={`presentation-slide-reorder-item ${
+                    menuOpenSlideId === slide.id ? "has-menu-open" : ""
+                  }`}
+                  whileDrag={{
+                    scale: 1.02,
+                    boxShadow:
+                      "0 14px 30px rgba(0, 0, 0, 0.22), 0 0 0 2px var(--color-primary, #6965db)",
+                    zIndex: 100,
+                    cursor: "grabbing",
+                  }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <SlideThumbnailCard
+                    slide={slide}
+                    index={index}
+                    totalSlides={slides.length}
+                    isSelected={isSelected}
+                    excalidrawAPI={excalidrawAPI}
+                    onSelect={() => handleSelectSlide(slide)}
+                    onStartPresentation={(startIdx) =>
+                      onStartPresentation(startIdx, false)
+                    }
+                    onDuplicate={handleDuplicateSlide}
+                    onRename={handleRenameSlide}
+                    onAddBelow={handleAddSlideBelow}
+                    onDelete={handleDeleteSlide}
+                    showActions={true}
+                    isDraggable={true}
+                    onEditingChange={(isEditing) =>
+                      setEditingSlideId(isEditing ? slide.id : null)
+                    }
+                    onMenuOpenChange={(isOpen) =>
+                      setMenuOpenSlideId(isOpen ? slide.id : null)
+                    }
+                  />
+                </Reorder.Item>
               );
             })}
-          </div>
+          </Reorder.Group>
         ) : (
           <div className="presentation-sidebar-tab__empty">
             <div className="presentation-sidebar-tab__empty-icon">
@@ -655,8 +646,20 @@ export const PresentationSidebarTab: React.FC<PresentationSidebarTabProps> = ({
                 onStartPresentation(startIdx, true);
               }}
             >
-              <span className="presentation-sidebar-tab__pulse-dot" />
-              <span>Present to room (Live)</span>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              <span>Present to audience</span>
             </button>
           )}
         </div>

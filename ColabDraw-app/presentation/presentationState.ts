@@ -55,3 +55,5 @@ export const activeRemotePresentationAtom = atom<RemotePresentationInfo | null>(
 export const presentationSettingsAtom = atom<PresentationSettings>(
   DEFAULT_PRESENTATION_SETTINGS,
 );
+
+export const presentationSlideOrderAtom = atom<string[]>([]);

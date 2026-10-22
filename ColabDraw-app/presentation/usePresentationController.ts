@@ -8,6 +8,7 @@ import {
   DEFAULT_PRESENTATION_STATE,
   presentationModeAtom,
   presentationSettingsAtom,
+  presentationSlideOrderAtom,
 } from "./presentationState";
 import { presentationSync } from "./presentationSync";
 import { getOrderedSlides } from "./presentationUtils";
@@ -33,6 +34,7 @@ export const usePresentationController = ({
   const [presentationState, setPresentationState] =
     useAtom(presentationModeAtom);
   const [settings, setSettings] = useAtom(presentationSettingsAtom);
+  const [customSlideOrder] = useAtom(presentationSlideOrderAtom);
 
   const prevAppStateRef = useRef<{
     frameRendering: {
@@ -46,7 +48,10 @@ export const usePresentationController = ({
   } | null>(null);
 
   const slidesRef = useRef(
-    getOrderedSlides(excalidrawAPI?.getSceneElementsIncludingDeleted()),
+    getOrderedSlides(
+      excalidrawAPI?.getSceneElementsIncludingDeleted(),
+      customSlideOrder,
+    ),
   );
 
   // Keep slides list updated
@@ -54,9 +59,10 @@ export const usePresentationController = ({
     if (excalidrawAPI) {
       slidesRef.current = getOrderedSlides(
         excalidrawAPI.getSceneElementsIncludingDeleted(),
+        customSlideOrder,
       );
     }
-  }, [excalidrawAPI, presentationState.isActive]);
+  }, [excalidrawAPI, presentationState.isActive, customSlideOrder]);
 
   // Toggle presentation-mode-active class on body during presentation
   useEffect(() => {
@@ -91,6 +97,7 @@ export const usePresentationController = ({
       }
       const slides = getOrderedSlides(
         excalidrawAPI.getSceneElementsIncludingDeleted(),
+        customSlideOrder,
       );
       slidesRef.current = slides;
 
@@ -145,6 +152,7 @@ export const usePresentationController = ({
       presentationState.isLive,
       setPresentationState,
       settings.animateSlideMovement,
+      customSlideOrder,
     ],
   );
 
@@ -156,6 +164,7 @@ export const usePresentationController = ({
 
       const slides = getOrderedSlides(
         excalidrawAPI.getSceneElementsIncludingDeleted(),
+        customSlideOrder,
       );
       slidesRef.current = slides;
 
@@ -242,6 +251,7 @@ export const usePresentationController = ({
       onLiveBroadcast,
       setPresentationState,
       settings.animateSlideMovement,
+      customSlideOrder,
     ],
   );
 
