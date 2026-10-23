@@ -2,15 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { appJotaiStore } from "../app-jotai";
 import {
-  activeRemotePresentationAtom,
   DEFAULT_PRESENTATION_SETTINGS,
   DEFAULT_PRESENTATION_STATE,
+  activeRemotePresentationAtom,
   presentationModeAtom,
   presentationSettingsAtom,
 } from "../presentation/presentationState";
 import { presentationSync } from "../presentation/presentationSync";
 import {
-  findSlideIndexById,
+  clampSlideIndex,
   getOrderedSlides,
   getSlideTitle,
 } from "../presentation/presentationUtils";
@@ -32,7 +32,7 @@ describe("presentationState & integration", () => {
   it("has correct default presentation settings", () => {
     expect(DEFAULT_PRESENTATION_SETTINGS).toEqual({
       animateSlideMovement: true,
-      showCursor: false,
+      showCursor: true,
       showSlideTitle: false,
       isPublic: false,
     });
@@ -163,74 +163,43 @@ describe("presentationState & integration", () => {
         name: "Slide 3",
         isDeleted: false,
       },
-    ] as any[];
+    ] as any;
 
     const slides = getOrderedSlides(mockElements);
-    expect(slides).toHaveLength(3);
+    expect(slides.length).toBe(3);
 
-    // Helper to clamp index
-    const clampIndex = (idx: number) =>
-      Math.max(0, Math.min(idx, slides.length - 1));
-
-    expect(clampIndex(-1)).toBe(0);
-    expect(clampIndex(0)).toBe(0);
-    expect(clampIndex(1)).toBe(1);
-    expect(clampIndex(2)).toBe(2);
-    expect(clampIndex(5)).toBe(2);
+    expect(clampSlideIndex(-1, slides.length)).toBe(0);
+    expect(clampSlideIndex(0, slides.length)).toBe(0);
+    expect(clampSlideIndex(1, slides.length)).toBe(1);
+    expect(clampSlideIndex(2, slides.length)).toBe(2);
+    expect(clampSlideIndex(3, slides.length)).toBe(2);
+    expect(clampSlideIndex(10, slides.length)).toBe(2);
 
     expect(getSlideTitle(slides[0], 0)).toBe("Slide 1");
-    expect(findSlideIndexById(slides, "s2")).toBe(1);
+    expect(getSlideTitle(slides[1], 1)).toBe("Slide 2");
+    expect(getSlideTitle(slides[2], 2)).toBe("Slide 3");
   });
 
   it("supports custom drag-and-drop slide reordering", () => {
     const mockElements = [
-      {
-        id: "s1",
-        type: "frame",
-        x: 0,
-        y: 0,
-        width: 800,
-        height: 600,
-        name: "First",
-        isDeleted: false,
-      },
-      {
-        id: "s2",
-        type: "frame",
-        x: 1000,
-        y: 0,
-        width: 800,
-        height: 600,
-        name: "Second",
-        isDeleted: false,
-      },
+      { id: "s1", type: "frame", x: 0, y: 0, name: "Intro", isDeleted: false },
+      { id: "s2", type: "frame", x: 500, y: 0, name: "Demo", isDeleted: false },
       {
         id: "s3",
         type: "frame",
-        x: 2000,
+        x: 1000,
         y: 0,
-        width: 800,
-        height: 600,
-        name: "Third",
+        name: "Summary",
         isDeleted: false,
       },
-    ] as any[];
+    ] as any;
 
-    const natural = getOrderedSlides(mockElements);
-    expect(natural.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
+    // Default reading order
+    let slides = getOrderedSlides(mockElements);
+    expect(slides.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
 
-    // Move index 0 to index 2: [s2, s3, s1]
-    const currentOrder = natural.map((s) => s.id);
-    const moved = currentOrder.splice(0, 1)[0];
-    currentOrder.splice(2, 0, moved);
-
-    expect(currentOrder).toEqual(["s2", "s3", "s1"]);
-
-    const slideMap = new Map(natural.map((s) => [s.id, s]));
-    const reordered = currentOrder.map((id) => slideMap.get(id)!);
-
-    expect(reordered[0].name).toBe("Second");
-    expect(reordered[1].name).toBe("Third");
-    expect(reordered[2].name).toBe("First");
+    // Custom order (e.g. user dragged s3 to the front)
+    slides = getOrderedSlides(mockElements, ["s3", "s1", "s2"]);
+    expect(slides.map((s) => s.id)).toEqual(["s3", "s1", "s2"]);
   });
 });
