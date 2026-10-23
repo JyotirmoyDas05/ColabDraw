@@ -261,7 +261,7 @@ export const AIAssistant = ({
           await snapshotElements(excalidrawAPI, context.visualElements),
         );
       }
-      const contents = [
+      const contents: GeminiContent[] = [
         ...history.map(
           (message): GeminiContent => ({
             role: message.role,
@@ -317,7 +317,9 @@ export const AIAssistant = ({
                     role: "user",
                     parts: [
                       {
-                        text: `${foundContexts.join("\n\n")}\n\nPlease insert the appropriate items now using insert_library_item.`,
+                        text: `${foundContexts.join(
+                          "\n\n",
+                        )}\n\nPlease insert the appropriate items now using insert_library_item.`,
                       },
                     ],
                   },
@@ -338,16 +340,19 @@ export const AIAssistant = ({
               setTrial(secondTurn.trial);
             }
           } catch (e) {
-            console.warn("Follow-up generation for find_library_art failed:", e);
+            console.warn(
+              "Follow-up generation for find_library_art failed:",
+              e,
+            );
           }
         }
       }
       const fallbackReply = calls.length
-        ? (calls.flatMap(functionCallToOps).length
-            ? "Done."
-            : "I couldn't perform that action on the board.")
+        ? calls.flatMap(functionCallToOps).length
+          ? "Done."
+          : "I couldn't perform that action on the board."
         : "I'm not sure.";
-      let reply = answer.trim() || fallbackReply;
+      const reply = answer.trim() || fallbackReply;
       const ops = calls.flatMap(functionCallToOps);
       let note: string | undefined;
       if (ops.length) {
@@ -364,7 +369,10 @@ export const AIAssistant = ({
             })),
           );
           const totalOpsApplied =
-            result.added + result.changed + result.deleted + result.libraryAdded;
+            result.added +
+            result.changed +
+            result.deleted +
+            result.libraryAdded;
 
           if (totalOpsApplied === 0) {
             const failureDetail = result.failedOps?.[0]?.error;
@@ -384,7 +392,9 @@ export const AIAssistant = ({
           const summary = describeResult(result);
           note = summary
             ? `${summary}${
-                result.failedOps?.length ? ` (${result.failedOps.length} failed)` : ""
+                result.failedOps?.length
+                  ? ` (${result.failedOps.length} failed)`
+                  : ""
               } · Ctrl+Z to undo`
             : undefined;
         } catch (applyError: any) {
@@ -405,10 +415,7 @@ export const AIAssistant = ({
           return;
         }
       }
-      setMessages((prev) => [
-        ...prev,
-        createMessage("model", reply, { note }),
-      ]);
+      setMessages((prev) => [...prev, createMessage("model", reply, { note })]);
       setStatus("done");
     } catch (error: any) {
       if (error?.name === "AbortError") {
@@ -616,7 +623,10 @@ export const AIAssistant = ({
           if (result) {
             lastRole = null;
             const totalOpsApplied =
-              result.added + result.changed + result.deleted + result.libraryAdded;
+              result.added +
+              result.changed +
+              result.deleted +
+              result.libraryAdded;
             setMessages((prev) => [
               ...prev,
               createMessage("model", "", {
