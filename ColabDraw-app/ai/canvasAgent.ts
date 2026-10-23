@@ -1101,6 +1101,7 @@ export type ApplyResult = {
   /** online library items saved to the user's library */
   libraryAdded: number;
   newElementIds: string[];
+  failedOps?: { op: string; error: string }[];
 };
 
 /** one pencil stroke through absolute scene points */
@@ -1344,6 +1345,11 @@ export const applyCanvasOps = async (
     const fromBox = boxOfRef(op.from);
     const toBox = boxOfRef(op.to);
     if (!fromId || !toId || !fromBox || !toBox || fromId === toId) {
+      result.failedOps ??= [];
+      result.failedOps.push({
+        op: "connect",
+        error: `Could not connect: ${!fromId ? `source "${op.from}" not found` : !toId ? `target "${op.to}" not found` : "invalid endpoints"}`,
+      });
       return;
     }
     for (const ref of [op.from, op.to]) {
@@ -1521,6 +1527,11 @@ export const applyCanvasOps = async (
         }
         const element = existing(op.id);
         if (!element) {
+          result.failedOps ??= [];
+          result.failedOps.push({
+            op: "update",
+            error: `Element "${op.id}" not found on canvas`,
+          });
           break;
         }
         const isArrow = isArrowElement(element);
@@ -1688,6 +1699,12 @@ export const applyCanvasOps = async (
               name: op.label,
             });
             result.added++;
+          } else if ((op.ids ?? []).length > 0) {
+            result.failedOps ??= [];
+            result.failedOps.push({
+              op: "frame",
+              error: `Specified elements for frame "${op.label ?? ""}" were not found`,
+            });
           }
         });
         break;
@@ -1856,6 +1873,11 @@ export const applyCanvasOps = async (
           }
         }
         if (!match) {
+          result.failedOps ??= [];
+          result.failedOps.push({
+            op: "library",
+            error: `Library item "${op.name ?? ""}" not found`,
+          });
           break;
         }
         const { duplicatedElements } = duplicateElements({
@@ -2139,8 +2161,23 @@ export const applyCanvasOps = async (
         break;
       }
       case "mermaid": {
-        const mermaidElements = await mermaidToElements(api, op, appState);
+        let mermaidElements: ExcalidrawElement[] = [];
+        try {
+          mermaidElements = await mermaidToElements(api, op, appState);
+        } catch (err: any) {
+          result.failedOps ??= [];
+          result.failedOps.push({
+            op: "mermaid",
+            error: err?.message || "Failed to parse Mermaid diagram syntax",
+          });
+          break;
+        }
         if (!mermaidElements.length) {
+          result.failedOps ??= [];
+          result.failedOps.push({
+            op: "mermaid",
+            error: "Mermaid diagram produced no elements",
+          });
           break;
         }
         const [x1, y1, x2, y2] = getCommonBounds(mermaidElements);
@@ -2310,15 +2347,46 @@ const mermaidToElements = async (
     .trim()
     .replace(/^```(?:mermaid)?\s*/i, "")
     .replace(/\s*```$/, "");
-  let parsed;
+  let parsed: any = null;
+  let lastError: unknown = null;
   try {
     parsed = await parseMermaidToExcalidraw(definition);
-  } catch {
+  } catch (primaryError) {
+    lastError = primaryError;
     try {
       parsed = await parseMermaidToExcalidraw(definition.replace(/"/g, "'"));
     } catch {
-      return [];
+      try {
+        const { getMermaidAutoFixCandidates } = await import(
+          "@excalidraw/excalidraw/components/TTDDialog/utils/mermaidAutoFix"
+        );
+        const { getErrorMessage } = await import(
+          "@excalidraw/excalidraw/components/TTDDialog/utils/mermaidError"
+        );
+        const errMsg = getErrorMessage(primaryError) || String(primaryError);
+        const candidates = getMermaidAutoFixCandidates(definition, errMsg);
+        for (const candidate of candidates) {
+          try {
+            parsed = await parseMermaidToExcalidraw(candidate);
+            if (parsed?.elements?.length) {
+              break;
+            }
+          } catch {
+            // try next candidate
+          }
+        }
+      } catch {
+        // ignore autofix loading error
+      }
     }
+  }
+
+  if (!parsed || !parsed.elements?.length) {
+    const errorDetails =
+      lastError instanceof Error
+        ? lastError.message
+        : String(lastError ?? "Syntax error");
+    throw new Error(`Mermaid diagram parsing failed: ${errorDetails}`);
   }
   // the requested (or current) look; fonts stay as measured by the parser
   const style = explicitStyle(
