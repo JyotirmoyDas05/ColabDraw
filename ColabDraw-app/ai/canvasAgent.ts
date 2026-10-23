@@ -574,6 +574,30 @@ export const CANVAS_FUNCTIONS = [
       required: ["query"],
     },
   },
+  {
+    name: "create_slide",
+    description:
+      "Creates a complete presentation slide frame containing a title, bullet points, and an optional structured diagram. Use this tool when asked for presentation slides or decks. Each call creates one framed slide; multiple calls are arranged side-by-side horizontally.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        title: S("Slide title (e.g. '1. Architecture Overview')"),
+        bullets: {
+          type: "ARRAY",
+          items: { type: "STRING" },
+          description: "Key bullet points for the slide",
+        },
+        diagram_mermaid: S(
+          "Optional Mermaid diagram code (flowchart, sequenceDiagram, etc.) illustrating this slide",
+        ),
+        diagram_position: S(
+          "Where to position the diagram relative to bullets: 'right' (default) or 'below'",
+          { enum: ["right", "below"] },
+        ),
+      },
+      required: ["title"],
+    },
+  },
 ];
 
 export const functionCallToOps = ({ name, args }: FunctionCall): CanvasOp[] => {
@@ -612,6 +636,58 @@ export const functionCallToOps = ({ name, args }: FunctionCall): CanvasOp[] => {
       return [{ op: "smooth", ...rest }];
     case "draw_freehand":
       return [{ op: "freehand", ...rest }];
+    case "create_slide": {
+      const slideId = Math.random().toString(36).slice(2, 7);
+      const titleId = `slide_t_${slideId}`;
+      const bulletsId = `slide_b_${slideId}`;
+      const diagId = `slide_d_${slideId}`;
+      const ops: CanvasOp[] = [];
+      const children: string[] = [titleId];
+
+      ops.push({
+        op: "add",
+        shape: "text",
+        label: args.title,
+        size: "large",
+        id: titleId,
+        side: "right",
+      });
+
+      if (Array.isArray(args.bullets) && args.bullets.length > 0) {
+        const bulletText = args.bullets.map((b: string) => `• ${b}`).join("\n\n");
+        ops.push({
+          op: "add",
+          shape: "text",
+          label: bulletText,
+          size: "small",
+          id: bulletsId,
+          near: titleId,
+          side: "below",
+        });
+        children.push(bulletsId);
+      }
+
+      if (args.diagram_mermaid) {
+        const nearId = children[children.length - 1];
+        const isBelow = args.diagram_position === "below";
+        ops.push({
+          op: "mermaid",
+          code: args.diagram_mermaid,
+          id: diagId,
+          near: isBelow ? nearId : titleId,
+          side: isBelow ? "below" : "right",
+        });
+        children.push(diagId);
+      }
+
+      ops.push({
+        op: "frame",
+        label: args.title,
+        ids: children,
+      });
+
+      return ops;
+    }
     case "find_library_art":
       return [];
     default:
@@ -641,10 +717,7 @@ PICTURES AND DRAWINGS:
 
 RECIPES FOR USER INTENTS:
 - Presentations / Slides ("presentation", "slides", "deck", "pitch"):
-  Create 3-4 horizontal frames (side: "right") representing slides. Each slide frame MUST have:
-  (1) A slide title using add_element (shape: "text", label: "...", fontSize: 28, id: "titleN") or a card container.
-  (2) A visual illustration: Call draw_mermaid (give it an id, e.g. "diagN", placed near the title with side: "bottom") for processes/subsystems, OR 2-3 connected components with library items/icons.
-  (3) Call create_frame with name set to the slide title and ids listing the slide's elements: ids: ["titleN", "diagN"]. Never produce text-only or sticky-note-only slides.
+  Prefer calling create_slide once per slide (e.g. 3-4 slides). For each slide, provide a concise title, 2-4 bullet points, and an illustrative diagram_mermaid (flowchart or sequence diagram). The slides are automatically laid out sequentially with their titles, bullets, and diagrams wrapped inside titled frames. Never produce text-only or sticky-note-only slides.
 - Architecture / Systems ("architecture", "system", "kernel", "stack", "pipeline"):
   Layer components cleanly (e.g. User Space -> System Calls -> Core Subsystems -> Drivers/Hardware) using draw_mermaid or stacked labeled boxes connected by arrows. Add frames or groups around related subsystems.
 - Infographics & Visual Summaries ("infographic", "visual guide", "overview"):
