@@ -174,10 +174,7 @@ export const findSlideIndexById = (
 /**
  * Clamps a slide index between 0 and totalSlides - 1.
  */
-export const clampSlideIndex = (
-  index: number,
-  totalSlides: number,
-): number => {
+export const clampSlideIndex = (index: number, totalSlides: number): number => {
   if (totalSlides <= 0) {
     return 0;
   }
