@@ -27,6 +27,15 @@ export interface PresentationSettings {
   isPublic: boolean;
 }
 
+export interface PresentationEndedInfo {
+  /** the presenter's display name, when the viewer watched someone else */
+  presenterUsername: string | null;
+  /** true when this client was watching another presenter */
+  wasFollower: boolean;
+  /** optional public link the participants can use to revisit the slides */
+  shareUrl: string | null;
+}
+
 export const DEFAULT_PRESENTATION_STATE: PresentationModeState = {
   isActive: false,
   currentSlideIndex: 0,
@@ -40,7 +49,7 @@ export const DEFAULT_PRESENTATION_STATE: PresentationModeState = {
 
 export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
   animateSlideMovement: true,
-  showCursor: false,
+  showCursor: true,
   showSlideTitle: false,
   isPublic: false,
 };
@@ -58,3 +67,9 @@ export const presentationSettingsAtom = atom<PresentationSettings>(
 );
 
 export const presentationSlideOrderAtom = atom<string[]>([]);
+
+/**
+ * Set when a presentation ends so both the presenter and the audience can see
+ * the "presentation has now ended" card. `null` means no ended card is shown.
+ */
+export const presentationEndedAtom = atom<PresentationEndedInfo | null>(null);

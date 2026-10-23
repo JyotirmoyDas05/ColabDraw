@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 
+import { presentationIcon } from "@excalidraw/excalidraw/components/icons";
+
 import type { ExcalidrawFrameLikeElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
-import { useAtom } from "../app-jotai";
+import { useAtom, appJotaiStore } from "../app-jotai";
+import { dashboardOpenAtom } from "../components/Dashboard";
 
 import {
   activeRemotePresentationAtom,
@@ -39,6 +42,8 @@ export const PresentationRemoteController: React.FC<
     useAtom(presentationModeAtom);
   const [settings, setSettings] = useAtom(presentationSettingsAtom);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirmEndOpen, setConfirmEndOpen] = useState(false);
+  const [isEnded, setIsEnded] = useState(false);
   const [remotePresentation, setRemotePresentation] = useAtom(
     activeRemotePresentationAtom,
   );
@@ -202,9 +207,7 @@ export const PresentationRemoteController: React.FC<
       } else if (msg.type === "UPDATE_SETTINGS" && msg.settings) {
         setSettings((prev) => ({ ...prev, ...msg.settings }));
       } else if (msg.type === "STOP_PRESENTATION") {
-        if (onExit) {
-          onExit();
-        }
+        setIsEnded(true);
       }
     });
 
@@ -268,7 +271,12 @@ export const PresentationRemoteController: React.FC<
     });
   };
 
-  const handleExit = async () => {
+  const handleExitClick = () => {
+    setConfirmEndOpen(true);
+  };
+
+  const handleConfirmEnd = async () => {
+    setConfirmEndOpen(false);
     presentationSync.send({ type: "STOP_PRESENTATION" });
     try {
       await collabAPI?.broadcastPresentationControl?.({
@@ -279,10 +287,10 @@ export const PresentationRemoteController: React.FC<
     }
     setPresentationState(DEFAULT_PRESENTATION_STATE);
     setRemotePresentation(null);
+    setIsEnded(true);
+  };
 
-    // Buffer 150ms for encrypted socket packet to leave client before unmount/route navigation
-    await new Promise((resolve) => setTimeout(resolve, 150));
-
+  const handleReturnToScene = () => {
     if (onExit) {
       onExit();
     } else {
@@ -291,6 +299,65 @@ export const PresentationRemoteController: React.FC<
       window.location.href = url.toString();
     }
   };
+
+  const handleReturnToDashboard = () => {
+    appJotaiStore.set(dashboardOpenAtom, true);
+    if (onExit) {
+      onExit();
+    } else {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("presentation");
+      window.location.href = url.toString();
+    }
+  };
+
+  // If presentation has ended, display the end-of-presentation card
+  if (isEnded) {
+    return (
+      <div className="presentation-remote presentation-remote--ended">
+        <header className="presentation-remote__header">
+          <h1 className="presentation-remote__title">{projectName}</h1>
+        </header>
+
+        <div className="presentation-remote__ended-content">
+          <div className="presentation-remote__ended-icon-wrapper">
+            <span className="presentation-remote__ended-icon">
+              {presentationIcon}
+            </span>
+          </div>
+
+          <h2 className="presentation-remote__ended-title">
+            The presentation has now ended
+          </h2>
+          <p className="presentation-remote__ended-subtitle">
+            Thank you for attending!
+          </p>
+
+          <div className="presentation-remote__ended-card">
+            <h3 className="presentation-remote__ended-card-title">
+              You can now:
+            </h3>
+            <div className="presentation-remote__ended-actions">
+              <button
+                type="button"
+                className="presentation-remote__ended-btn presentation-remote__ended-btn--primary"
+                onClick={handleReturnToScene}
+              >
+                Return to scene
+              </button>
+              <button
+                type="button"
+                className="presentation-remote__ended-btn presentation-remote__ended-btn--secondary"
+                onClick={handleReturnToDashboard}
+              >
+                Return to dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const activeSlide = slides[currentSlideIndex];
   const slideTitle = getSlideTitle(activeSlide, currentSlideIndex);
@@ -325,7 +392,7 @@ export const PresentationRemoteController: React.FC<
           <button
             type="button"
             className="presentation-remote__btn presentation-remote__btn--exit"
-            onClick={handleExit}
+            onClick={handleExitClick}
             title="Exit presentation"
           >
             <svg viewBox="0 0 24 24" fill="currentColor">
@@ -482,6 +549,76 @@ export const PresentationRemoteController: React.FC<
           </svg>
         </button>
       </footer>
+
+      {/* Confirmation Bottom Sheet */}
+      {confirmEndOpen && (
+        <div
+          className="presentation-remote__confirm-overlay"
+          onClick={() => setConfirmEndOpen(false)}
+        >
+          <div
+            className="presentation-remote__confirm-sheet"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="presentation-remote__confirm-sheet-handle" />
+            <div className="presentation-remote__confirm-header">
+              <h2 className="presentation-remote__confirm-title">
+                End presentation
+              </h2>
+              <p className="presentation-remote__confirm-desc">
+                Are you sure you want to end this presentation? Viewers won't be
+                able to follow along anymore.
+              </p>
+            </div>
+
+            <div className="presentation-remote__confirm-card">
+              <div className="presentation-remote__confirm-card-heading">
+                Before you go...
+              </div>
+              <div className="presentation-remote__confirm-row">
+                <div className="presentation-remote__confirm-row-info">
+                  <span className="presentation-remote__confirm-row-title">
+                    Public access
+                  </span>
+                  <span className="presentation-remote__confirm-row-sub">
+                    Make this presentation public so anyone with the link can
+                    view it
+                  </span>
+                </div>
+                <label className="presentation-toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={settings.isPublic}
+                    onChange={(e) =>
+                      handleSettingChange("isPublic", e.target.checked)
+                    }
+                  />
+                  <span className="presentation-toggle-switch__slider" />
+                </label>
+              </div>
+            </div>
+
+            <div className="presentation-remote__confirm-actions">
+              <button
+                type="button"
+                className="presentation-remote__confirm-btn presentation-remote__confirm-btn--danger"
+                onClick={handleConfirmEnd}
+              >
+                End presentation
+              </button>
+              <button
+                type="button"
+                className="presentation-remote__confirm-btn presentation-remote__confirm-btn--cancel"
+                onClick={() => setConfirmEndOpen(false)}
+              >
+                Keep presenting
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

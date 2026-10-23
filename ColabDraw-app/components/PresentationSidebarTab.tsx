@@ -14,6 +14,10 @@ import { useAtom } from "../app-jotai";
 import { presentationSlideOrderAtom } from "../presentation/presentationState";
 import { getOrderedSlides } from "../presentation/presentationUtils";
 import { SlideThumbnailCard } from "../presentation/SlideThumbnailCard";
+import {
+  exportPresentationToPdf,
+  exportPresentationToPptx,
+} from "../presentation/presentationExport";
 
 import "./PresentationSidebarTab.scss";
 
@@ -37,6 +41,69 @@ export const PresentationSidebarTab: React.FC<PresentationSidebarTabProps> = ({
   );
 
   const headerMenuRef = useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = useState<"pdf" | "pptx" | null>(null);
+
+  const handleExportPDF = async () => {
+    if (!excalidrawAPI || !slides.length) {
+      return;
+    }
+    try {
+      setIsExporting("pdf");
+      await exportPresentationToPdf({
+        excalidrawAPI,
+        slides,
+        onProgress: (p) => {
+          excalidrawAPI.setToast({
+            message: `Exporting PDF: slide ${p.current} of ${p.total}...`,
+            duration: 2000,
+          });
+        },
+      });
+      excalidrawAPI.setToast({
+        message: "PDF presentation exported successfully!",
+        duration: 3000,
+      });
+    } catch (err: any) {
+      console.error("PDF export failed:", err);
+      excalidrawAPI.setToast({
+        message: `PDF export failed: ${err.message || "Unknown error"}`,
+        duration: 4000,
+      });
+    } finally {
+      setIsExporting(null);
+    }
+  };
+
+  const handleExportPPTX = async () => {
+    if (!excalidrawAPI || !slides.length) {
+      return;
+    }
+    try {
+      setIsExporting("pptx");
+      await exportPresentationToPptx({
+        excalidrawAPI,
+        slides,
+        onProgress: (p) => {
+          excalidrawAPI.setToast({
+            message: `Exporting PPTX: slide ${p.current} of ${p.total}...`,
+            duration: 2000,
+          });
+        },
+      });
+      excalidrawAPI.setToast({
+        message: "PowerPoint presentation exported successfully!",
+        duration: 3000,
+      });
+    } catch (err: any) {
+      console.error("PPTX export failed:", err);
+      excalidrawAPI.setToast({
+        message: `PPTX export failed: ${err.message || "Unknown error"}`,
+        duration: 4000,
+      });
+    } finally {
+      setIsExporting(null);
+    }
+  };
 
   useEffect(() => {
     if (!headerMenuOpen) {
@@ -495,6 +562,66 @@ export const PresentationSidebarTab: React.FC<PresentationSidebarTabProps> = ({
                     <rect x="16" y="7" width="6" height="10" rx="1" />
                   </svg>
                   <span>Arrange horizontally</span>
+                </button>
+
+                <div className="presentation-slide-menu__divider" />
+
+                <button
+                  type="button"
+                  className="presentation-slide-menu__item"
+                  disabled={!slides.length || isExporting !== null}
+                  onClick={() => {
+                    setHeaderMenuOpen(false);
+                    handleExportPDF();
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                    <polyline points="10 9 9 9 8 9" />
+                  </svg>
+                  <span>
+                    {isExporting === "pdf"
+                      ? "Exporting PDF..."
+                      : "Export as PDF"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="presentation-slide-menu__item"
+                  disabled={!slides.length || isExporting !== null}
+                  onClick={() => {
+                    setHeaderMenuOpen(false);
+                    handleExportPPTX();
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                    <line x1="8" y1="21" x2="16" y2="21" />
+                    <line x1="12" y1="17" x2="12" y2="21" />
+                  </svg>
+                  <span>
+                    {isExporting === "pptx"
+                      ? "Exporting PPTX..."
+                      : "Export as PPTX"}
+                  </span>
                 </button>
 
                 <div className="presentation-slide-menu__divider" />
