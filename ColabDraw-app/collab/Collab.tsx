@@ -870,7 +870,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
               action === "NAVIGATE_SLIDE" &&
               typeof slideIndex === "number"
             ) {
-              presentationSync.send({ type: "NAVIGATE_SLIDE", slideIndex, slideId: decryptedData.payload.slideId || undefined });
+              presentationSync.send({
+                type: "NAVIGATE_SLIDE",
+                slideIndex,
+                slideId: decryptedData.payload.slideId || undefined,
+              });
             }
           }
           break;

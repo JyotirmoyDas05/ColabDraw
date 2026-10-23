@@ -516,11 +516,7 @@ export const usePresentationController = ({
     if (nextIndex < slides.length) {
       navigateToSlide(nextIndex);
     }
-  }, [
-    navigateToSlide,
-    presentationState.currentSlideIndex,
-    refreshSlides,
-  ]);
+  }, [navigateToSlide, presentationState.currentSlideIndex, refreshSlides]);
 
   const prevSlide = useCallback(() => {
     const prevIndex = presentationState.currentSlideIndex - 1;

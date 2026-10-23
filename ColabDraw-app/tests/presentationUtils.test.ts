@@ -158,7 +158,9 @@ describe("presentationUtils", () => {
         getAppState: vi.fn().mockReturnValue({}),
       } as any;
 
-      await expect(restoreViewerOriginalScene(mockAPI, null)).resolves.not.toThrow();
+      await expect(
+        restoreViewerOriginalScene(mockAPI, null),
+      ).resolves.not.toThrow();
       expect(mockAPI.resetScene).toHaveBeenCalled();
     });
   });
