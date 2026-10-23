@@ -96,8 +96,11 @@ import { usePresentationController } from "./presentation/usePresentationControl
 import {
   activeRemotePresentationAtom,
   DEFAULT_PRESENTATION_STATE,
+  presentationEndedAtom,
   presentationModeAtom,
+  rememberViewerPriorSceneId,
 } from "./presentation/presentationState";
+import { cleanPresentationUrl } from "./presentation/presentationUtils";
 import { STORAGE_KEYS, SYNC_BROWSER_TABS_TIMEOUT } from "./app_constants";
 import Collab, {
   collabAPIAtom,
@@ -110,7 +113,7 @@ import Collab, {
 import ViewOnlyBadge from "./collab/ViewOnlyBadge";
 import { AppFooter } from "./components/AppFooter";
 import { AppMainMenu } from "./components/AppMainMenu";
-import { Dashboard } from "./components/Dashboard";
+import { Dashboard, dashboardOpenAtom } from "./components/Dashboard";
 import { SceneSidebar, sceneSidebarOpenAtom } from "./components/SceneSidebar";
 import { SceneTitle } from "./components/SceneTitle";
 import { AppWelcomeScreen } from "./components/AppWelcomeScreen";
@@ -420,6 +423,8 @@ const ExcalidrawWrapper = () => {
   const [, setShareDialogState] = useAtom(shareDialogStateAtom);
   const [collabAPI] = useAtom(collabAPIAtom);
   const setPresentationMode = useSetAtom(presentationModeAtom);
+  const setPresentationEnded = useSetAtom(presentationEndedAtom);
+  const setDashboardOpen = useSetAtom(dashboardOpenAtom);
   const presentationController = usePresentationController({
     excalidrawAPI,
     collabAPI,
@@ -427,6 +432,36 @@ const ExcalidrawWrapper = () => {
       collabAPI?.broadcastPresentation(payload);
     },
   });
+
+  const handleStopWatching = useCallback(() => {
+    if (collabAPI && collabAPI.isCollaborating()) {
+      collabAPI.stopCollaboration(false);
+    }
+    collabAPI?.setUserToFollow(null);
+
+    if (excalidrawAPI) {
+      excalidrawAPI.resetScene();
+    }
+
+    cleanPresentationUrl();
+
+    const currentPres = presentationController.presentationState;
+    setPresentationEnded({
+      presenterUsername: currentPres.presenterUsername,
+      wasFollower: true,
+      shareUrl: null,
+      reason: "stopped",
+    });
+
+    setPresentationMode(DEFAULT_PRESENTATION_STATE);
+  }, [
+    collabAPI,
+    excalidrawAPI,
+    presentationController.presentationState,
+    setPresentationEnded,
+    setPresentationMode,
+  ]);
+
   const [isCollaborating] = useAtomWithInitialValue(isCollaboratingAtom, () => {
     return isCollaborationLink(window.location.href);
   });
@@ -1167,6 +1202,7 @@ const ExcalidrawWrapper = () => {
             presenterSocketId,
             presenterUsername,
           }) => {
+            rememberViewerPriorSceneId();
             collabAPI?.setUserToFollow({
               socketId: presenterSocketId as any,
               username: presenterUsername,
@@ -1176,17 +1212,15 @@ const ExcalidrawWrapper = () => {
               isActive: false,
               currentSlideIndex: remotePres?.slideIndex ?? 0,
               totalSlides: remotePres?.totalSlides ?? 0,
-              currentSlideId: null,
+              currentSlideId: remotePres?.slideId ?? null,
               isLive: false,
               isFollower: true,
               presenterSocketId,
               presenterUsername,
             });
           }}
-          onStopFollowing={() => {
-            collabAPI?.setUserToFollow(null);
-            setPresentationMode(DEFAULT_PRESENTATION_STATE);
-          }}
+          onStopFollowing={handleStopWatching}
+          onOpenDashboard={() => setDashboardOpen(true)}
         />
 
         {isRemotePresentation && (

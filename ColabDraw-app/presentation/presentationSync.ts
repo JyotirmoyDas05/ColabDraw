@@ -1,6 +1,6 @@
 import type { PresentationSettings } from "./presentationState";
 export type PresentationSyncMessage =
-  | { type: "NAVIGATE_SLIDE"; slideIndex: number }
+  | { type: "NAVIGATE_SLIDE"; slideIndex: number; slideId?: string }
   | { type: "NEXT_SLIDE" }
   | { type: "PREV_SLIDE" }
   | { type: "STOP_PRESENTATION" }
@@ -12,6 +12,7 @@ export type PresentationSyncMessage =
       slideTitle: string;
       isActive: boolean;
       slideIds?: string[];
+      slideId?: string;
     };
 
 const CHANNEL_NAME = "colabdraw_presentation_sync_channel";
@@ -83,6 +84,14 @@ export class PresentationSync {
         console.error("PresentationSync listener error:", err);
       }
     });
+  }
+
+  public destroy() {
+    if (this.channel) {
+      this.channel.close();
+      this.channel = null;
+    }
+    this.listeners.clear();
   }
 }
 

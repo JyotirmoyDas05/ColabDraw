@@ -256,6 +256,7 @@ class Portal {
     slideIndex: number;
     totalSlides: number;
     slideTitle?: string;
+    slideId?: string | null;
     settings?: Partial<PresentationSettings>;
   }) => {
     if (this.socket?.id) {
@@ -268,6 +269,7 @@ class Portal {
           slideIndex: payload.slideIndex,
           totalSlides: payload.totalSlides,
           slideTitle: payload.slideTitle,
+          slideId: payload.slideId,
           settings: payload.settings,
         },
       };
@@ -287,6 +289,7 @@ class Portal {
       | "STOP_PRESENTATION"
       | "UPDATE_SETTINGS";
     slideIndex?: number;
+    slideId?: string | null;
     settings?: Partial<PresentationSettings>;
   }) => {
     if (this.socket?.id) {

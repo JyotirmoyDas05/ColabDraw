@@ -1,4 +1,5 @@
-import { atom } from "../app-jotai";
+import { appJotaiStore, atom } from "../app-jotai";
+import { getActiveSceneId } from "../data/scenes";
 
 export interface PresentationModeState {
   isActive: boolean;
@@ -17,6 +18,7 @@ export interface RemotePresentationInfo {
   slideIndex: number;
   totalSlides: number;
   slideTitle?: string;
+  slideId?: string | null;
   settings?: Partial<PresentationSettings>;
 }
 
@@ -34,6 +36,8 @@ export interface PresentationEndedInfo {
   wasFollower: boolean;
   /** optional public link the participants can use to revisit the slides */
   shareUrl: string | null;
+  /** whether the viewer voluntarily stopped or the presenter ended it */
+  reason?: "stopped" | "ended";
 }
 
 export const DEFAULT_PRESENTATION_STATE: PresentationModeState = {
@@ -73,3 +77,36 @@ export const presentationSlideOrderAtom = atom<string[]>([]);
  * the "presentation has now ended" card. `null` means no ended card is shown.
  */
 export const presentationEndedAtom = atom<PresentationEndedInfo | null>(null);
+
+export const viewerPriorSceneIdAtom = atom<string | null>(null);
+
+const PRIOR_SCENE_KEY = "colabdraw_viewer_prior_scene_id";
+
+export const rememberViewerPriorSceneId = (explicitId?: string | null) => {
+  const id = explicitId || getActiveSceneId();
+  if (id) {
+    try {
+      sessionStorage.setItem(PRIOR_SCENE_KEY, id);
+    } catch {}
+    appJotaiStore.set(viewerPriorSceneIdAtom, id);
+  }
+};
+
+export const getViewerPriorSceneId = (): string | null => {
+  const mem = appJotaiStore.get(viewerPriorSceneIdAtom);
+  if (mem) {
+    return mem;
+  }
+  try {
+    return sessionStorage.getItem(PRIOR_SCENE_KEY);
+  } catch {
+    return null;
+  }
+};
+
+export const clearViewerPriorSceneId = () => {
+  try {
+    sessionStorage.removeItem(PRIOR_SCENE_KEY);
+  } catch {}
+  appJotaiStore.set(viewerPriorSceneIdAtom, null);
+};

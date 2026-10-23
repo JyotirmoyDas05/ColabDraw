@@ -20,12 +20,14 @@ import {
 import { buildPresentationJoinLink } from "./presentationLayout";
 import {
   activeRemotePresentationAtom,
+  clearViewerPriorSceneId,
+  getViewerPriorSceneId,
   type PresentationModeState,
   presentationEndedAtom,
   presentationSettingsAtom,
 } from "./presentationState";
 import { presentationSync } from "./presentationSync";
-import { getSlideTitle } from "./presentationUtils";
+import { getSlideTitle, restoreViewerOriginalScene } from "./presentationUtils";
 import { SlideThumbnailCard } from "./SlideThumbnailCard";
 
 import "./PresentationHUD.scss";
@@ -45,6 +47,7 @@ interface PresentationHUDProps {
     presenterUsername: string;
   }) => void;
   onStopFollowing?: () => void;
+  onOpenDashboard?: () => void;
   isLaserActive?: boolean;
   isCollaborating?: boolean;
   appTheme?: string;
@@ -65,6 +68,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
   onToggleLive,
   onJoinRemotePresentation,
   onStopFollowing,
+  onOpenDashboard,
   isLaserActive = false,
   isCollaborating = false,
   appTheme = "light",
@@ -336,17 +340,29 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
 
       {/* Follower bar if watching someone else's presentation */}
       {presentationState.isFollower && onStopFollowing && (
-        <div className="presentation-hud">
+        <div className="presentation-hud presentation-hud--follower">
           <span className="presentation-hud__pulse-dot" />
-          <span style={{ fontSize: "13px", fontWeight: 500, padding: "0 6px" }}>
+          <span className="presentation-hud__follower-label">
             Watching {presentationState.presenterUsername}&apos;s presentation
           </span>
           <button
             type="button"
-            className="presentation-hud__button presentation-hud__button--exit"
+            className="presentation-hud__stop-btn"
             onClick={onStopFollowing}
           >
-            Stop watching
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+            </svg>
+            <span>Stop watching</span>
           </button>
         </div>
       )}
@@ -857,7 +873,11 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
       {presentationEnded && (
         <div className="presentation-ended-overlay">
           <div
-            className="presentation-ended-card"
+            className={`presentation-ended-card ${
+              presentationEnded.wasFollower
+                ? "presentation-ended-card--audience"
+                : ""
+            }`}
             role="dialog"
             aria-modal="true"
             aria-label="Presentation ended"
@@ -866,28 +886,113 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
               {presentationIcon}
             </span>
             <h2 className="presentation-ended-card__title">
-              The presentation has now ended
+              {presentationEnded.wasFollower
+                ? presentationEnded.reason === "stopped"
+                  ? "You have left the presentation"
+                  : "The presentation has ended"
+                : "The presentation has now ended"}
             </h2>
             <p className="presentation-ended-card__subtitle">
-              Thank you for attending!
+              {presentationEnded.wasFollower
+                ? "Choose where you would like to go next:"
+                : "Thank you for presenting!"}
             </p>
-            {presentationEnded.shareUrl && (
-              <a
-                className="presentation-ended-card__link"
-                href={presentationEnded.shareUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                View the slides
-              </a>
+
+            {presentationEnded.wasFollower ? (
+              <div className="presentation-ended-card__choices">
+                <button
+                  type="button"
+                  className="presentation-ended-card__action-btn presentation-ended-card__action-btn--dashboard"
+                  onClick={async () => {
+                    setPresentationEnded(null);
+                    if (excalidrawAPI) {
+                      const priorId = getViewerPriorSceneId();
+                      await restoreViewerOriginalScene(excalidrawAPI, priorId);
+                      clearViewerPriorSceneId();
+                    }
+                    onOpenDashboard?.();
+                  }}
+                >
+                  <div className="presentation-ended-card__action-icon">
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="20"
+                      height="20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                    </svg>
+                  </div>
+                  <div className="presentation-ended-card__action-content">
+                    <span className="presentation-ended-card__action-title">
+                      Go to Dashboard
+                    </span>
+                    <span className="presentation-ended-card__action-desc">
+                      View and manage all your saved scenes
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="presentation-ended-card__action-btn presentation-ended-card__action-btn--scene"
+                  onClick={async () => {
+                    setPresentationEnded(null);
+                    if (excalidrawAPI) {
+                      const priorId = getViewerPriorSceneId();
+                      await restoreViewerOriginalScene(excalidrawAPI, priorId);
+                      clearViewerPriorSceneId();
+                    }
+                  }}
+                >
+                  <div className="presentation-ended-card__action-icon">
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="20"
+                      height="20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                  </div>
+                  <div className="presentation-ended-card__action-content">
+                    <span className="presentation-ended-card__action-title">
+                      Return to My Scene
+                    </span>
+                    <span className="presentation-ended-card__action-desc">
+                      Resume working on your local canvas
+                    </span>
+                  </div>
+                </button>
+              </div>
+            ) : (
+              <>
+                {presentationEnded.shareUrl && (
+                  <a
+                    className="presentation-ended-card__link"
+                    href={presentationEnded.shareUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View the slides
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className="presentation-ended-card__button"
+                  onClick={() => setPresentationEnded(null)}
+                >
+                  Return to scene
+                </button>
+              </>
             )}
-            <button
-              type="button"
-              className="presentation-ended-card__button"
-              onClick={() => setPresentationEnded(null)}
-            >
-              Return to scene
-            </button>
           </div>
         </div>
       )}
