@@ -446,11 +446,13 @@ export const CANVAS_FUNCTIONS = [
   {
     name: "draw_mermaid",
     description:
-      "Draw a complete diagram from Mermaid code (flowchart, sequenceDiagram or classDiagram), laid out automatically. Use it for a brand-new diagram of four or more steps, or to rebuild an existing diagram from scratch (then list what it replaces). Never use it to tweak a diagram that is already on the board.",
+      "Draw a complete diagram from Mermaid code (flowchart, sequenceDiagram, or classDiagram), laid out automatically. Use it for a brand-new diagram of four or more steps, a visual illustration under a slide or topic, or to rebuild an existing diagram. Assign an id to wrap the diagram inside a frame with create_frame.",
     parameters: {
       type: "OBJECT",
       properties: {
         code: S("Mermaid source, no code fences"),
+        id: S("Your new id for this diagram (e.g. n1, diag1) so create_frame or arrows can reference it"),
+        ...PLACEMENT,
         replaces: IDS(
           'ONLY when the user asked to redo, rebuild or restructure the diagram already on the board: the ids of that diagram; they are deleted and the new one takes their place. Never set it for a new, unrelated diagram. ["all"] means everything listed in CANVAS.',
         ),
@@ -637,10 +639,19 @@ PICTURES AND DRAWINGS:
 - Pictures the user attached are numbered in the message ("Attached pictures: 1 = ..."). You can see them. To put one on the board unchanged, call insert_image. To redraw one by hand with the pencil tool ("draw this logo", "sketch it"), call trace_image. Do not rebuild a picture out of rectangles and ellipses.
 - Elements listed as hand-drawing are freehand strokes. To improve or clean up a hand drawing or outline, call smooth_drawing on it (light, medium or strong). Use draw_freehand to redraw a simple shape yourself, replacing the old one. Never answer a request about a drawing or picture by adding a flowchart.
 
+RECIPES FOR USER INTENTS:
+- Presentations / Slides ("presentation", "slides", "deck", "pitch"):
+  Create 3-4 horizontal frames (side: "right") representing slides. Each slide frame MUST have:
+  (1) A slide title using add_element (shape: "text", label: "...", fontSize: 28, id: "titleN") or a card container.
+  (2) A visual illustration: Call draw_mermaid (give it an id, e.g. "diagN", placed near the title with side: "bottom") for processes/subsystems, OR 2-3 connected components with library items/icons.
+  (3) Call create_frame with name set to the slide title and ids listing the slide's elements: ids: ["titleN", "diagN"]. Never produce text-only or sticky-note-only slides.
+- Architecture / Systems ("architecture", "system", "kernel", "stack", "pipeline"):
+  Layer components cleanly (e.g. User Space -> System Calls -> Core Subsystems -> Drivers/Hardware) using draw_mermaid or stacked labeled boxes connected by arrows. Add frames or groups around related subsystems.
+- Infographics & Visual Summaries ("infographic", "visual guide", "overview"):
+  Place a header title banner at the top, followed by 2-3 structured columns or cards comparing concepts, decorated with library icons or small flowcharts.
+
 MAKING GOOD, DISTINCT DIAGRAMS:
 - Use the vocabulary: rectangle = component, ellipse = start/end or actor, diamond = decision, sticky = note/annotation, text = title/label, frames = titled sections or presentation slides, groups = things that belong together.
-- For presentation slides or multi-topic layouts: structure each slide/topic clearly, and enclose each topic's elements in a titled frame with create_frame.
-- When visual representations, infographics, or diagrams are requested under topics: create structured diagrams or flowchart representations using draw_mermaid or appropriate shapes with connections, rather than just simple text sticky notes.
 - Color with meaning (green success/done, red error/danger, blue services, yellow notes/warnings, violet data, orange external), not decoration; keep to 3-4 colors. Use fill patterns, thickness, font and size to show hierarchy: a large "display" or "hand-drawn" title, bold outlines for the main path, dashed lines for optional or async flows, a different arrowhead for a different relation (diamond for composition, cardinality heads for database (ER) relations, circle for events).
 - Add a title and a short legend or sticky-note annotation when it helps. Wrap sections in frames. Use library items when one fits (icons, symbols, architecture figures). If CANVAS lists Online libraries that fit what the user asked for, call insert_library_item with library set to that library's name and name set to one of its items; it is saved to their library automatically. You can also call find_library_art to search public libraries for matching art and icons. The user can ask you to swap shapes for icons ("use icons instead of boxes"): call insert_library_item once per shape with replace set to that shape's id; the icon takes its place, keeps its arrows and its text. Do that instead of saying you can't.
 - Omit style options to match the user's current style; only override when asked or when it carries meaning.
@@ -1263,11 +1274,20 @@ export const applyCanvasOps = async (
   const boundTextOf = (element: ExcalidrawElement) =>
     getBoundTextElement(element, scene.getNonDeletedElementsMap());
 
+  /** map of refId to all elements in a multi-element insert (mermaid or library item) */
+  const multiRefElements = new Map<string, string[]>();
+
   /** let later calls refer to an inserted group by its main shape, so arrows can bind to it */
   const registerInserted = (
     refId: string | undefined,
     placed: readonly ExcalidrawElement[],
   ) => {
+    if (refId) {
+      multiRefElements.set(
+        refId,
+        placed.map((element) => element.id),
+      );
+    }
     const bindable = placed.filter((element) =>
       ["rectangle", "ellipse", "diamond"].includes(element.type),
     );
@@ -1699,12 +1719,27 @@ export const applyCanvasOps = async (
       case "frame": {
         deferred.push(() => {
           const children = (op.ids ?? [])
-            .map((ref) => {
-              const element = existing(ref);
+            .flatMap((ref) => {
+              const multi = multiRefElements.get(ref);
+              if (multi?.length) {
+                for (const mId of multi) {
+                  const el =
+                    scene.getNonDeletedElement(mId) ??
+                    extraElements.find((e) => e.id === mId);
+                  if (el) {
+                    proxyFor(el);
+                  }
+                }
+                return multi;
+              }
+              const element =
+                existing(ref) ??
+                extraElements.find((e) => e.id === resolve(ref));
               if (element) {
                 proxyFor(element);
               }
-              return resolve(ref);
+              const resolved = resolve(ref);
+              return resolved ? [resolved] : [];
             })
             .filter(Boolean) as string[];
           if (children.length) {
@@ -2226,16 +2261,20 @@ export const applyCanvasOps = async (
           occupied.push(box);
           lastPlaced = box;
         } else {
-          // a new diagram goes to free space, never on top of the user's work
-          box = place(size, { near: undefined, side: op.side });
+          // a new diagram goes to free space or near a referenced element
+          box = place(size, op);
         }
+        const placedElements: ExcalidrawElement[] = [];
         for (const element of mermaidElements) {
-          extraElements.push({
+          const placed = {
             ...element,
             x: element.x - x1 + box.x,
             y: element.y - y1 + box.y,
-          });
+          };
+          extraElements.push(placed);
+          placedElements.push(placed);
         }
+        registerInserted(op.id, placedElements);
         result.added += mermaidElements.filter(
           (element) => !(element.type === "text" && element.containerId),
         ).length;
@@ -2274,6 +2313,7 @@ export const applyCanvasOps = async (
             ...(extraElements[index].boundElements ?? []),
             ...(element.boundElements ?? []),
           ],
+          ...(element.frameId ? { frameId: element.frameId } : null),
         } as ExcalidrawElement;
       }
       continue;
