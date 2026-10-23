@@ -261,22 +261,23 @@ export const AIAssistant = ({
           await snapshotElements(excalidrawAPI, context.visualElements),
         );
       }
-      const {
+      const contents = [
+        ...history.map(
+          (message): GeminiContent => ({
+            role: message.role,
+            parts: [{ text: message.text }],
+          }),
+        ),
+        { role: "user", parts },
+      ];
+      let {
         text: answer,
         calls,
         trial: nextTrial,
       } = await generate(
         {
           systemInstruction: { parts: [{ text: CANVAS_SYSTEM_PROMPT }] },
-          contents: [
-            ...history.map(
-              (message): GeminiContent => ({
-                role: message.role,
-                parts: [{ text: message.text }],
-              }),
-            ),
-            { role: "user", parts },
-          ],
+          contents,
           tools: [{ functionDeclarations: CANVAS_FUNCTIONS }],
           generationConfig: { temperature: 0.3 },
         },
@@ -285,17 +286,76 @@ export const AIAssistant = ({
       if (nextTrial) {
         setTrial(nextTrial);
       }
-      const response = {
-        reply: answer.trim() || (calls.length ? "Done." : "I'm not sure."),
-        ops: calls.flatMap(functionCallToOps),
-      };
+
+      if (calls.some((call) => call.name === "find_library_art")) {
+        const artCalls = calls.filter((c) => c.name === "find_library_art");
+        const foundContexts = (
+          await Promise.all(
+            artCalls.map((c) =>
+              searchOnlineLibraries(String(c.args?.query ?? "")),
+            ),
+          )
+        ).filter(Boolean);
+
+        if (foundContexts.length) {
+          try {
+            const secondTurn = await generate(
+              {
+                systemInstruction: { parts: [{ text: CANVAS_SYSTEM_PROMPT }] },
+                contents: [
+                  ...contents,
+                  {
+                    role: "model",
+                    parts: [
+                      ...(answer ? [{ text: answer }] : []),
+                      ...calls.map((c) => ({
+                        functionCall: { name: c.name, args: c.args },
+                      })),
+                    ],
+                  },
+                  {
+                    role: "user",
+                    parts: [
+                      {
+                        text: `${foundContexts.join("\n\n")}\n\nPlease insert the appropriate items now using insert_library_item.`,
+                      },
+                    ],
+                  },
+                ],
+                tools: [{ functionDeclarations: CANVAS_FUNCTIONS }],
+                generationConfig: { temperature: 0.3 },
+              },
+              { signal: controller.signal },
+            );
+            if (secondTurn.calls.length) {
+              calls = [
+                ...calls.filter((c) => c.name !== "find_library_art"),
+                ...secondTurn.calls,
+              ];
+              answer = secondTurn.text || answer;
+            }
+            if (secondTurn.trial) {
+              setTrial(secondTurn.trial);
+            }
+          } catch (e) {
+            console.warn("Follow-up generation for find_library_art failed:", e);
+          }
+        }
+      }
+      const fallbackReply = calls.length
+        ? (calls.flatMap(functionCallToOps).length
+            ? "Done."
+            : "I couldn't perform that action on the board.")
+        : "I'm not sure.";
+      let reply = answer.trim() || fallbackReply;
+      const ops = calls.flatMap(functionCallToOps);
       let note: string | undefined;
-      if (response.ops.length) {
+      if (ops.length) {
         setStatus("drawing");
         try {
           const result = await applyCanvasOps(
             excalidrawAPI,
-            response.ops,
+            ops,
             context.aliases,
             pictures.map((picture) => ({
               name: picture.name,
@@ -303,16 +363,41 @@ export const AIAssistant = ({
               url: picture.url,
             })),
           );
+          const totalOpsApplied =
+            result.added + result.changed + result.deleted + result.libraryAdded;
+
+          if (totalOpsApplied === 0) {
+            const failureDetail = result.failedOps?.[0]?.error;
+            const message = failureDetail
+              ? `I couldn't apply that change: ${failureDetail}.`
+              : "I couldn't apply those changes to the board. Please try selecting the elements or rephrasing.";
+            setMessages((prev) => [
+              ...prev,
+              createMessage("model", reply === "Done." ? message : reply, {
+                note: "no changes",
+              }),
+            ]);
+            setStatus("idle");
+            return;
+          }
+
           const summary = describeResult(result);
-          note = summary ? `${summary} · Ctrl+Z to undo` : undefined;
-        } catch (applyError) {
+          note = summary
+            ? `${summary}${
+                result.failedOps?.length ? ` (${result.failedOps.length} failed)` : ""
+              } · Ctrl+Z to undo`
+            : undefined;
+        } catch (applyError: any) {
           // the AI answered; the board just couldn't take that change
           console.error(applyError);
+          const isMermaid = applyError?.message?.includes("Mermaid");
           setMessages((prev) => [
             ...prev,
             createMessage(
               "model",
-              "I couldn't apply that to the board. Try rephrasing, or ask for a smaller change.",
+              isMermaid
+                ? "I tried to draw the Mermaid diagram, but its syntax was invalid or unsupported. Try asking for a simpler flowchart or diagram."
+                : "I couldn't apply that to the board. Try rephrasing, or ask for a smaller change.",
               { error: "network" },
             ),
           ]);
@@ -322,7 +407,7 @@ export const AIAssistant = ({
       }
       setMessages((prev) => [
         ...prev,
-        createMessage("model", response.reply, { note }),
+        createMessage("model", reply, { note }),
       ]);
       setStatus("done");
     } catch (error: any) {
@@ -520,17 +605,27 @@ export const AIAssistant = ({
             }),
           );
           const ops = calls.flatMap(functionCallToOps);
-          const result = ops.length
-            ? await applyCanvasOps(excalidrawAPI, ops, liveAliasesRef.current)
-            : null;
+          let result: ApplyResult | null = null;
+          try {
+            result = ops.length
+              ? await applyCanvasOps(excalidrawAPI, ops, liveAliasesRef.current)
+              : null;
+          } catch (liveErr) {
+            console.error("Live applyCanvasOps error:", liveErr);
+          }
           if (result) {
             lastRole = null;
+            const totalOpsApplied =
+              result.added + result.changed + result.deleted + result.libraryAdded;
             setMessages((prev) => [
               ...prev,
               createMessage("model", "", {
-                note: `${
-                  describeResult(result) || "no changes"
-                } · Ctrl+Z to undo`,
+                note:
+                  totalOpsApplied > 0
+                    ? `${describeResult(result)} · Ctrl+Z to undo`
+                    : result?.failedOps?.[0]?.error
+                    ? `could not apply: ${result.failedOps[0].error}`
+                    : "no changes",
               }),
             ]);
           }

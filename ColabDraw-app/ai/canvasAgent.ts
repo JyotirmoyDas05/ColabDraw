@@ -446,11 +446,13 @@ export const CANVAS_FUNCTIONS = [
   {
     name: "draw_mermaid",
     description:
-      "Draw a complete diagram from Mermaid code (flowchart, sequenceDiagram or classDiagram), laid out automatically. Use it for a brand-new diagram of four or more steps, or to rebuild an existing diagram from scratch (then list what it replaces). Never use it to tweak a diagram that is already on the board.",
+      "Draw a complete diagram from Mermaid code (flowchart, sequenceDiagram, or classDiagram), laid out automatically. Use it for a brand-new diagram of four or more steps, a visual illustration under a slide or topic, or to rebuild an existing diagram. Assign an id to wrap the diagram inside a frame with create_frame.",
     parameters: {
       type: "OBJECT",
       properties: {
         code: S("Mermaid source, no code fences"),
+        id: S("Your new id for this diagram (e.g. n1, diag1) so create_frame or arrows can reference it"),
+        ...PLACEMENT,
         replaces: IDS(
           'ONLY when the user asked to redo, rebuild or restructure the diagram already on the board: the ids of that diagram; they are deleted and the new one takes their place. Never set it for a new, unrelated diagram. ["all"] means everything listed in CANVAS.',
         ),
@@ -560,6 +562,42 @@ export const CANVAS_FUNCTIONS = [
       required: ["points"],
     },
   },
+  {
+    name: "find_library_art",
+    description:
+      "Searches the public Excalidraw libraries (libraries.excalidraw.com) for ready-made art such as icons or symbols that are not installed yet. Returns matching library names and item names to use with insert_library_item.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        query: S("What to look for, e.g. aws icons, linux, server, stick figures"),
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "create_slide",
+    description:
+      "Creates a complete presentation slide frame containing a title, bullet points, and an optional structured diagram. Use this tool when asked for presentation slides or decks. Each call creates one framed slide; multiple calls are arranged side-by-side horizontally.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        title: S("Slide title (e.g. '1. Architecture Overview')"),
+        bullets: {
+          type: "ARRAY",
+          items: { type: "STRING" },
+          description: "Key bullet points for the slide",
+        },
+        diagram_mermaid: S(
+          "Optional Mermaid diagram code (flowchart, sequenceDiagram, etc.) illustrating this slide",
+        ),
+        diagram_position: S(
+          "Where to position the diagram relative to bullets: 'right' (default) or 'below'",
+          { enum: ["right", "below"] },
+        ),
+      },
+      required: ["title"],
+    },
+  },
 ];
 
 export const functionCallToOps = ({ name, args }: FunctionCall): CanvasOp[] => {
@@ -598,6 +636,60 @@ export const functionCallToOps = ({ name, args }: FunctionCall): CanvasOp[] => {
       return [{ op: "smooth", ...rest }];
     case "draw_freehand":
       return [{ op: "freehand", ...rest }];
+    case "create_slide": {
+      const slideId = Math.random().toString(36).slice(2, 7);
+      const titleId = `slide_t_${slideId}`;
+      const bulletsId = `slide_b_${slideId}`;
+      const diagId = `slide_d_${slideId}`;
+      const ops: CanvasOp[] = [];
+      const children: string[] = [titleId];
+
+      ops.push({
+        op: "add",
+        shape: "text",
+        label: args.title,
+        size: "large",
+        id: titleId,
+        side: "right",
+      });
+
+      if (Array.isArray(args.bullets) && args.bullets.length > 0) {
+        const bulletText = args.bullets.map((b: string) => `• ${b}`).join("\n\n");
+        ops.push({
+          op: "add",
+          shape: "text",
+          label: bulletText,
+          size: "small",
+          id: bulletsId,
+          near: titleId,
+          side: "below",
+        });
+        children.push(bulletsId);
+      }
+
+      if (args.diagram_mermaid) {
+        const nearId = children[children.length - 1];
+        const isBelow = args.diagram_position === "below";
+        ops.push({
+          op: "mermaid",
+          code: args.diagram_mermaid,
+          id: diagId,
+          near: isBelow ? nearId : titleId,
+          side: isBelow ? "below" : "right",
+        });
+        children.push(diagId);
+      }
+
+      ops.push({
+        op: "frame",
+        label: args.title,
+        ids: children,
+      });
+
+      return ops;
+    }
+    case "find_library_art":
+      return [];
     default:
       return [];
   }
@@ -623,10 +715,18 @@ PICTURES AND DRAWINGS:
 - Pictures the user attached are numbered in the message ("Attached pictures: 1 = ..."). You can see them. To put one on the board unchanged, call insert_image. To redraw one by hand with the pencil tool ("draw this logo", "sketch it"), call trace_image. Do not rebuild a picture out of rectangles and ellipses.
 - Elements listed as hand-drawing are freehand strokes. To improve or clean up a hand drawing or outline, call smooth_drawing on it (light, medium or strong). Use draw_freehand to redraw a simple shape yourself, replacing the old one. Never answer a request about a drawing or picture by adding a flowchart.
 
+RECIPES FOR USER INTENTS:
+- Presentations / Slides ("presentation", "slides", "deck", "pitch"):
+  Prefer calling create_slide once per slide (e.g. 3-4 slides). For each slide, provide a concise title, 2-4 bullet points, and an illustrative diagram_mermaid (flowchart or sequence diagram). The slides are automatically laid out sequentially with their titles, bullets, and diagrams wrapped inside titled frames. Never produce text-only or sticky-note-only slides.
+- Architecture / Systems ("architecture", "system", "kernel", "stack", "pipeline"):
+  Layer components cleanly (e.g. User Space -> System Calls -> Core Subsystems -> Drivers/Hardware) using draw_mermaid or stacked labeled boxes connected by arrows. Add frames or groups around related subsystems.
+- Infographics & Visual Summaries ("infographic", "visual guide", "overview"):
+  Place a header title banner at the top, followed by 2-3 structured columns or cards comparing concepts, decorated with library icons or small flowcharts.
+
 MAKING GOOD, DISTINCT DIAGRAMS:
-- Use the vocabulary: rectangle = component, ellipse = start/end or actor, diamond = decision, sticky = note/annotation, text = title/label, frames = titled sections, groups = things that belong together.
+- Use the vocabulary: rectangle = component, ellipse = start/end or actor, diamond = decision, sticky = note/annotation, text = title/label, frames = titled sections or presentation slides, groups = things that belong together.
 - Color with meaning (green success/done, red error/danger, blue services, yellow notes/warnings, violet data, orange external), not decoration; keep to 3-4 colors. Use fill patterns, thickness, font and size to show hierarchy: a large "display" or "hand-drawn" title, bold outlines for the main path, dashed lines for optional or async flows, a different arrowhead for a different relation (diamond for composition, cardinality heads for database (ER) relations, circle for events).
-- Add a title and a short legend or sticky-note annotation when it helps. Wrap sections in frames. Use library items when one fits (icons, symbols). If CANVAS lists Online libraries that fit what the user asked for, call insert_library_item with library set to that library's name and name set to one of its items; it is saved to their library automatically. The user can ask you to swap shapes for icons ("use icons instead of boxes"): call insert_library_item once per shape with replace set to that shape's id; the icon takes its place, keeps its arrows and its text. Do that instead of saying you can't.
+- Add a title and a short legend or sticky-note annotation when it helps. Wrap sections in frames. Use library items when one fits (icons, symbols, architecture figures). If CANVAS lists Online libraries that fit what the user asked for, call insert_library_item with library set to that library's name and name set to one of its items; it is saved to their library automatically. You can also call find_library_art to search public libraries for matching art and icons. The user can ask you to swap shapes for icons ("use icons instead of boxes"): call insert_library_item once per shape with replace set to that shape's id; the icon takes its place, keeps its arrows and its text. Do that instead of saying you can't.
 - Omit style options to match the user's current style; only override when asked or when it carries meaning.
 - Keep labels short. Only touch what the user asked about. If the request is ambiguous, make a sensible choice.`;
 
@@ -1101,6 +1201,7 @@ export type ApplyResult = {
   /** online library items saved to the user's library */
   libraryAdded: number;
   newElementIds: string[];
+  failedOps?: { op: string; error: string }[];
 };
 
 /** one pencil stroke through absolute scene points */
@@ -1246,11 +1347,20 @@ export const applyCanvasOps = async (
   const boundTextOf = (element: ExcalidrawElement) =>
     getBoundTextElement(element, scene.getNonDeletedElementsMap());
 
+  /** map of refId to all elements in a multi-element insert (mermaid or library item) */
+  const multiRefElements = new Map<string, string[]>();
+
   /** let later calls refer to an inserted group by its main shape, so arrows can bind to it */
   const registerInserted = (
     refId: string | undefined,
     placed: readonly ExcalidrawElement[],
   ) => {
+    if (refId) {
+      multiRefElements.set(
+        refId,
+        placed.map((element) => element.id),
+      );
+    }
     const bindable = placed.filter((element) =>
       ["rectangle", "ellipse", "diamond"].includes(element.type),
     );
@@ -1344,6 +1454,11 @@ export const applyCanvasOps = async (
     const fromBox = boxOfRef(op.from);
     const toBox = boxOfRef(op.to);
     if (!fromId || !toId || !fromBox || !toBox || fromId === toId) {
+      result.failedOps ??= [];
+      result.failedOps.push({
+        op: "connect",
+        error: `Could not connect: ${!fromId ? `source "${op.from}" not found` : !toId ? `target "${op.to}" not found` : "invalid endpoints"}`,
+      });
       return;
     }
     for (const ref of [op.from, op.to]) {
@@ -1521,6 +1636,11 @@ export const applyCanvasOps = async (
         }
         const element = existing(op.id);
         if (!element) {
+          result.failedOps ??= [];
+          result.failedOps.push({
+            op: "update",
+            error: `Element "${op.id}" not found on canvas`,
+          });
           break;
         }
         const isArrow = isArrowElement(element);
@@ -1672,12 +1792,27 @@ export const applyCanvasOps = async (
       case "frame": {
         deferred.push(() => {
           const children = (op.ids ?? [])
-            .map((ref) => {
-              const element = existing(ref);
+            .flatMap((ref) => {
+              const multi = multiRefElements.get(ref);
+              if (multi?.length) {
+                for (const mId of multi) {
+                  const el =
+                    scene.getNonDeletedElement(mId) ??
+                    extraElements.find((e) => e.id === mId);
+                  if (el) {
+                    proxyFor(el);
+                  }
+                }
+                return multi;
+              }
+              const element =
+                existing(ref) ??
+                extraElements.find((e) => e.id === resolve(ref));
               if (element) {
                 proxyFor(element);
               }
-              return resolve(ref);
+              const resolved = resolve(ref);
+              return resolved ? [resolved] : [];
             })
             .filter(Boolean) as string[];
           if (children.length) {
@@ -1688,6 +1823,12 @@ export const applyCanvasOps = async (
               name: op.label,
             });
             result.added++;
+          } else if ((op.ids ?? []).length > 0) {
+            result.failedOps ??= [];
+            result.failedOps.push({
+              op: "frame",
+              error: `Specified elements for frame "${op.label ?? ""}" were not found`,
+            });
           }
         });
         break;
@@ -1856,6 +1997,11 @@ export const applyCanvasOps = async (
           }
         }
         if (!match) {
+          result.failedOps ??= [];
+          result.failedOps.push({
+            op: "library",
+            error: `Library item "${op.name ?? ""}" not found`,
+          });
           break;
         }
         const { duplicatedElements } = duplicateElements({
@@ -2139,8 +2285,23 @@ export const applyCanvasOps = async (
         break;
       }
       case "mermaid": {
-        const mermaidElements = await mermaidToElements(api, op, appState);
+        let mermaidElements: ExcalidrawElement[] = [];
+        try {
+          mermaidElements = await mermaidToElements(api, op, appState);
+        } catch (err: any) {
+          result.failedOps ??= [];
+          result.failedOps.push({
+            op: "mermaid",
+            error: err?.message || "Failed to parse Mermaid diagram syntax",
+          });
+          break;
+        }
         if (!mermaidElements.length) {
+          result.failedOps ??= [];
+          result.failedOps.push({
+            op: "mermaid",
+            error: "Mermaid diagram produced no elements",
+          });
           break;
         }
         const [x1, y1, x2, y2] = getCommonBounds(mermaidElements);
@@ -2173,16 +2334,20 @@ export const applyCanvasOps = async (
           occupied.push(box);
           lastPlaced = box;
         } else {
-          // a new diagram goes to free space, never on top of the user's work
-          box = place(size, { near: undefined, side: op.side });
+          // a new diagram goes to free space or near a referenced element
+          box = place(size, op);
         }
+        const placedElements: ExcalidrawElement[] = [];
         for (const element of mermaidElements) {
-          extraElements.push({
+          const placed = {
             ...element,
             x: element.x - x1 + box.x,
             y: element.y - y1 + box.y,
-          });
+          };
+          extraElements.push(placed);
+          placedElements.push(placed);
         }
+        registerInserted(op.id, placedElements);
         result.added += mermaidElements.filter(
           (element) => !(element.type === "text" && element.containerId),
         ).length;
@@ -2221,6 +2386,7 @@ export const applyCanvasOps = async (
             ...(extraElements[index].boundElements ?? []),
             ...(element.boundElements ?? []),
           ],
+          ...(element.frameId ? { frameId: element.frameId } : null),
         } as ExcalidrawElement;
       }
       continue;
@@ -2310,15 +2476,46 @@ const mermaidToElements = async (
     .trim()
     .replace(/^```(?:mermaid)?\s*/i, "")
     .replace(/\s*```$/, "");
-  let parsed;
+  let parsed: any = null;
+  let lastError: unknown = null;
   try {
     parsed = await parseMermaidToExcalidraw(definition);
-  } catch {
+  } catch (primaryError) {
+    lastError = primaryError;
     try {
       parsed = await parseMermaidToExcalidraw(definition.replace(/"/g, "'"));
     } catch {
-      return [];
+      try {
+        const { getMermaidAutoFixCandidates } = await import(
+          "@excalidraw/excalidraw/components/TTDDialog/utils/mermaidAutoFix"
+        );
+        const { getErrorMessage } = await import(
+          "@excalidraw/excalidraw/components/TTDDialog/utils/mermaidError"
+        );
+        const errMsg = getErrorMessage(primaryError) || String(primaryError);
+        const candidates = getMermaidAutoFixCandidates(definition, errMsg);
+        for (const candidate of candidates) {
+          try {
+            parsed = await parseMermaidToExcalidraw(candidate);
+            if (parsed?.elements?.length) {
+              break;
+            }
+          } catch {
+            // try next candidate
+          }
+        }
+      } catch {
+        // ignore autofix loading error
+      }
     }
+  }
+
+  if (!parsed || !parsed.elements?.length) {
+    const errorDetails =
+      lastError instanceof Error
+        ? lastError.message
+        : String(lastError ?? "Syntax error");
+    throw new Error(`Mermaid diagram parsing failed: ${errorDetails}`);
   }
   // the requested (or current) look; fonts stay as measured by the parser
   const style = explicitStyle(
