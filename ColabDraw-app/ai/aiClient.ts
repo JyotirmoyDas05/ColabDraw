@@ -42,7 +42,9 @@ export const setAISettings = (settings: AISettings) =>
 
 export type GeminiPart =
   | { text: string }
-  | { inlineData: { mimeType: string; data: string } };
+  | { inlineData: { mimeType: string; data: string } }
+  | { functionCall: { name: string; args: Record<string, any> } }
+  | { functionResponse: { name: string; response: Record<string, any> } };
 export type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
 export type FunctionDeclaration = {
   name: string;

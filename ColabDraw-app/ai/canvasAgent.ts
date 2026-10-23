@@ -451,7 +451,9 @@ export const CANVAS_FUNCTIONS = [
       type: "OBJECT",
       properties: {
         code: S("Mermaid source, no code fences"),
-        id: S("Your new id for this diagram (e.g. n1, diag1) so create_frame or arrows can reference it"),
+        id: S(
+          "Your new id for this diagram (e.g. n1, diag1) so create_frame or arrows can reference it",
+        ),
         ...PLACEMENT,
         replaces: IDS(
           'ONLY when the user asked to redo, rebuild or restructure the diagram already on the board: the ids of that diagram; they are deleted and the new one takes their place. Never set it for a new, unrelated diagram. ["all"] means everything listed in CANVAS.',
@@ -569,7 +571,9 @@ export const CANVAS_FUNCTIONS = [
     parameters: {
       type: "OBJECT",
       properties: {
-        query: S("What to look for, e.g. aws icons, linux, server, stick figures"),
+        query: S(
+          "What to look for, e.g. aws icons, linux, server, stick figures",
+        ),
       },
       required: ["query"],
     },
@@ -654,7 +658,9 @@ export const functionCallToOps = ({ name, args }: FunctionCall): CanvasOp[] => {
       });
 
       if (Array.isArray(args.bullets) && args.bullets.length > 0) {
-        const bulletText = args.bullets.map((b: string) => `• ${b}`).join("\n\n");
+        const bulletText = args.bullets
+          .map((b: string) => `• ${b}`)
+          .join("\n\n");
         ops.push({
           op: "add",
           shape: "text",
@@ -1457,7 +1463,13 @@ export const applyCanvasOps = async (
       result.failedOps ??= [];
       result.failedOps.push({
         op: "connect",
-        error: `Could not connect: ${!fromId ? `source "${op.from}" not found` : !toId ? `target "${op.to}" not found` : "invalid endpoints"}`,
+        error: `Could not connect: ${
+          !fromId
+            ? `source "${op.from}" not found`
+            : !toId
+            ? `target "${op.to}" not found`
+            : "invalid endpoints"
+        }`,
       });
       return;
     }
@@ -1827,7 +1839,9 @@ export const applyCanvasOps = async (
             result.failedOps ??= [];
             result.failedOps.push({
               op: "frame",
-              error: `Specified elements for frame "${op.label ?? ""}" were not found`,
+              error: `Specified elements for frame "${
+                op.label ?? ""
+              }" were not found`,
             });
           }
         });
@@ -2489,10 +2503,10 @@ const mermaidToElements = async (
         const { getMermaidAutoFixCandidates } = await import(
           "@excalidraw/excalidraw/components/TTDDialog/utils/mermaidAutoFix"
         );
-        const { getErrorMessage } = await import(
-          "@excalidraw/excalidraw/components/TTDDialog/utils/mermaidError"
-        );
-        const errMsg = getErrorMessage(primaryError) || String(primaryError);
+        const errMsg =
+          primaryError instanceof Error
+            ? primaryError.message
+            : String(primaryError);
         const candidates = getMermaidAutoFixCandidates(definition, errMsg);
         for (const candidate of candidates) {
           try {
