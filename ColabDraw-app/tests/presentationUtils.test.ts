@@ -1,12 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ExcalidrawFrameLikeElement } from "@excalidraw/element/types";
 
 import {
+  cleanPresentationUrl,
   extractSlideNumber,
   findSlideIndexById,
   getOrderedSlides,
   getSlideTitle,
+  restoreViewerOriginalScene,
 } from "../presentation/presentationUtils";
 
 const createMockFrame = (
@@ -137,6 +139,27 @@ describe("presentationUtils", () => {
       expect(findSlideIndexById(slides, "f2")).toBe(1);
       expect(findSlideIndexById(slides, "unknown")).toBe(-1);
       expect(findSlideIndexById(slides, null)).toBe(-1);
+    });
+  });
+
+  describe("cleanPresentationUrl", () => {
+    it("strips presentation query parameters and room hash without throwing", () => {
+      cleanPresentationUrl();
+      expect(window.location.search).not.toContain("presentation=");
+      expect(window.location.search).not.toContain("host=");
+    });
+  });
+
+  describe("restoreViewerOriginalScene", () => {
+    it("resets scene safely without error", async () => {
+      const mockAPI = {
+        resetScene: vi.fn(),
+        updateScene: vi.fn(),
+        getAppState: vi.fn().mockReturnValue({}),
+      } as any;
+
+      await expect(restoreViewerOriginalScene(mockAPI, null)).resolves.not.toThrow();
+      expect(mockAPI.resetScene).toHaveBeenCalled();
     });
   });
 });

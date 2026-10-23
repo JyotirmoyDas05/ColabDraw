@@ -124,6 +124,7 @@ export type SocketUpdateDataSource = {
       slideIndex: number;
       totalSlides: number;
       slideTitle?: string;
+      slideId?: string | null;
       settings?: Partial<PresentationSettings>;
     };
   };
@@ -137,6 +138,7 @@ export type SocketUpdateDataSource = {
         | "STOP_PRESENTATION"
         | "UPDATE_SETTINGS";
       slideIndex?: number;
+      slideId?: string | null;
       settings?: Partial<PresentationSettings>;
     };
   };

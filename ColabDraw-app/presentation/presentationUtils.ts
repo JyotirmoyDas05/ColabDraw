@@ -4,6 +4,11 @@ import type {
   ExcalidrawElement,
   ExcalidrawFrameLikeElement,
 } from "@excalidraw/element/types";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
+import { APP_NAME } from "../app_constants";
+import { getActiveSceneId, listScenes, loadSceneData } from "../data/scenes";
+import { openNewScene, openScene } from "../data/sceneActions";
 
 /**
  * Extracts a numeric prefix or slide number from a frame name if present.
@@ -179,4 +184,74 @@ export const clampSlideIndex = (index: number, totalSlides: number): number => {
     return 0;
   }
   return Math.max(0, Math.min(index, totalSlides - 1));
+};
+
+/**
+ * Cleans presentation and collaboration parameters from the browser address bar
+ * without reloading the page.
+ */
+export const cleanPresentationUrl = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("presentation");
+    url.searchParams.delete("host");
+    url.searchParams.delete("access");
+    // If the path was /room/..., return to base path
+    const cleanPath = url.pathname.replace(/\/room\/[^/]+/, "");
+    const cleanUrl = `${url.origin}${cleanPath || "/"}${
+      url.searchParams.toString() ? `?${url.searchParams.toString()}` : ""
+    }`;
+    window.history.replaceState({}, APP_NAME, cleanUrl);
+  } catch (err) {
+    console.warn("Failed to clean presentation URL:", err);
+  }
+};
+
+/**
+ * Safely restores the viewer's original local workspace after watching someone's presentation.
+ * Ensures the presenter's drawing is never saved or retained in the viewer's local database.
+ */
+export const restoreViewerOriginalScene = async (
+  api: ExcalidrawImperativeAPI,
+  priorSceneId?: string | null,
+): Promise<void> => {
+  try {
+    // 1. If we saved a specific prior scene ID before joining, restore that scene
+    if (priorSceneId) {
+      const data = await loadSceneData(priorSceneId);
+      if (data) {
+        await openScene(api, priorSceneId);
+        return;
+      }
+    }
+
+    // 2. Otherwise check the active scene recorded in localStorage
+    const activeId = getActiveSceneId();
+    if (activeId) {
+      const data = await loadSceneData(activeId);
+      if (data) {
+        await openScene(api, activeId);
+        return;
+      }
+    }
+
+    // 3. Otherwise try loading the user's most recently updated scene
+    const scenes = await listScenes();
+    const activeScenes = scenes.filter((s) => !s.deletedAt);
+    if (activeScenes.length > 0) {
+      await openScene(api, activeScenes[0].id);
+      return;
+    }
+
+    // 4. If the user had no scenes (e.g. joined via external link in clean session), open a new empty scene
+    await openNewScene(api);
+  } catch (error) {
+    console.error("Failed to restore original scene:", error);
+    try {
+      await openNewScene(api);
+    } catch {}
+  }
 };

@@ -10,6 +10,7 @@ import { BrandMark } from "../components/BrandMark";
 import {
   activeRemotePresentationAtom,
   presentationModeAtom,
+  rememberViewerPriorSceneId,
 } from "./presentationState";
 import { getOrderedSlides } from "./presentationUtils";
 import { SlideThumbnailCard } from "./SlideThumbnailCard";
@@ -94,6 +95,8 @@ export const PresentationJoinGate: React.FC<PresentationJoinGateProps> = ({
     if (!trimmed) {
       return;
     }
+
+    rememberViewerPriorSceneId();
 
     if (collabAPI) {
       collabAPI.setUsername(trimmed);
