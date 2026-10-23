@@ -1,4 +1,20 @@
 .excalidraw {
+  .sidebar-tabs-root {
+    min-height: 0;
+    overflow: hidden;
+
+    [role="tabpanel"] {
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    [role="tabpanel"][data-testid="presentation"] {
+      padding: 0;
+      overflow: hidden;
+    }
+  }
+
   .app-sidebar-promo-container {
     padding: 0.75rem;
     display: flex;
