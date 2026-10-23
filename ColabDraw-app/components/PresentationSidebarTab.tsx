@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { newFrameElement } from "@excalidraw/element";
 // eslint-disable-next-line no-restricted-imports
 import { CaptureUpdateAction, restoreElements } from "@excalidraw/excalidraw";
@@ -37,6 +37,26 @@ export const PresentationSidebarTab: React.FC<PresentationSidebarTabProps> = ({
   );
 
   const headerMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!headerMenuOpen) {
+      return;
+    }
+    const handleOutside = (e: MouseEvent | TouchEvent) => {
+      if (
+        headerMenuRef.current &&
+        !headerMenuRef.current.contains(e.target as Node)
+      ) {
+        setHeaderMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("touchstart", handleOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("touchstart", handleOutside);
+    };
+  }, [headerMenuOpen]);
 
   const elements = excalidrawAPI?.getSceneElementsIncludingDeleted();
 
@@ -654,12 +674,10 @@ export const PresentationSidebarTab: React.FC<PresentationSidebarTabProps> = ({
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                <circle cx="12" cy="12" r="2" />
+                <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14" />
               </svg>
-              <span>Present to audience</span>
+              <span>Present to Room (Live)</span>
             </button>
           )}
         </div>

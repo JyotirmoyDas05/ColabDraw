@@ -1,10 +1,23 @@
 .presentation-slide-card {
+  --slide-card-bg: var(--island-bg-color, #ffffff);
+  --slide-card-preview-bg: var(--default-bg-color, #ffffff);
+  --slide-card-bottom-bg: linear-gradient(
+    to top,
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(255, 255, 255, 0.88) 100%
+  );
+  --slide-card-bottom-border: var(--sidebar-border-color, rgba(0, 0, 0, 0.08));
+  --slide-card-title-color: #1b1b1f;
+  --slide-card-more-btn-bg: rgba(255, 255, 255, 0.9);
+  --slide-card-more-btn-color: #212529;
+  --slide-card-more-btn-border: rgba(0, 0, 0, 0.08);
+
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
   border-radius: 8px;
   border: 1px solid var(--sidebar-border-color, rgba(0, 0, 0, 0.12));
-  background: var(--island-bg-color, #ffffff);
+  background: var(--slide-card-bg);
   cursor: pointer;
   overflow: visible; /* Never clip dropdown menus or elevated states */
   box-sizing: border-box;
@@ -53,7 +66,7 @@
     aspect-ratio: 16 / 9;
     border-radius: 12px;
     border: 1px solid var(--sidebar-border-color, rgba(0, 0, 0, 0.12));
-    background: #ffffff;
+    background: var(--slide-card-bg);
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
     overflow: hidden;
 
@@ -71,7 +84,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--default-canvas-bg, #fafafa);
+    background: var(--slide-card-preview-bg);
     border-radius: 7px;
     overflow: hidden;
   }
@@ -113,9 +126,9 @@
     width: 26px;
     height: 26px;
     border-radius: 6px;
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    background: rgba(255, 255, 255, 0.9);
-    color: #212529;
+    border: 1px solid var(--slide-card-more-btn-border);
+    background: var(--slide-card-more-btn-bg);
+    color: var(--slide-card-more-btn-color);
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.15s ease, background 0.15s ease;
@@ -123,7 +136,7 @@
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 
     &:hover {
-      background: #ffffff;
+      background: var(--button-hover-bg, rgba(255, 255, 255, 0.12));
       color: var(--color-primary, #6965db);
     }
 
@@ -142,13 +155,9 @@
     display: flex;
     align-items: center;
     padding: 0 10px;
-    background: linear-gradient(
-      to top,
-      rgba(255, 255, 255, 0.95) 0%,
-      rgba(255, 255, 255, 0.8) 100%
-    );
+    background: var(--slide-card-bottom-bg);
     backdrop-filter: blur(6px);
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    border-top: 1px solid var(--slide-card-bottom-border);
     border-bottom-left-radius: 7px;
     border-bottom-right-radius: 7px;
     box-sizing: border-box;
@@ -158,13 +167,14 @@
 
   &__title {
     font-size: 13px;
-    font-weight: 500;
-    color: var(--text-primary-color, #1e1e24);
+    font-weight: 600;
+    color: var(--slide-card-title-color);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     width: 100%;
     text-align: left;
+    letter-spacing: -0.1px;
   }
 
   &__rename-input {
@@ -175,10 +185,76 @@
     font-weight: 500;
     border: 1.5px solid var(--color-primary, #6965db);
     border-radius: 4px;
-    background: var(--island-bg-color, #ffffff);
-    color: var(--text-primary-color, inherit);
+    background: var(--slide-card-bg);
+    color: var(--slide-card-title-color);
     outline: none;
     box-sizing: border-box;
+  }
+}
+
+/* Dark mode theme overrides */
+:root.theme--dark,
+.theme--dark,
+.excalidraw.theme--dark {
+  .presentation-slide-card {
+    --slide-card-bg: var(--island-bg-color, #232329);
+    --slide-card-preview-bg: var(--default-bg-color, #121212);
+    --slide-card-bottom-bg: linear-gradient(
+      to top,
+      rgba(26, 26, 32, 0.96) 0%,
+      rgba(26, 26, 32, 0.88) 100%
+    );
+    --slide-card-bottom-border: rgba(255, 255, 255, 0.08);
+    --slide-card-title-color: #f8f9fa;
+    --slide-card-more-btn-bg: rgba(35, 35, 41, 0.9);
+    --slide-card-more-btn-color: #e9ecef;
+    --slide-card-more-btn-border: rgba(255, 255, 255, 0.12);
+
+    border-color: var(--sidebar-border-color, rgba(255, 255, 255, 0.1));
+
+    &:hover {
+      border-color: var(--color-primary, #a8a5ff);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    }
+
+    &.is-selected {
+      border: 2px solid var(--color-primary, #a8a5ff);
+      box-shadow: 0 0 0 1px var(--color-primary, #a8a5ff),
+        0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    &--preview-only {
+      background: var(--island-bg-color, #232329);
+      border-color: var(--sidebar-border-color, rgba(255, 255, 255, 0.12));
+    }
+  }
+
+  .presentation-slide-menu {
+    background: var(--island-bg-color, #232329);
+    border-color: var(--sidebar-border-color, rgba(255, 255, 255, 0.12));
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+    &__item {
+      color: #e9ecef;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: #ffffff;
+      }
+
+      &--danger {
+        color: #ff6b6b;
+
+        &:hover {
+          background: rgba(255, 107, 107, 0.18);
+          color: #ff8787;
+        }
+
+        svg {
+          stroke: #ff6b6b;
+        }
+      }
+    }
   }
 }
 
@@ -251,5 +327,16 @@
     height: 1px;
     background: var(--sidebar-border-color, rgba(0, 0, 0, 0.08));
     margin: 3px 0;
+  }
+}
+
+@keyframes slideMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
