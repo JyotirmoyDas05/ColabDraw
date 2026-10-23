@@ -261,22 +261,23 @@ export const AIAssistant = ({
           await snapshotElements(excalidrawAPI, context.visualElements),
         );
       }
-      const {
+      const contents = [
+        ...history.map(
+          (message): GeminiContent => ({
+            role: message.role,
+            parts: [{ text: message.text }],
+          }),
+        ),
+        { role: "user", parts },
+      ];
+      let {
         text: answer,
         calls,
         trial: nextTrial,
       } = await generate(
         {
           systemInstruction: { parts: [{ text: CANVAS_SYSTEM_PROMPT }] },
-          contents: [
-            ...history.map(
-              (message): GeminiContent => ({
-                role: message.role,
-                parts: [{ text: message.text }],
-              }),
-            ),
-            { role: "user", parts },
-          ],
+          contents,
           tools: [{ functionDeclarations: CANVAS_FUNCTIONS }],
           generationConfig: { temperature: 0.3 },
         },
@@ -284,6 +285,62 @@ export const AIAssistant = ({
       );
       if (nextTrial) {
         setTrial(nextTrial);
+      }
+
+      if (calls.some((call) => call.name === "find_library_art")) {
+        const artCalls = calls.filter((c) => c.name === "find_library_art");
+        const foundContexts = (
+          await Promise.all(
+            artCalls.map((c) =>
+              searchOnlineLibraries(String(c.args?.query ?? "")),
+            ),
+          )
+        ).filter(Boolean);
+
+        if (foundContexts.length) {
+          try {
+            const secondTurn = await generate(
+              {
+                systemInstruction: { parts: [{ text: CANVAS_SYSTEM_PROMPT }] },
+                contents: [
+                  ...contents,
+                  {
+                    role: "model",
+                    parts: [
+                      ...(answer ? [{ text: answer }] : []),
+                      ...calls.map((c) => ({
+                        functionCall: { name: c.name, args: c.args },
+                      })),
+                    ],
+                  },
+                  {
+                    role: "user",
+                    parts: [
+                      {
+                        text: `${foundContexts.join("\n\n")}\n\nPlease insert the appropriate items now using insert_library_item.`,
+                      },
+                    ],
+                  },
+                ],
+                tools: [{ functionDeclarations: CANVAS_FUNCTIONS }],
+                generationConfig: { temperature: 0.3 },
+              },
+              { signal: controller.signal },
+            );
+            if (secondTurn.calls.length) {
+              calls = [
+                ...calls.filter((c) => c.name !== "find_library_art"),
+                ...secondTurn.calls,
+              ];
+              answer = secondTurn.text || answer;
+            }
+            if (secondTurn.trial) {
+              setTrial(secondTurn.trial);
+            }
+          } catch (e) {
+            console.warn("Follow-up generation for find_library_art failed:", e);
+          }
+        }
       }
       const fallbackReply = calls.length
         ? (calls.flatMap(functionCallToOps).length

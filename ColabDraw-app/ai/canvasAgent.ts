@@ -560,6 +560,18 @@ export const CANVAS_FUNCTIONS = [
       required: ["points"],
     },
   },
+  {
+    name: "find_library_art",
+    description:
+      "Searches the public Excalidraw libraries (libraries.excalidraw.com) for ready-made art such as icons or symbols that are not installed yet. Returns matching library names and item names to use with insert_library_item.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        query: S("What to look for, e.g. aws icons, linux, server, stick figures"),
+      },
+      required: ["query"],
+    },
+  },
 ];
 
 export const functionCallToOps = ({ name, args }: FunctionCall): CanvasOp[] => {
@@ -598,6 +610,8 @@ export const functionCallToOps = ({ name, args }: FunctionCall): CanvasOp[] => {
       return [{ op: "smooth", ...rest }];
     case "draw_freehand":
       return [{ op: "freehand", ...rest }];
+    case "find_library_art":
+      return [];
     default:
       return [];
   }
@@ -624,9 +638,11 @@ PICTURES AND DRAWINGS:
 - Elements listed as hand-drawing are freehand strokes. To improve or clean up a hand drawing or outline, call smooth_drawing on it (light, medium or strong). Use draw_freehand to redraw a simple shape yourself, replacing the old one. Never answer a request about a drawing or picture by adding a flowchart.
 
 MAKING GOOD, DISTINCT DIAGRAMS:
-- Use the vocabulary: rectangle = component, ellipse = start/end or actor, diamond = decision, sticky = note/annotation, text = title/label, frames = titled sections, groups = things that belong together.
+- Use the vocabulary: rectangle = component, ellipse = start/end or actor, diamond = decision, sticky = note/annotation, text = title/label, frames = titled sections or presentation slides, groups = things that belong together.
+- For presentation slides or multi-topic layouts: structure each slide/topic clearly, and enclose each topic's elements in a titled frame with create_frame.
+- When visual representations, infographics, or diagrams are requested under topics: create structured diagrams or flowchart representations using draw_mermaid or appropriate shapes with connections, rather than just simple text sticky notes.
 - Color with meaning (green success/done, red error/danger, blue services, yellow notes/warnings, violet data, orange external), not decoration; keep to 3-4 colors. Use fill patterns, thickness, font and size to show hierarchy: a large "display" or "hand-drawn" title, bold outlines for the main path, dashed lines for optional or async flows, a different arrowhead for a different relation (diamond for composition, cardinality heads for database (ER) relations, circle for events).
-- Add a title and a short legend or sticky-note annotation when it helps. Wrap sections in frames. Use library items when one fits (icons, symbols). If CANVAS lists Online libraries that fit what the user asked for, call insert_library_item with library set to that library's name and name set to one of its items; it is saved to their library automatically. The user can ask you to swap shapes for icons ("use icons instead of boxes"): call insert_library_item once per shape with replace set to that shape's id; the icon takes its place, keeps its arrows and its text. Do that instead of saying you can't.
+- Add a title and a short legend or sticky-note annotation when it helps. Wrap sections in frames. Use library items when one fits (icons, symbols, architecture figures). If CANVAS lists Online libraries that fit what the user asked for, call insert_library_item with library set to that library's name and name set to one of its items; it is saved to their library automatically. You can also call find_library_art to search public libraries for matching art and icons. The user can ask you to swap shapes for icons ("use icons instead of boxes"): call insert_library_item once per shape with replace set to that shape's id; the icon takes its place, keeps its arrows and its text. Do that instead of saying you can't.
 - Omit style options to match the user's current style; only override when asked or when it carries meaning.
 - Keep labels short. Only touch what the user asked about. If the request is ambiguous, make a sensible choice.`;
 
