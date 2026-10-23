@@ -170,3 +170,13 @@ export const findSlideIndexById = (
   }
   return slides.findIndex((slide) => slide.id === frameId);
 };
+
+/**
+ * Clamps a slide index between 0 and totalSlides - 1.
+ */
+export const clampSlideIndex = (index: number, totalSlides: number): number => {
+  if (totalSlides <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(index, totalSlides - 1));
+};

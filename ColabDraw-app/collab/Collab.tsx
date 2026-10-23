@@ -90,6 +90,7 @@ import { resetBrowserStateVersions } from "../data/tabSync";
 import {
   activeRemotePresentationAtom,
   DEFAULT_PRESENTATION_STATE,
+  presentationEndedAtom,
   presentationModeAtom,
   presentationSettingsAtom,
 } from "../presentation/presentationState";
@@ -758,6 +759,14 @@ class Collab extends PureComponent<CollabProps, CollabState> {
               settings: decryptedData.payload.settings,
             });
 
+            if (decryptedData.payload.settings) {
+              appJotaiStore.set(presentationSettingsAtom, (prev) => ({
+                ...prev,
+                ...decryptedData.payload.settings,
+              }));
+              this.syncPresenterCursorVisibility();
+            }
+
             const currentPresState = appJotaiStore.get(presentationModeAtom);
             if (
               currentPresState.isFollower &&
@@ -781,6 +790,12 @@ class Collab extends PureComponent<CollabProps, CollabState> {
               currentPresState.isFollower &&
               currentPresState.presenterSocketId === socketId
             ) {
+              appJotaiStore.set(presentationEndedAtom, {
+                presenterUsername:
+                  username || currentPresState.presenterUsername || null,
+                wasFollower: true,
+                shareUrl: null,
+              });
               this.setUserToFollow(null);
               appJotaiStore.set(
                 presentationModeAtom,
@@ -804,10 +819,18 @@ class Collab extends PureComponent<CollabProps, CollabState> {
               type: "UPDATE_SETTINGS",
               settings,
             });
+            this.syncPresenterCursorVisibility();
             break;
           }
 
           if (action === "STOP_PRESENTATION") {
+            if (currentPres.isFollower) {
+              appJotaiStore.set(presentationEndedAtom, {
+                presenterUsername: currentPres.presenterUsername,
+                wasFollower: true,
+                shareUrl: null,
+              });
+            }
             presentationSync.send({ type: "STOP_PRESENTATION" });
             appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
             appJotaiStore.set(activeRemotePresentationAtom, null);
@@ -1047,6 +1070,31 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     }
   }
 
+  private getFollowerPresenterSocketId = (): SocketId | null => {
+    const pres = appJotaiStore.get(presentationModeAtom);
+    return pres.isFollower && pres.presenterSocketId
+      ? (pres.presenterSocketId as SocketId)
+      : null;
+  };
+
+  public syncPresenterCursorVisibility = () => {
+    const presenterId = this.getFollowerPresenterSocketId();
+    if (!presenterId) {
+      return;
+    }
+    const collaborator = this.collaborators.get(presenterId);
+    if (!collaborator?.pointer) {
+      return;
+    }
+    const settings = appJotaiStore.get(presentationSettingsAtom);
+    this.updateCollaborator(presenterId, {
+      pointer: {
+        ...collaborator.pointer,
+        renderCursor: settings.showCursor,
+      },
+    });
+  };
+
   updateCollaborator = (socketId: SocketId, updates: Partial<Collaborator>) => {
     const isCurrentUser = socketId === this.portal.socket?.id;
     const collaborators = new Map(this.collaborators);
@@ -1084,9 +1132,23 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       button: SocketUpdateDataSource["MOUSE_LOCATION"]["payload"]["button"];
       pointersMap: Gesture["pointers"];
     }) => {
-      payload.pointersMap.size < 2 &&
-        this.portal.socket &&
-        this.portal.broadcastMouseLocation(payload);
+      if (!this.portal.socket || payload.pointersMap.size >= 2) {
+        return;
+      }
+      // When presenting with "show cursor" disabled, keep broadcasting
+      // (so the laser trail still reaches the audience) but ask viewers not
+      // to render our cursor or username.
+      const presentation = appJotaiStore.get(presentationModeAtom);
+      const presentationSettings = appJotaiStore.get(presentationSettingsAtom);
+      const hideCursorFromAudience =
+        presentation.isActive && !presentationSettings.showCursor;
+
+      this.portal.broadcastMouseLocation({
+        pointer: hideCursorFromAudience
+          ? { ...payload.pointer, renderCursor: false }
+          : payload.pointer,
+        button: payload.button,
+      });
     },
     CURSOR_SYNC_TIMEOUT,
   );

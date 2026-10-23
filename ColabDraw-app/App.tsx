@@ -90,6 +90,8 @@ import {
 } from "./app-jotai";
 import { PresentationHUD } from "./presentation/PresentationHUD";
 import { PresentationRemoteController } from "./presentation/PresentationRemoteController";
+import { PresentationJoinGate } from "./presentation/PresentationJoinGate";
+import { stripPresentationParams } from "./presentation/presentationLayout";
 import { usePresentationController } from "./presentation/usePresentationController";
 import {
   activeRemotePresentationAtom,
@@ -516,6 +518,15 @@ const ExcalidrawWrapper = () => {
     return (
       new URLSearchParams(window.location.search).get("presentation") ===
       "remote"
+    );
+  });
+
+  const [isJoinPresentation, setIsJoinPresentation] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return (
+      new URLSearchParams(window.location.search).get("presentation") === "join"
     );
   });
 
@@ -1144,9 +1155,7 @@ const ExcalidrawWrapper = () => {
           onToggleLaser={presentationController.toggleLaser}
           onToggleFullscreen={presentationController.toggleFullscreen}
           onToggleLive={presentationController.toggleLivePresentation}
-          isLaserActive={
-            excalidrawAPI?.getAppState().activeTool.type === "laser"
-          }
+          isLaserActive={presentationController.activeToolType === "laser"}
           isCollaborating={isCollaborating}
           appTheme={appTheme}
           onToggleTheme={() =>
@@ -1203,6 +1212,21 @@ const ExcalidrawWrapper = () => {
               }}
             />
           </div>
+        )}
+
+        {isJoinPresentation && (
+          <PresentationJoinGate
+            excalidrawAPI={excalidrawAPI}
+            collabAPI={collabAPI}
+            hostName={
+              new URLSearchParams(window.location.search).get("host") || null
+            }
+            onJoin={() => {
+              setIsJoinPresentation(false);
+              const cleanUrl = stripPresentationParams(window.location.href);
+              window.history.replaceState(null, "", cleanUrl);
+            }}
+          />
         )}
 
         {errorMessage && (

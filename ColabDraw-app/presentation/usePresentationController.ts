@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { ExcalidrawFrameLikeElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import { useAtom } from "../app-jotai";
 
+import { stripPresentationParams } from "./presentationLayout";
 import {
   DEFAULT_PRESENTATION_STATE,
+  presentationEndedAtom,
   presentationModeAtom,
   presentationSettingsAtom,
   presentationSlideOrderAtom,
@@ -37,6 +40,23 @@ export const usePresentationController = ({
     useAtom(presentationModeAtom);
   const [settings, setSettings] = useAtom(presentationSettingsAtom);
   const [customSlideOrder] = useAtom(presentationSlideOrderAtom);
+  const [, setPresentationEnded] = useAtom(presentationEndedAtom);
+
+  const [orderedSlides, setOrderedSlides] = useState<
+    ExcalidrawFrameLikeElement[]
+  >(() =>
+    getOrderedSlides(
+      excalidrawAPI?.getSceneElementsIncludingDeleted(),
+      customSlideOrder,
+    ),
+  );
+  const [activeToolType, setActiveToolType] = useState<string | null>(() => {
+    try {
+      return excalidrawAPI?.getAppState().activeTool.type ?? null;
+    } catch {
+      return null;
+    }
+  });
 
   const prevAppStateRef = useRef<{
     frameRendering: {
@@ -80,15 +100,67 @@ export const usePresentationController = ({
     onLiveBroadcast,
   ]);
 
+  const refreshSlides = useCallback(() => {
+    if (!excalidrawAPI) {
+      return slidesRef.current;
+    }
+    const next = getOrderedSlides(
+      excalidrawAPI.getSceneElementsIncludingDeleted(),
+      customSlideOrder,
+    );
+    slidesRef.current = next;
+    setOrderedSlides((prev) => {
+      if (
+        prev.length === next.length &&
+        prev.every((slide, index) => slide.id === next[index].id)
+      ) {
+        return prev;
+      }
+      return next;
+    });
+    return next;
+  }, [excalidrawAPI, customSlideOrder]);
+
   // Keep slides list updated
   useEffect(() => {
-    if (excalidrawAPI) {
-      slidesRef.current = getOrderedSlides(
-        excalidrawAPI.getSceneElementsIncludingDeleted(),
-        customSlideOrder,
-      );
+    refreshSlides();
+  }, [refreshSlides]);
+
+  // Followers receive the scene asynchronously from the room and the presenter
+  // may add frames mid-flight, so keep the slide list fresh while presenting.
+  useEffect(() => {
+    if (!excalidrawAPI) {
+      return;
     }
-  }, [excalidrawAPI, presentationState.isActive, customSlideOrder]);
+    if (!presentationState.isActive && !presentationState.isFollower) {
+      return;
+    }
+    const interval = setInterval(refreshSlides, 800);
+    return () => clearInterval(interval);
+  }, [
+    excalidrawAPI,
+    presentationState.isActive,
+    presentationState.isFollower,
+    refreshSlides,
+  ]);
+
+  // Track the active tool so HUD toggles (laser pointer) reflect immediately.
+  useEffect(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    let unsubscribe: (() => void) | undefined;
+    try {
+      setActiveToolType(excalidrawAPI.getAppState().activeTool.type);
+      unsubscribe = excalidrawAPI.onStateChange(
+        (appState) => appState.activeTool.type,
+        (type) => setActiveToolType(type),
+      );
+    } catch {
+      // API can be destroyed between renders
+    }
+    return () => unsubscribe?.();
+  }, [excalidrawAPI]);
 
   // Toggle presentation-mode-active class on body during presentation
   useEffect(() => {
@@ -104,28 +176,15 @@ export const usePresentationController = ({
     };
   }, [presentationState.isActive, presentationState.isFollower]);
 
-  // Handle cursor visibility during presentation
-  useEffect(() => {
-    if (presentationState.isActive && !settings.showCursor) {
-      document.body.classList.add("presentation-hide-cursor");
-    } else {
-      document.body.classList.remove("presentation-hide-cursor");
-    }
-    return () => {
-      document.body.classList.remove("presentation-hide-cursor");
-    };
-  }, [presentationState.isActive, settings.showCursor]);
+  // NOTE: `showCursor` only hides the presenter's pointer from the audience.
+  // The presenter always keeps a local cursor so they can keep navigating.
 
   const navigateToSlide = useCallback(
     (index: number) => {
       if (!excalidrawAPI) {
         return;
       }
-      const slides = getOrderedSlides(
-        excalidrawAPI.getSceneElementsIncludingDeleted(),
-        customSlideOrder,
-      );
-      slidesRef.current = slides;
+      const slides = refreshSlides();
 
       if (!slides.length) {
         return;
@@ -178,7 +237,7 @@ export const usePresentationController = ({
       onLiveBroadcast,
       setPresentationState,
       settings,
-      customSlideOrder,
+      refreshSlides,
     ],
   );
 
@@ -188,11 +247,7 @@ export const usePresentationController = ({
         return false;
       }
 
-      const slides = getOrderedSlides(
-        excalidrawAPI.getSceneElementsIncludingDeleted(),
-        customSlideOrder,
-      );
-      slidesRef.current = slides;
+      const slides = refreshSlides();
 
       if (!slides.length) {
         excalidrawAPI.setToast({
@@ -251,6 +306,8 @@ export const usePresentationController = ({
         presenterUsername: null,
       });
 
+      setPresentationEnded(null);
+
       // Broadcast initial presentation start to remote controllers
       presentationSync.send({
         type: "SYNC_STATE",
@@ -277,8 +334,9 @@ export const usePresentationController = ({
       excalidrawAPI,
       onLiveBroadcast,
       setPresentationState,
+      setPresentationEnded,
       settings,
-      customSlideOrder,
+      refreshSlides,
     ],
   );
 
@@ -310,14 +368,28 @@ export const usePresentationController = ({
     }
 
     document.body.classList.remove("presentation-mode-active");
-    document.body.classList.remove("presentation-hide-cursor");
 
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
 
+    const roomLink = collabAPI?.getActiveRoomLink?.();
+    const baseLink =
+      roomLink || (typeof window !== "undefined" ? window.location.href : "");
+    setPresentationEnded({
+      presenterUsername: collabAPI?.getUsername?.() || null,
+      wasFollower: false,
+      shareUrl: baseLink ? stripPresentationParams(baseLink) : null,
+    });
+
     setPresentationState(DEFAULT_PRESENTATION_STATE);
-  }, [excalidrawAPI, onLiveBroadcast, setPresentationState]);
+  }, [
+    excalidrawAPI,
+    onLiveBroadcast,
+    setPresentationState,
+    setPresentationEnded,
+    collabAPI,
+  ]);
 
   const nextSlide = useCallback(() => {
     navigateToSlide(presentationState.currentSlideIndex + 1);
@@ -332,8 +404,11 @@ export const usePresentationController = ({
       return;
     }
     const currentTool = excalidrawAPI.getAppState().activeTool.type;
+    const nextTool = currentTool === "laser" ? "selection" : "laser";
+    // update optimistically so the HUD reflects the toggle instantly
+    setActiveToolType(nextTool);
     excalidrawAPI.setActiveTool({
-      type: currentTool === "laser" ? "selection" : "laser",
+      type: nextTool,
     });
   }, [excalidrawAPI]);
 
@@ -473,7 +548,8 @@ export const usePresentationController = ({
 
   return {
     presentationState,
-    orderedSlides: slidesRef.current,
+    orderedSlides,
+    activeToolType,
     startPresentation,
     stopPresentation,
     navigateToSlide,

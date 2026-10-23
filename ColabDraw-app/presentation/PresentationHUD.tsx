@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 
+import {
+  laserPointerToolIcon,
+  presentationIcon,
+} from "@excalidraw/excalidraw/components/icons";
+
 import type { ExcalidrawFrameLikeElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
@@ -7,11 +12,19 @@ import { useAtom } from "../app-jotai";
 import { activeRoomLinkAtom, type CollabAPI } from "../collab/Collab";
 import { QRCode } from "../share/QRCode";
 
+import { PresentationFocusOverlay } from "./PresentationFocusOverlay";
+import {
+  exportPresentationToPdf,
+  exportPresentationToPptx,
+} from "./presentationExport";
+import { buildPresentationJoinLink } from "./presentationLayout";
 import {
   activeRemotePresentationAtom,
   type PresentationModeState,
+  presentationEndedAtom,
   presentationSettingsAtom,
 } from "./presentationState";
+import { presentationSync } from "./presentationSync";
 import { getSlideTitle } from "./presentationUtils";
 import { SlideThumbnailCard } from "./SlideThumbnailCard";
 
@@ -73,6 +86,9 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
   );
   const [settings, setSettings] = useAtom(presentationSettingsAtom);
   const [activeRoomLink] = useAtom(activeRoomLinkAtom);
+  const [presentationEnded, setPresentationEnded] = useAtom(
+    presentationEndedAtom,
+  );
 
   const drawerRef = useRef<HTMLDivElement>(null);
   const shareRef = useRef<HTMLDivElement>(null);
@@ -145,16 +161,27 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
     : [];
 
   const handleCopyPresentationLink = () => {
-    const url = new URL(window.location.href);
-    url.searchParams.set("presentation", "1");
-    if (settings.isPublic) {
-      url.searchParams.set("access", "public");
-    } else {
-      url.searchParams.delete("access");
-    }
-    navigator.clipboard.writeText(url.toString()).then(() => {
+    const baseUrl = activeRoomLink || window.location.href;
+    const joinLink = buildPresentationJoinLink({
+      baseUrl,
+      hostName: collabAPI?.getUsername?.(),
+      isPublic: settings.isPublic,
+    });
+    navigator.clipboard.writeText(joinLink).then(() => {
       setCopiedShareLink(true);
       setTimeout(() => setCopiedShareLink(false), 3000);
+    });
+  };
+
+  // Settings that affect the audience (cursor, public access, …) must be
+  // broadcast, otherwise followers keep a stale copy.
+  const updateSetting = (key: keyof typeof settings, value: boolean) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+    const patch = { [key]: value };
+    presentationSync.send({ type: "UPDATE_SETTINGS", settings: patch });
+    collabAPI?.broadcastPresentationControl?.({
+      action: "UPDATE_SETTINGS",
+      settings: patch,
     });
   };
 
@@ -181,16 +208,67 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
     });
   };
 
-  const handleDownloadPDF = () => {
-    window.print();
-  };
+  const [isExporting, setIsExporting] = useState<"pdf" | "pptx" | null>(null);
 
-  const handleDownloadPPTX = () => {
-    if (excalidrawAPI) {
+  const handleDownloadPDF = async () => {
+    if (!excalidrawAPI || !slides.length) {
+      return;
+    }
+    try {
+      setIsExporting("pdf");
+      await exportPresentationToPdf({
+        excalidrawAPI,
+        slides,
+        onProgress: (p) => {
+          excalidrawAPI.setToast({
+            message: `Exporting PDF: slide ${p.current} of ${p.total}...`,
+            duration: 2000,
+          });
+        },
+      });
       excalidrawAPI.setToast({
-        message: "PPTX export will be available in an upcoming update.",
+        message: "PDF presentation exported successfully!",
         duration: 3000,
       });
+    } catch (err: any) {
+      console.error("PDF export failed:", err);
+      excalidrawAPI.setToast({
+        message: `PDF export failed: ${err.message || "Unknown error"}`,
+        duration: 4000,
+      });
+    } finally {
+      setIsExporting(null);
+    }
+  };
+
+  const handleDownloadPPTX = async () => {
+    if (!excalidrawAPI || !slides.length) {
+      return;
+    }
+    try {
+      setIsExporting("pptx");
+      await exportPresentationToPptx({
+        excalidrawAPI,
+        slides,
+        onProgress: (p) => {
+          excalidrawAPI.setToast({
+            message: `Exporting PPTX: slide ${p.current} of ${p.total}...`,
+            duration: 2000,
+          });
+        },
+      });
+      excalidrawAPI.setToast({
+        message: "PowerPoint presentation exported successfully!",
+        duration: 3000,
+      });
+    } catch (err: any) {
+      console.error("PPTX export failed:", err);
+      excalidrawAPI.setToast({
+        message: `PPTX export failed: ${err.message || "Unknown error"}`,
+        duration: 4000,
+      });
+    } finally {
+      setIsExporting(null);
     }
   };
 
@@ -202,6 +280,13 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
 
   return (
     <>
+      {/* Dim and blur everything around the focused slide */}
+      <PresentationFocusOverlay
+        excalidrawAPI={excalidrawAPI}
+        slide={currentSlide}
+        enabled={presentationState.isActive || presentationState.isFollower}
+      />
+
       {/* Remote presentation invitation banner */}
       {showRemotePrompt && onJoinRemotePresentation && (
         <div className="presentation-live-notification">
@@ -263,6 +348,26 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
           >
             Stop watching
           </button>
+        </div>
+      )}
+
+      {/* Host-only reminder that the audience cannot see the cursor */}
+      {presentationState.isActive && !settings.showCursor && (
+        <div className="presentation-cursor-reminder">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+            <line x1="1" y1="1" x2="23" y2="23" />
+            <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+          </svg>
+          <span>Cursor hidden from viewers</span>
         </div>
       )}
 
@@ -412,10 +517,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
                           type="checkbox"
                           checked={settings.isPublic}
                           onChange={(e) => {
-                            setSettings((prev) => ({
-                              ...prev,
-                              isPublic: e.target.checked,
-                            }));
+                            updateSetting("isPublic", e.target.checked);
                             setCopiedShareLink(false);
                           }}
                         />
@@ -602,10 +704,10 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
                         type="checkbox"
                         checked={settings.animateSlideMovement}
                         onChange={(e) =>
-                          setSettings((prev) => ({
-                            ...prev,
-                            animateSlideMovement: e.target.checked,
-                          }))
+                          updateSetting(
+                            "animateSlideMovement",
+                            e.target.checked,
+                          )
                         }
                       />
                       <span className="presentation-toggle-switch__slider" />
@@ -620,10 +722,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
                         type="checkbox"
                         checked={settings.showCursor}
                         onChange={(e) =>
-                          setSettings((prev) => ({
-                            ...prev,
-                            showCursor: e.target.checked,
-                          }))
+                          updateSetting("showCursor", e.target.checked)
                         }
                       />
                       <span className="presentation-toggle-switch__slider" />
@@ -638,10 +737,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
                         type="checkbox"
                         checked={settings.showSlideTitle}
                         onChange={(e) =>
-                          setSettings((prev) => ({
-                            ...prev,
-                            showSlideTitle: e.target.checked,
-                          }))
+                          updateSetting("showSlideTitle", e.target.checked)
                         }
                       />
                       <span className="presentation-toggle-switch__slider" />
@@ -658,15 +754,17 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
                         type="button"
                         className="presentation-hud-settings-popover__download-btn"
                         onClick={handleDownloadPDF}
+                        disabled={isExporting !== null || !slides.length}
                       >
-                        PDF
+                        {isExporting === "pdf" ? "Exporting..." : "PDF"}
                       </button>
                       <button
                         type="button"
                         className="presentation-hud-settings-popover__download-btn"
                         onClick={handleDownloadPPTX}
+                        disabled={isExporting !== null || !slides.length}
                       >
-                        PPTX
+                        {isExporting === "pptx" ? "Exporting..." : "PPTX"}
                       </button>
                     </div>
                   </div>
@@ -750,24 +848,48 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
               isLaserActive ? "Laser pointer active (L)" : "Laser pointer (L)"
             }
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="m15 4 4 4" />
-              <path d="M2 20h.01" />
-              <path d="m5 17 2-2" />
-              <path d="m9 13 2-2" />
-              <path d="m13 9 2-2" />
-              <path d="M19 12v3" />
-              <path d="M19 15a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3h-3a3 3 0 0 0-3 3v3" />
-            </svg>
+            {laserPointerToolIcon}
           </button>
         </>
+      )}
+
+      {/* Presentation ended card — shown to the presenter and the audience */}
+      {presentationEnded && (
+        <div className="presentation-ended-overlay">
+          <div
+            className="presentation-ended-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Presentation ended"
+          >
+            <span className="presentation-ended-card__icon">
+              {presentationIcon}
+            </span>
+            <h2 className="presentation-ended-card__title">
+              The presentation has now ended
+            </h2>
+            <p className="presentation-ended-card__subtitle">
+              Thank you for attending!
+            </p>
+            {presentationEnded.shareUrl && (
+              <a
+                className="presentation-ended-card__link"
+                href={presentationEnded.shareUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                View the slides
+              </a>
+            )}
+            <button
+              type="button"
+              className="presentation-ended-card__button"
+              onClick={() => setPresentationEnded(null)}
+            >
+              Return to scene
+            </button>
+          </div>
+        </div>
       )}
     </>
   );

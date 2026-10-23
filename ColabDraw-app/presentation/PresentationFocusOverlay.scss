@@ -1,0 +1,27 @@
+.presentation-focus-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  pointer-events: none;
+  overflow: hidden;
+
+  &__mask {
+    position: absolute;
+    background: rgba(9, 9, 14, 0.56);
+    backdrop-filter: blur(7px) saturate(0.72);
+    -webkit-backdrop-filter: blur(7px) saturate(0.72);
+    transition: background-color 0.18s ease;
+  }
+
+  &__spotlight {
+    position: absolute;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1.5px rgba(105, 101, 219, 0.95),
+      0 0 0 8px rgba(105, 101, 219, 0.14), 0 0 48px 6px rgba(105, 101, 219, 0.3);
+    transition: box-shadow 0.18s ease;
+  }
+}
+
+html[data-theme="dark"] .presentation-focus-overlay__mask {
+  background: rgba(0, 0, 0, 0.62);
+}
