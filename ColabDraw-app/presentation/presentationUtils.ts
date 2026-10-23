@@ -1,3 +1,4 @@
+import { APP_NAME } from "@excalidraw/common";
 import { isFrameLikeElement } from "@excalidraw/element";
 
 import type {
@@ -6,7 +7,6 @@ import type {
 } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
-import { APP_NAME } from "../app_constants";
 import { getActiveSceneId, listScenes, loadSceneData } from "../data/scenes";
 import { openNewScene, openScene } from "../data/sceneActions";
 
