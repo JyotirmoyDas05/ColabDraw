@@ -241,21 +241,29 @@ export const usePresentationController = ({
     if (!excalidrawAPI || !presentationState.isFollower) {
       return;
     }
-    const unsubscribe = excalidrawAPI.onStateChange((appState) => {
-      if (
-        !appState.viewModeEnabled ||
-        Object.keys(appState.selectedElementIds).length > 0
-      ) {
-        excalidrawAPI.updateScene({
-          appState: {
-            viewModeEnabled: true,
-            selectedElementIds: {},
-            selectedGroupIds: {},
-          },
-        });
-      }
-    });
-    return () => unsubscribe();
+    let unsubscribe: (() => void) | undefined;
+    try {
+      unsubscribe = excalidrawAPI.onStateChange(
+        (appState) => ({
+          viewModeEnabled: appState.viewModeEnabled,
+          hasSelection: Object.keys(appState.selectedElementIds).length > 0,
+        }),
+        ({ viewModeEnabled, hasSelection }) => {
+          if (!viewModeEnabled || hasSelection) {
+            excalidrawAPI.updateScene({
+              appState: {
+                viewModeEnabled: true,
+                selectedElementIds: {},
+                selectedGroupIds: {},
+              },
+            });
+          }
+        },
+      );
+    } catch {
+      // API can be destroyed
+    }
+    return () => unsubscribe?.();
   }, [presentationState.isFollower, excalidrawAPI]);
 
   // Track the active tool so HUD toggles (laser pointer) reflect immediately.

@@ -20,12 +20,14 @@ import {
 import { buildPresentationJoinLink } from "./presentationLayout";
 import {
   activeRemotePresentationAtom,
+  clearViewerPriorSceneId,
+  getViewerPriorSceneId,
   type PresentationModeState,
   presentationEndedAtom,
   presentationSettingsAtom,
 } from "./presentationState";
 import { presentationSync } from "./presentationSync";
-import { getSlideTitle } from "./presentationUtils";
+import { getSlideTitle, restoreViewerOriginalScene } from "./presentationUtils";
 import { SlideThumbnailCard } from "./SlideThumbnailCard";
 
 import "./PresentationHUD.scss";
