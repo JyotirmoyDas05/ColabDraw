@@ -118,8 +118,9 @@ const tokenize = (text: string) =>
     .map((word) => (word.length > 3 ? word.replace(/s$/, "") : word));
 
 // only search when the user is asking for ready-made art, so ordinary requests cost nothing
+// search when the user is asking for ready-made art, icons, infographics, or visual figures
 const ART_WORDS =
-  /librar(y|ies)|excalidraw\.com|\b(icons?|symbols?|stencils?|logos?|clip ?art|illustrations?|stickers?|pictograms?|emoji|sprites?)\b/i;
+  /librar(y|ies)|excalidraw\.com|\b(icons?|symbols?|stencils?|logos?|clip ?art|illustrations?|stickers?|pictograms?|emoji|sprites?|infographics?|presentations?|figures?|architecture|schematics?|visuals?|diagrams?|components?|systems?|charts?)\b/i;
 
 const ART_TOKENS = new Set([
   "library",
@@ -140,6 +141,15 @@ const ART_TOKENS = new Set([
   "online",
   "shape",
   "diagram",
+  "infographic",
+  "presentation",
+  "figure",
+  "architecture",
+  "schematic",
+  "visual",
+  "component",
+  "system",
+  "chart",
   "replace",
   "above",
   "below",
