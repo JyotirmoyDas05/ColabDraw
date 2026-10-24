@@ -4,9 +4,11 @@ import { appJotaiStore } from "../app-jotai";
 import {
   DEFAULT_PRESENTATION_SETTINGS,
   DEFAULT_PRESENTATION_STATE,
+  DEFAULT_VIEWER_PRESENTATION_STATE,
   activeRemotePresentationAtom,
   presentationModeAtom,
   presentationSettingsAtom,
+  viewerPresentationStateAtom,
 } from "../presentation/presentationState";
 import { presentationSync } from "../presentation/presentationSync";
 import {
@@ -214,5 +216,86 @@ describe("presentationState & integration", () => {
     expect(appJotaiStore.get(presentationModeAtom).isActive).toBe(true);
     appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
     expect(appJotaiStore.get(presentationModeAtom).isActive).toBe(false);
+  });
+
+  describe("Viewer presentation state & filmstrip", () => {
+    it("has correct default viewer presentation state", () => {
+      expect(DEFAULT_VIEWER_PRESENTATION_STATE).toEqual({
+        isFollowing: true,
+        currentSlideIndex: 0,
+        currentSlideId: null,
+        isFilmstripPinned: false,
+      });
+      expect(appJotaiStore.get(viewerPresentationStateAtom)).toEqual(
+        DEFAULT_VIEWER_PRESENTATION_STATE,
+      );
+    });
+
+    it("updates viewerPresentationStateAtom independently from presenter mode", () => {
+      // Presenter is at slide 0
+      appJotaiStore.set(presentationModeAtom, {
+        ...DEFAULT_PRESENTATION_STATE,
+        isActive: false,
+        isFollower: true,
+        currentSlideIndex: 0,
+        totalSlides: 4,
+        presenterUsername: "Host",
+      });
+
+      // Viewer navigates to slide 2 independently
+      appJotaiStore.set(viewerPresentationStateAtom, {
+        isFollowing: false,
+        currentSlideIndex: 2,
+        currentSlideId: "slide-2",
+        isFilmstripPinned: false,
+      });
+
+      const viewerState = appJotaiStore.get(viewerPresentationStateAtom);
+      expect(viewerState.isFollowing).toBe(false);
+      expect(viewerState.currentSlideIndex).toBe(2);
+      expect(viewerState.currentSlideId).toBe("slide-2");
+
+      // Presenter state is intact and unaffected
+      const presState = appJotaiStore.get(presentationModeAtom);
+      expect(presState.currentSlideIndex).toBe(0);
+    });
+
+    it("manages filmstrip pinning state correctly", () => {
+      appJotaiStore.set(viewerPresentationStateAtom, (prev) => ({
+        ...prev,
+        isFilmstripPinned: true,
+      }));
+      expect(
+        appJotaiStore.get(viewerPresentationStateAtom).isFilmstripPinned,
+      ).toBe(true);
+
+      appJotaiStore.set(viewerPresentationStateAtom, (prev) => ({
+        ...prev,
+        isFilmstripPinned: false,
+      }));
+      expect(
+        appJotaiStore.get(viewerPresentationStateAtom).isFilmstripPinned,
+      ).toBe(false);
+    });
+
+    it("allows re-locking to presenter when following is re-enabled", () => {
+      // Re-lock to presenter at slide 3
+      appJotaiStore.set(presentationModeAtom, (prev) => ({
+        ...prev,
+        currentSlideIndex: 3,
+        currentSlideId: "slide-3",
+      }));
+
+      appJotaiStore.set(viewerPresentationStateAtom, (prev) => ({
+        ...prev,
+        isFollowing: true,
+        currentSlideIndex: 3,
+        currentSlideId: "slide-3",
+      }));
+
+      const state = appJotaiStore.get(viewerPresentationStateAtom);
+      expect(state.isFollowing).toBe(true);
+      expect(state.currentSlideIndex).toBe(3);
+    });
   });
 });

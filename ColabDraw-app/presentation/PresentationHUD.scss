@@ -21,6 +21,60 @@
     border-radius: 999px;
   }
 
+  &--viewer {
+    padding: 6px 10px;
+    gap: 8px;
+    border-radius: 999px;
+
+    .presentation-hud__viewer-nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .presentation-hud__slide-counter {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary-color, #2b2b2b);
+      padding: 0 6px;
+      min-width: 48px;
+      text-align: center;
+      user-select: none;
+    }
+
+    .presentation-hud__btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--text-primary-color, #333333);
+      cursor: pointer;
+      transition: background 0.12s ease, color 0.12s ease, transform 0.08s ease;
+
+      &:hover:not(:disabled) {
+        background: var(--button-hover-bg, rgba(0, 0, 0, 0.06));
+      }
+
+      &:active:not(:disabled) {
+        transform: scale(0.95);
+      }
+
+      &:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+
+      svg {
+        width: 16px;
+        height: 16px;
+      }
+    }
+  }
+
   &__pulse-dot {
     width: 8px;
     height: 8px;

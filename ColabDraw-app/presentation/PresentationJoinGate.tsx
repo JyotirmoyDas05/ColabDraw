@@ -4,7 +4,7 @@ import { getRandomUsername } from "@excalidraw/random-username";
 import type { ExcalidrawFrameLikeElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
-import { useAtom } from "../app-jotai";
+import { appJotaiStore, useAtom } from "../app-jotai";
 import { BrandMark } from "../components/BrandMark";
 
 import { isCollaborationLink } from "../data";
@@ -13,6 +13,7 @@ import {
   activeRemotePresentationAtom,
   presentationModeAtom,
   rememberViewerPriorSceneId,
+  viewerPresentationStateAtom,
 } from "./presentationState";
 import { cleanPresentationUrl, getOrderedSlides } from "./presentationUtils";
 import { SlideThumbnailCard } from "./SlideThumbnailCard";
@@ -104,23 +105,26 @@ export const PresentationJoinGate: React.FC<PresentationJoinGateProps> = ({
 
     if (collabAPI) {
       collabAPI.setUsername(trimmed);
-      if (remotePresentation?.presenterSocketId) {
-        collabAPI.setUserToFollow({
-          socketId: remotePresentation.presenterSocketId as any,
-          username: remotePresentation.presenterUsername,
-        });
-      }
     }
+
+    const slideId = activeSlide?.id ?? null;
 
     setPresentationMode({
       isActive: false,
       currentSlideIndex,
       totalSlides: remotePresentation?.totalSlides ?? slides.length,
-      currentSlideId: activeSlide?.id ?? null,
+      currentSlideId: slideId,
       isLive: false,
       isFollower: true,
       presenterSocketId: remotePresentation?.presenterSocketId ?? null,
       presenterUsername: effectiveHostName,
+    });
+
+    appJotaiStore.set(viewerPresentationStateAtom, {
+      isFollowing: true,
+      currentSlideIndex,
+      currentSlideId: slideId,
+      isFilmstripPinned: false,
     });
 
     onJoin();

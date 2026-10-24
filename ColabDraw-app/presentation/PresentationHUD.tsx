@@ -25,6 +25,8 @@ import {
   exportPresentationToPptx,
 } from "./presentationExport";
 import { buildPresentationJoinLink } from "./presentationLayout";
+import { PresentationFollowPill } from "./PresentationFollowPill";
+import { PresentationViewerFilmstrip } from "./PresentationViewerFilmstrip";
 import {
   activeRemotePresentationAtom,
   clearViewerPriorSceneId,
@@ -33,6 +35,7 @@ import {
   presentationEndedAtom,
   presentationSettingsAtom,
   presentationStopConfirmAtom,
+  viewerPresentationStateAtom,
 } from "./presentationState";
 import { presentationSync } from "./presentationSync";
 import { getSlideTitle, restoreViewerOriginalScene } from "./presentationUtils";
@@ -62,6 +65,11 @@ interface PresentationHUDProps {
   onToggleTheme?: () => void;
   excalidrawAPI?: ExcalidrawImperativeAPI | null;
   collabAPI?: CollabAPI | null;
+  onViewerNext?: () => void;
+  onViewerPrev?: () => void;
+  onViewerGoToSlide?: (index: number) => void;
+  onToggleViewerFollow?: () => void;
+  onToggleFilmstripPinned?: () => void;
 }
 
 export const PresentationHUD: React.FC<PresentationHUDProps> = ({
@@ -83,7 +91,13 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
   onToggleTheme,
   excalidrawAPI = null,
   collabAPI = null,
+  onViewerNext,
+  onViewerPrev,
+  onViewerGoToSlide,
+  onToggleViewerFollow,
+  onToggleFilmstripPinned,
 }) => {
+  const [viewerState] = useAtom(viewerPresentationStateAtom);
   const [slidesDrawerOpen, setSlidesDrawerOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -326,11 +340,11 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
 
   return (
     <>
-      {/* Dim and blur everything around the focused slide */}
+      {/* Dim and blur everything around the focused slide (host only) */}
       <PresentationFocusOverlay
         excalidrawAPI={excalidrawAPI}
         slide={currentSlide}
-        enabled={presentationState.isActive || presentationState.isFollower}
+        enabled={presentationState.isActive && !presentationState.isFollower}
       />
 
       {/* Remote presentation invitation banner */}
@@ -380,32 +394,146 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
         </div>
       )}
 
-      {/* Follower bar if watching someone else's presentation */}
-      {presentationState.isFollower && onStopFollowing && (
-        <div className="presentation-hud presentation-hud--follower">
-          <span className="presentation-hud__pulse-dot" />
-          <span className="presentation-hud__follower-label">
-            Watching {presentationState.presenterUsername}&apos;s presentation
-          </span>
-          <button
-            type="button"
-            className="presentation-hud__stop-btn"
-            onClick={onStopFollowing}
-          >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+      {/* Viewer Left Filmstrip Sidebar */}
+      {presentationState.isFollower && (
+        <PresentationViewerFilmstrip
+          slides={slides as ExcalidrawFrameLikeElement[]}
+          activeViewerSlideIndex={viewerState.currentSlideIndex}
+          hostSlideIndex={presentationState.currentSlideIndex}
+          isPinned={viewerState.isFilmstripPinned}
+          onTogglePin={onToggleFilmstripPinned || (() => {})}
+          onSelectSlide={(slide, index) => {
+            if (onViewerGoToSlide) {
+              onViewerGoToSlide(index);
+            }
+          }}
+          excalidrawAPI={excalidrawAPI}
+          collabAPI={collabAPI}
+        />
+      )}
+
+      {/* Viewer Top-Right Follow Presenter Pill */}
+      {presentationState.isFollower && (
+        <PresentationFollowPill
+          presenterUsername={presentationState.presenterUsername || "Host"}
+          isFollowing={viewerState.isFollowing}
+          onToggleFollow={onToggleViewerFollow || (() => {})}
+        />
+      )}
+
+      {/* Viewer Bottom Controls */}
+      {presentationState.isFollower && (
+        <div className="presentation-hud presentation-hud--viewer">
+          <div className="presentation-hud__viewer-nav">
+            <button
+              type="button"
+              className="presentation-hud__btn"
+              onClick={onViewerPrev}
+              disabled={viewerState.currentSlideIndex <= 0}
+              title="Previous slide (Left arrow)"
+              aria-label="Previous slide"
             >
-              <rect x="4" y="4" width="16" height="16" rx="2" />
-            </svg>
-            <span>Stop watching</span>
-          </button>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+            <span className="presentation-hud__slide-counter">
+              {viewerState.currentSlideIndex + 1} / {slides.length || 1}
+            </span>
+            <button
+              type="button"
+              className="presentation-hud__btn"
+              onClick={onViewerNext}
+              disabled={viewerState.currentSlideIndex >= slides.length - 1}
+              title="Next slide (Right arrow / Space)"
+              aria-label="Next slide"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="presentation-hud__divider" />
+
+          {onToggleFullscreen && (
+            <button
+              type="button"
+              className="presentation-hud__btn"
+              onClick={onToggleFullscreen}
+              title={
+                isFullscreen ? "Exit fullscreen (F)" : "Enter fullscreen (F)"
+              }
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                {isFullscreen ? (
+                  <>
+                    <polyline points="4 14 10 14 10 20" />
+                    <polyline points="20 10 14 10 14 4" />
+                    <line x1="14" y1="10" x2="21" y2="3" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </>
+                ) : (
+                  <>
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </>
+                )}
+              </svg>
+            </button>
+          )}
+
+          {onStopFollowing && (
+            <button
+              type="button"
+              className="presentation-hud__stop-btn"
+              onClick={onStopFollowing}
+              title="Stop watching"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+              </svg>
+              <span>Stop watching</span>
+            </button>
+          )}
         </div>
       )}
 

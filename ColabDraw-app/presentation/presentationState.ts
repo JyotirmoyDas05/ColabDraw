@@ -144,3 +144,26 @@ export const clearViewerPriorSceneId = () => {
   } catch {}
   appJotaiStore.set(viewerPriorSceneIdAtom, null);
 };
+
+/**
+ * Local presentation viewing state for audience viewers.
+ * Decoupled from presenter broadcasts so viewers can independently browse
+ * slides at their own pace or follow the presenter on-demand without affecting others.
+ */
+export interface ViewerPresentationState {
+  isFollowing: boolean;
+  currentSlideIndex: number;
+  currentSlideId: string | null;
+  isFilmstripPinned: boolean;
+}
+
+export const DEFAULT_VIEWER_PRESENTATION_STATE: ViewerPresentationState = {
+  isFollowing: true,
+  currentSlideIndex: 0,
+  currentSlideId: null,
+  isFilmstripPinned: false,
+};
+
+export const viewerPresentationStateAtom = atom<ViewerPresentationState>(
+  DEFAULT_VIEWER_PRESENTATION_STATE,
+);
