@@ -192,6 +192,19 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
   }, [shareOpen, settingsOpen, remoteSectionOpen, collabAPI]);
 
   const currentSlide = slides[presentationState.currentSlideIndex];
+  const activeViewerSlide = useMemo(() => {
+    if (viewerState.currentSlideId) {
+      const found = slides.find((s) => s.id === viewerState.currentSlideId);
+      if (found) {
+        return found;
+      }
+    }
+    return slides[viewerState.currentSlideIndex] || null;
+  }, [slides, viewerState.currentSlideId, viewerState.currentSlideIndex]);
+
+  const activeOverlaySlide = presentationState.isFollower
+    ? activeViewerSlide
+    : currentSlide;
   const slideTitle = getSlideTitle(
     currentSlide,
     presentationState.currentSlideIndex,
@@ -340,11 +353,13 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
 
   return (
     <>
-      {/* Dim and blur everything around the focused slide (host only) */}
+      {/* Complete slide isolation: opaque presentation stage backdrop around the focused slide */}
       <PresentationFocusOverlay
         excalidrawAPI={excalidrawAPI}
-        slide={currentSlide}
-        enabled={presentationState.isActive && !presentationState.isFollower}
+        slide={activeOverlaySlide}
+        enabled={presentationState.isActive}
+        isViewer={presentationState.isFollower}
+        appTheme={appTheme === "dark" ? "dark" : "light"}
       />
 
       {/* Remote presentation invitation banner */}

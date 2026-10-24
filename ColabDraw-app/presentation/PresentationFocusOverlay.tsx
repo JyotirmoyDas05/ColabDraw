@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import clsx from "clsx";
+import React, { useEffect, useRef, useState } from "react";
 
 import type { ExcalidrawFrameLikeElement } from "@excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -15,6 +16,8 @@ interface PresentationFocusOverlayProps {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   slide: ExcalidrawFrameLikeElement | null | undefined;
   enabled?: boolean;
+  isViewer?: boolean;
+  appTheme?: "light" | "dark";
 }
 
 const getViewportSnapshot = (
@@ -30,13 +33,34 @@ const getViewportSnapshot = (
 });
 
 /**
- * Dims and blurs everything around the focused slide so neighbouring frames
- * never compete with the slide currently being presented.
+ * Creates an isolated presentation theater stage around the focused slide.
+ * Opaque stage curtains mask out all neighbouring canvas frames, drawings,
+ * and whiteboard background, replicating the isolated slide mental model
+ * found in Google Slides and Figma Slides.
  */
 export const PresentationFocusOverlay: React.FC<
   PresentationFocusOverlayProps
-> = ({ excalidrawAPI, slide, enabled = true }) => {
+> = ({
+  excalidrawAPI,
+  slide,
+  enabled = true,
+  isViewer = false,
+  appTheme = "light",
+}) => {
   const [viewport, setViewport] = useState<ViewportSnapshot | null>(null);
+  const [transitionKey, setTransitionKey] = useState(0);
+  const prevSlideIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (
+      prevSlideIdRef.current &&
+      slide?.id &&
+      prevSlideIdRef.current !== slide.id
+    ) {
+      setTransitionKey((prev) => prev + 1);
+    }
+    prevSlideIdRef.current = slide?.id ?? null;
+  }, [slide?.id]);
 
   useEffect(() => {
     if (!enabled || !excalidrawAPI) {
@@ -102,27 +126,44 @@ export const PresentationFocusOverlay: React.FC<
   });
 
   return (
-    <div className="presentation-focus-overlay" aria-hidden="true">
+    <div
+      className={clsx(
+        "presentation-focus-overlay",
+        isViewer
+          ? "presentation-focus-overlay--viewer"
+          : "presentation-focus-overlay--host",
+        appTheme && `presentation-focus-overlay--${appTheme}`,
+      )}
+      aria-hidden="true"
+    >
       <div
-        className="presentation-focus-overlay__mask"
+        className="presentation-focus-overlay__mask presentation-focus-overlay__mask--top"
         style={panelStyle(layout.top)}
       />
       <div
-        className="presentation-focus-overlay__mask"
+        className="presentation-focus-overlay__mask presentation-focus-overlay__mask--bottom"
         style={panelStyle(layout.bottom)}
       />
       <div
-        className="presentation-focus-overlay__mask"
+        className="presentation-focus-overlay__mask presentation-focus-overlay__mask--left"
         style={panelStyle(layout.left)}
       />
       <div
-        className="presentation-focus-overlay__mask"
+        className="presentation-focus-overlay__mask presentation-focus-overlay__mask--right"
         style={panelStyle(layout.right)}
       />
       <div
         className="presentation-focus-overlay__spotlight"
         style={panelStyle(layout.spotlight)}
-      />
+      >
+        {transitionKey > 0 && (
+          <div
+            key={transitionKey}
+            className="presentation-focus-overlay__dissolve"
+            aria-hidden="true"
+          />
+        )}
+      </div>
     </div>
   );
 };

@@ -82,6 +82,7 @@ export const usePresentationController = ({
       customSlideOrder,
     ),
   );
+  const prevViewerSlideIdRef = useRef<string | null>(null);
 
   // Periodic heartbeat broadcast while presenting in a room to sync late-joining remotes
   useEffect(() => {
@@ -176,10 +177,11 @@ export const usePresentationController = ({
   ]);
 
   // Follower auto-framing: When watching someone else's presentation, immediately
-  // frame and animate viewport to the active viewer slide, applying sidebar offsets
+  // frame and position viewport to the active viewer slide, applying sidebar offsets
   // and locking canvas scrolling/zooming so the slide is cleanly centered.
   useEffect(() => {
     if (!presentationState.isFollower || !excalidrawAPI) {
+      prevViewerSlideIdRef.current = null;
       return;
     }
 
@@ -205,10 +207,17 @@ export const usePresentationController = ({
 
     if (targetSlide) {
       const leftOffset = viewerPresentationState.isFilmstripPinned ? 210 : 0;
+      const isSlideChange =
+        prevViewerSlideIdRef.current !== null &&
+        prevViewerSlideIdRef.current !== targetSlide.id;
+      prevViewerSlideIdRef.current = targetSlide.id;
+
       excalidrawAPI.setViewport({
         target: targetSlide,
         fit: "contain",
-        animation: settings.animateSlideMovement,
+        // Instant switch when navigating to a new slide to prevent camera panning across canvas.
+        // Pin/unpin sidebar adjustments on the same slide remain smoothly animated.
+        animation: isSlideChange ? false : settings.animateSlideMovement,
         offsets: {
           left: leftOffset,
         },
