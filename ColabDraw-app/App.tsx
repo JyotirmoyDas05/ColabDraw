@@ -91,7 +91,10 @@ import {
 import { PresentationHUD } from "./presentation/PresentationHUD";
 import { PresentationRemoteController } from "./presentation/PresentationRemoteController";
 import { PresentationJoinGate } from "./presentation/PresentationJoinGate";
-import { stripPresentationParams } from "./presentation/presentationLayout";
+import {
+  getPresentationLinkMode,
+  stripPresentationParams,
+} from "./presentation/presentationLayout";
 import { usePresentationController } from "./presentation/usePresentationController";
 import {
   activeRemotePresentationAtom,
@@ -341,8 +344,19 @@ const initializeScene = async (opts: {
 
   if (roomLinkData && opts.collabAPI) {
     const { excalidrawAPI } = opts;
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const presMode = getPresentationLinkMode(search);
+    const presence =
+      presMode === "remote"
+        ? "remote"
+        : presMode === "join" || roomLinkData.isViewOnly
+        ? "viewer"
+        : "editor";
 
-    const scene = await opts.collabAPI.startCollaboration(roomLinkData);
+    const scene = await opts.collabAPI.startCollaboration({
+      ...roomLinkData,
+      presence,
+    });
 
     return {
       // when collaborating, the state may have already been updated at this

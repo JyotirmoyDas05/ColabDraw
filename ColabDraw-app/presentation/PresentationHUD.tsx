@@ -1,4 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   laserPointerToolIcon,
@@ -134,22 +140,39 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
     };
   }, [slidesDrawerOpen, shareOpen, settingsOpen]);
 
-  // When remote control accordion is visible in settings, ensure a live collab room exists
+  const ensureCollabRoom = useCallback(async (): Promise<string> => {
+    let link = activeRoomLink;
+    if (!link && collabAPI) {
+      if (!collabAPI.isCollaborating()) {
+        try {
+          await collabAPI.startCollaboration(null);
+        } catch (err) {
+          console.warn(
+            "Could not auto-start collaboration for presentation:",
+            err,
+          );
+        }
+      }
+      link = collabAPI.getActiveRoomLink() || window.location.href;
+    }
+    return link || window.location.href;
+  }, [activeRoomLink, collabAPI]);
+
+  // When share popover or remote control accordion is visible in settings, ensure a live collab room exists
   useEffect(() => {
     if (
-      settingsOpen &&
-      remoteSectionOpen &&
+      (shareOpen || (settingsOpen && remoteSectionOpen)) &&
       collabAPI &&
       !collabAPI.isCollaborating()
     ) {
       collabAPI.startCollaboration(null).catch((err) => {
         console.warn(
-          "Could not auto-start collaboration for remote presentation",
+          "Could not auto-start collaboration for presentation share/remote",
           err,
         );
       });
     }
-  }, [settingsOpen, remoteSectionOpen, collabAPI]);
+  }, [shareOpen, settingsOpen, remoteSectionOpen, collabAPI]);
 
   const currentSlide = slides[presentationState.currentSlideIndex];
   const slideTitle = getSlideTitle(
@@ -168,8 +191,8 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
       }))
     : [];
 
-  const handleCopyPresentationLink = () => {
-    const baseUrl = activeRoomLink || window.location.href;
+  const handleCopyPresentationLink = async () => {
+    const baseUrl = await ensureCollabRoom();
     const joinLink = buildPresentationJoinLink({
       baseUrl,
       hostName: collabAPI?.getUsername?.(),
@@ -193,7 +216,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
     });
   };
 
-  const remoteControlUrl = (() => {
+  const remoteControlUrl = useMemo(() => {
     if (typeof window === "undefined") {
       return "";
     }
@@ -207,10 +230,21 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
       url.searchParams.set("presentation", "remote");
       return url.toString();
     }
-  })();
+  }, [activeRoomLink]);
 
-  const handleCopyRemoteLink = () => {
-    navigator.clipboard.writeText(remoteControlUrl).then(() => {
+  const handleCopyRemoteLink = async () => {
+    const currentLink = await ensureCollabRoom();
+    let remoteUrl = currentLink;
+    try {
+      const url = new URL(currentLink);
+      url.searchParams.set("presentation", "remote");
+      remoteUrl = url.toString();
+    } catch {
+      const url = new URL(window.location.href);
+      url.searchParams.set("presentation", "remote");
+      remoteUrl = url.toString();
+    }
+    navigator.clipboard.writeText(remoteUrl).then(() => {
       setCopiedRemoteLink(true);
       setTimeout(() => setCopiedRemoteLink(false), 3000);
     });

@@ -645,6 +645,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           }
           hasConnected = true;
           appJotaiStore.set(syncUnavailableAtom, false);
+          const currentPres = appJotaiStore.get(presentationModeAtom);
+          if (currentPres.isActive && !currentPres.isFollower) {
+            this.portal.startPresentationSession();
+          }
         }
         if (status === "unavailable") {
           appJotaiStore.set(syncUnavailableAtom, true);
@@ -880,6 +884,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           }
 
           if (action === "STOP_PRESENTATION") {
+            if (this.presence === "remote") {
+              if (this.isCollaborating()) {
+                this.stopCollaboration(false);
+              }
+            }
             if (currentPres.isFollower) {
               this.setUserToFollow(null);
               if (this.isCollaborating()) {
@@ -954,6 +963,19 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.portal.socket!.on("presentation", (presentation) => {
       appJotaiStore.set(presentationSessionAtom, presentation);
       this.handlePresentationSessionUpdate(presentation, true);
+      const currentPres = appJotaiStore.get(presentationModeAtom);
+      if (
+        currentPres.isActive &&
+        !currentPres.isFollower &&
+        presentation &&
+        presentation.viewers > 0
+      ) {
+        this.portal.broadcastScene(
+          WS_SUBTYPES.INIT,
+          this.getSceneElementsIncludingDeleted(),
+          /* syncAll */ true,
+        );
+      }
     });
 
     this.portal.socket!.on("followers", (followedBy: string[]) => {
@@ -978,6 +1000,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     }
     const currentPres = appJotaiStore.get(presentationModeAtom);
     if (presentation === null) {
+      if (this.presence === "remote") {
+        if (this.isCollaborating()) {
+          this.stopCollaboration(false);
+        }
+      }
       if (currentPres.isFollower) {
         this.setUserToFollow(null);
         if (this.isCollaborating()) {
@@ -1280,6 +1307,9 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   );
 
   relayVisibleSceneBounds = (props?: { force: boolean }) => {
+    if (this.isAudience() || this.isViewOnly()) {
+      return;
+    }
     if (this.portal.socket && (this.followedBy.size > 0 || props?.force)) {
       this.portal.broadcastVisibleSceneBounds({
         sceneBounds: getVisibleSceneBounds(this.excalidrawAPI.getAppState()),
@@ -1288,6 +1318,9 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   };
 
   onIdleStateChange = (userState: UserIdleState) => {
+    if (this.isAudience() || this.isViewOnly()) {
+      return;
+    }
     this.portal.broadcastIdleChange(userState);
   };
 

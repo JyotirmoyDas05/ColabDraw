@@ -472,6 +472,12 @@ export const usePresentationController = ({
 
   const stopPresentation = useCallback(() => {
     collabAPI?.endPresentationSession?.();
+    collabAPI?.broadcastPresentationControl?.({
+      action: "STOP_PRESENTATION",
+    });
+    presentationSync.send({
+      type: "STOP_PRESENTATION",
+    });
     presentationSync.send({
       type: "SYNC_STATE",
       slideIndex: 0,
