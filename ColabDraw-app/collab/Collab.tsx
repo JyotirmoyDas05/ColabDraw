@@ -90,12 +90,14 @@ import { resetBrowserStateVersions } from "../data/tabSync";
 import {
   activeRemotePresentationAtom,
   DEFAULT_PRESENTATION_STATE,
+  DEFAULT_VIEWER_PRESENTATION_STATE,
   presentationEndedAtom,
   presentationModeAtom,
   presentationSessionAtom,
   presentationSessionSupportedAtom,
   presentationSettingsAtom,
   type PresentationSessionInfo,
+  viewerPresentationStateAtom,
 } from "../presentation/presentationState";
 import {
   getPresentationLinkMode,
@@ -887,6 +889,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
                 presentationModeAtom,
                 DEFAULT_PRESENTATION_STATE,
               );
+              appJotaiStore.set(
+                viewerPresentationStateAtom,
+                DEFAULT_VIEWER_PRESENTATION_STATE,
+              );
             }
           }
           break;
@@ -1060,6 +1066,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           reason: "ended",
         });
         appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
+        appJotaiStore.set(
+          viewerPresentationStateAtom,
+          DEFAULT_VIEWER_PRESENTATION_STATE,
+        );
         appJotaiStore.set(activeRemotePresentationAtom, null);
       } else if (currentPres.isActive && !currentPres.isFollower) {
         // Active presenter never terminates their own presentation when a

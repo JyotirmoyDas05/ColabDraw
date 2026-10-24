@@ -99,9 +99,11 @@ import { usePresentationController } from "./presentation/usePresentationControl
 import {
   activeRemotePresentationAtom,
   DEFAULT_PRESENTATION_STATE,
+  DEFAULT_VIEWER_PRESENTATION_STATE,
   presentationEndedAtom,
   presentationModeAtom,
   rememberViewerPriorSceneId,
+  viewerPresentationStateAtom,
 } from "./presentation/presentationState";
 import { cleanPresentationUrl } from "./presentation/presentationUtils";
 import { STORAGE_KEYS, SYNC_BROWSER_TABS_TIMEOUT } from "./app_constants";
@@ -443,6 +445,7 @@ const ExcalidrawWrapper = () => {
   const [, setShareDialogState] = useAtom(shareDialogStateAtom);
   const [collabAPI] = useAtom(collabAPIAtom);
   const setPresentationMode = useSetAtom(presentationModeAtom);
+  const setViewerPresentationState = useSetAtom(viewerPresentationStateAtom);
   const setPresentationEnded = useSetAtom(presentationEndedAtom);
   const setDashboardOpen = useSetAtom(dashboardOpenAtom);
   const presentationController = usePresentationController({
@@ -477,12 +480,14 @@ const ExcalidrawWrapper = () => {
     });
 
     setPresentationMode(DEFAULT_PRESENTATION_STATE);
+    setViewerPresentationState(DEFAULT_VIEWER_PRESENTATION_STATE);
   }, [
     collabAPI,
     excalidrawAPI,
     presentationController.presentationState,
     setPresentationEnded,
     setPresentationMode,
+    setViewerPresentationState,
   ]);
 
   const [isCollaborating] = useAtomWithInitialValue(isCollaboratingAtom, () => {
@@ -1221,25 +1226,34 @@ const ExcalidrawWrapper = () => {
           }
           excalidrawAPI={excalidrawAPI}
           collabAPI={collabAPI}
+          onViewerNext={presentationController.viewerNextSlide}
+          onViewerPrev={presentationController.viewerPrevSlide}
+          onViewerGoToSlide={presentationController.navigateViewerSlide}
+          onToggleViewerFollow={presentationController.toggleViewerFollow}
+          onToggleFilmstripPinned={presentationController.toggleFilmstripPinned}
           onJoinRemotePresentation={({
             presenterSocketId,
             presenterUsername,
           }) => {
             rememberViewerPriorSceneId();
-            collabAPI?.setUserToFollow({
-              socketId: presenterSocketId as any,
-              username: presenterUsername,
-            });
             const remotePres = appJotaiStore.get(activeRemotePresentationAtom);
+            const initialSlideIndex = remotePres?.slideIndex ?? 0;
+            const initialSlideId = remotePres?.slideId ?? null;
             setPresentationMode({
               isActive: false,
-              currentSlideIndex: remotePres?.slideIndex ?? 0,
+              currentSlideIndex: initialSlideIndex,
               totalSlides: remotePres?.totalSlides ?? 0,
-              currentSlideId: remotePres?.slideId ?? null,
+              currentSlideId: initialSlideId,
               isLive: false,
               isFollower: true,
               presenterSocketId,
               presenterUsername,
+            });
+            setViewerPresentationState({
+              isFollowing: true,
+              currentSlideIndex: initialSlideIndex,
+              currentSlideId: initialSlideId,
+              isFilmstripPinned: false,
             });
           }}
           onStopFollowing={handleStopWatching}

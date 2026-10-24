@@ -13,6 +13,7 @@ import {
   presentationSettingsAtom,
   presentationSlideOrderAtom,
   presentationStopConfirmAtom,
+  viewerPresentationStateAtom,
 } from "./presentationState";
 import { presentationSync } from "./presentationSync";
 import { getOrderedSlides } from "./presentationUtils";
@@ -44,6 +45,9 @@ export const usePresentationController = ({
   const [customSlideOrder] = useAtom(presentationSlideOrderAtom);
   const [, setPresentationEnded] = useAtom(presentationEndedAtom);
   const [, setStopConfirm] = useAtom(presentationStopConfirmAtom);
+  const [viewerPresentationState, setViewerPresentationState] = useAtom(
+    viewerPresentationStateAtom,
+  );
 
   const [orderedSlides, setOrderedSlides] = useState<
     ExcalidrawFrameLikeElement[]
@@ -142,8 +146,38 @@ export const usePresentationController = ({
     refreshSlides,
   ]);
 
+  // When viewer is in "follow presenter" mode, automatically sync active slide to presenter's
+  useEffect(() => {
+    if (!presentationState.isFollower) {
+      return;
+    }
+    if (viewerPresentationState.isFollowing) {
+      if (
+        viewerPresentationState.currentSlideIndex !==
+          presentationState.currentSlideIndex ||
+        viewerPresentationState.currentSlideId !==
+          presentationState.currentSlideId
+      ) {
+        setViewerPresentationState((prev) => ({
+          ...prev,
+          currentSlideIndex: presentationState.currentSlideIndex,
+          currentSlideId: presentationState.currentSlideId,
+        }));
+      }
+    }
+  }, [
+    presentationState.isFollower,
+    presentationState.currentSlideIndex,
+    presentationState.currentSlideId,
+    viewerPresentationState.isFollowing,
+    viewerPresentationState.currentSlideIndex,
+    viewerPresentationState.currentSlideId,
+    setViewerPresentationState,
+  ]);
+
   // Follower auto-framing: When watching someone else's presentation, immediately
-  // frame and animate viewport to the presenter's active slide.
+  // frame and animate viewport to the active viewer slide, applying sidebar offsets
+  // and locking canvas scrolling/zooming so the slide is cleanly centered.
   useEffect(() => {
     if (!presentationState.isFollower || !excalidrawAPI) {
       return;
@@ -155,31 +189,41 @@ export const usePresentationController = ({
     }
 
     let targetSlide: ExcalidrawFrameLikeElement | undefined;
-    if (presentationState.currentSlideId) {
+    if (viewerPresentationState.currentSlideId) {
       targetSlide = slides.find(
-        (s) => s.id === presentationState.currentSlideId,
+        (s) => s.id === viewerPresentationState.currentSlideId,
       );
     }
 
     if (!targetSlide) {
       const clampedIndex = Math.max(
         0,
-        Math.min(presentationState.currentSlideIndex, slides.length - 1),
+        Math.min(viewerPresentationState.currentSlideIndex, slides.length - 1),
       );
       targetSlide = slides[clampedIndex];
     }
 
     if (targetSlide) {
+      const leftOffset = viewerPresentationState.isFilmstripPinned ? 210 : 0;
       excalidrawAPI.setViewport({
         target: targetSlide,
         fit: "contain",
         animation: settings.animateSlideMovement,
+        offsets: {
+          left: leftOffset,
+        },
+        lock: {
+          scroll: true,
+          zoom: true,
+          overscroll: false,
+        },
       });
     }
   }, [
     presentationState.isFollower,
-    presentationState.currentSlideIndex,
-    presentationState.currentSlideId,
+    viewerPresentationState.currentSlideIndex,
+    viewerPresentationState.currentSlideId,
+    viewerPresentationState.isFilmstripPinned,
     settings.animateSlideMovement,
     refreshSlides,
     excalidrawAPI,
@@ -536,6 +580,68 @@ export const usePresentationController = ({
     setPresentationState,
   ]);
 
+  const navigateViewerSlide = useCallback(
+    (index: number, explicitSlideId?: string | null) => {
+      const slides = refreshSlides();
+      if (!slides.length) {
+        return;
+      }
+      const clamped = Math.max(0, Math.min(index, slides.length - 1));
+      const target = slides[clamped];
+      const targetId =
+        explicitSlideId !== undefined ? explicitSlideId : target?.id || null;
+
+      setViewerPresentationState((prev) => ({
+        ...prev,
+        currentSlideIndex: clamped,
+        currentSlideId: targetId,
+        isFollowing: clamped === presentationState.currentSlideIndex,
+      }));
+    },
+    [
+      refreshSlides,
+      presentationState.currentSlideIndex,
+      setViewerPresentationState,
+    ],
+  );
+
+  const viewerNextSlide = useCallback(() => {
+    navigateViewerSlide(viewerPresentationState.currentSlideIndex + 1);
+  }, [navigateViewerSlide, viewerPresentationState.currentSlideIndex]);
+
+  const viewerPrevSlide = useCallback(() => {
+    navigateViewerSlide(viewerPresentationState.currentSlideIndex - 1);
+  }, [navigateViewerSlide, viewerPresentationState.currentSlideIndex]);
+
+  const toggleViewerFollow = useCallback(() => {
+    setViewerPresentationState((prev) => {
+      const nextFollowing = !prev.isFollowing;
+      if (nextFollowing) {
+        return {
+          ...prev,
+          isFollowing: true,
+          currentSlideIndex: presentationState.currentSlideIndex,
+          currentSlideId: presentationState.currentSlideId,
+        };
+      }
+      return {
+        ...prev,
+        isFollowing: false,
+      };
+    });
+  }, [
+    presentationState.currentSlideIndex,
+    presentationState.currentSlideId,
+    setViewerPresentationState,
+  ]);
+
+  const toggleFilmstripPinned = useCallback(() => {
+    setViewerPresentationState((prev) => ({
+      ...prev,
+      isFilmstripPinned: !prev.isFilmstripPinned,
+    }));
+  }, [setViewerPresentationState]);
+
   const nextSlide = useCallback(() => {
     const slides = refreshSlides();
     if (!slides.length) {
@@ -620,7 +726,7 @@ export const usePresentationController = ({
 
   // Keyboard navigation handler
   useEffect(() => {
-    if (!presentationState.isActive) {
+    if (!presentationState.isActive && !presentationState.isFollower) {
       return;
     }
 
@@ -633,6 +739,46 @@ export const usePresentationController = ({
           target.tagName === "TEXTAREA" ||
           target.isContentEditable)
       ) {
+        return;
+      }
+
+      if (presentationState.isFollower) {
+        switch (e.key) {
+          case "ArrowRight":
+          case "ArrowDown":
+          case "PageDown":
+          case " ": {
+            e.preventDefault();
+            viewerNextSlide();
+            break;
+          }
+          case "ArrowLeft":
+          case "ArrowUp":
+          case "PageUp":
+          case "Backspace": {
+            e.preventDefault();
+            viewerPrevSlide();
+            break;
+          }
+          case "Home": {
+            e.preventDefault();
+            navigateViewerSlide(0);
+            break;
+          }
+          case "End": {
+            e.preventDefault();
+            navigateViewerSlide(slidesRef.current.length - 1);
+            break;
+          }
+          case "f":
+          case "F": {
+            e.preventDefault();
+            toggleFullscreen();
+            break;
+          }
+          default:
+            break;
+        }
         return;
       }
 
@@ -693,15 +839,20 @@ export const usePresentationController = ({
     navigateToSlide,
     nextSlide,
     presentationState.isActive,
+    presentationState.isFollower,
     prevSlide,
     stopPresentation,
     toggleFullscreen,
     toggleLaser,
+    viewerNextSlide,
+    viewerPrevSlide,
+    navigateViewerSlide,
     setStopConfirm,
   ]);
 
   return {
     presentationState,
+    viewerPresentationState,
     orderedSlides,
     activeToolType,
     startPresentation,
@@ -709,6 +860,11 @@ export const usePresentationController = ({
     navigateToSlide,
     nextSlide,
     prevSlide,
+    viewerNextSlide,
+    viewerPrevSlide,
+    navigateViewerSlide,
+    toggleViewerFollow,
+    toggleFilmstripPinned,
     toggleLaser,
     toggleFullscreen,
     toggleLivePresentation,
