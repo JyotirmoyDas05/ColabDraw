@@ -64,8 +64,14 @@ export const computeSpotlightLayout = (
 ): SpotlightLayout => {
   const viewportLeft = viewport.offsetLeft;
   const viewportTop = viewport.offsetTop;
-  const viewportRight = viewportLeft + viewport.width;
-  const viewportBottom = viewportTop + viewport.height;
+  const viewportRight = Math.max(
+    viewportLeft + viewport.width,
+    typeof window !== "undefined" ? window.innerWidth : viewport.width,
+  );
+  const viewportBottom = Math.max(
+    viewportTop + viewport.height,
+    typeof window !== "undefined" ? window.innerHeight : viewport.height,
+  );
 
   const left = clamp(
     slideRect.left,
@@ -95,31 +101,33 @@ export const computeSpotlightLayout = (
     height: bottom - top,
   };
 
+  const totalWidth = viewportRight - viewportLeft;
+
   return {
     spotlight,
     top: {
       left: viewportLeft,
       top: viewportTop,
-      width: viewport.width,
-      height: top - viewportTop,
+      width: totalWidth,
+      height: Math.max(0, top - viewportTop + 1),
     },
     bottom: {
       left: viewportLeft,
-      top: bottom,
-      width: viewport.width,
-      height: viewportBottom - bottom,
+      top: Math.max(viewportTop, bottom - 1),
+      width: totalWidth,
+      height: Math.max(0, viewportBottom - bottom + 1),
     },
     left: {
       left: viewportLeft,
-      top,
-      width: left - viewportLeft,
-      height: bottom - top,
+      top: Math.max(viewportTop, top - 1),
+      width: Math.max(0, left - viewportLeft + 1),
+      height: Math.max(0, bottom - top + 2),
     },
     right: {
-      left: right,
-      top,
-      width: viewportRight - right,
-      height: bottom - top,
+      left: Math.max(viewportLeft, right - 1),
+      top: Math.max(viewportTop, top - 1),
+      width: Math.max(0, viewportRight - right + 1),
+      height: Math.max(0, bottom - top + 2),
     },
   };
 };

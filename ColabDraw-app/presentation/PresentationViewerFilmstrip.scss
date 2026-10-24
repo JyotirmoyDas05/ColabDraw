@@ -11,7 +11,7 @@
   box-shadow: 6px 0 28px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
-  z-index: 999;
+  z-index: 1001;
   transform: translateX(-100%);
   transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
@@ -39,78 +39,64 @@
     justify-content: space-between;
     padding: 12px 14px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(16, 17, 22, 0.5);
-  }
-
-  &__title-group {
-    display: flex;
-    align-items: center;
-    gap: 8px;
   }
 
   &__title {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: #e8eaed;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.55);
   }
 
-  &__count {
-    font-size: 11px;
-    font-weight: 600;
-    color: #9aa0a6;
-    background: rgba(255, 255, 255, 0.08);
-    padding: 1px 6px;
-    border-radius: 10px;
-  }
-
-  &__pin-btn {
+  &__header-actions {
     display: flex;
     align-items: center;
-    gap: 5px;
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #9aa0a6;
+    gap: 4px;
+  }
+
+  &__action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
     border-radius: 6px;
-    padding: 4px 8px;
-    font-size: 11px;
-    font-weight: 500;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.65);
     cursor: pointer;
-    transition: all 0.18s ease;
+    transition: all 0.15s ease;
+    padding: 0;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.08);
-      color: #f1f3f4;
-      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
     }
 
     &.is-active {
-      background: rgba(66, 133, 244, 0.18);
-      color: #8ab4f8;
-      border-color: rgba(66, 133, 244, 0.45);
-      font-weight: 600;
+      color: #6965db;
+      background: rgba(105, 101, 219, 0.16);
     }
-  }
-
-  &__pin-text {
-    line-height: 1;
   }
 
   &__list {
     flex: 1;
     overflow-y: auto;
-    padding: 12px 10px;
+    overflow-x: hidden;
+    padding: 10px 8px;
     display: flex;
     flex-direction: column;
     gap: 10px;
 
-    /* Sleek slim scrollbar */
     &::-webkit-scrollbar {
       width: 5px;
     }
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
     &::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.16);
       border-radius: 4px;
     }
   }
@@ -118,33 +104,66 @@
   &__item {
     position: relative;
     cursor: pointer;
-    border-radius: 8px;
-    transition: transform 0.18s ease;
+    border-radius: 6px;
+    padding: 2px;
+    transition: transform 0.16s ease;
 
     &:hover {
-      transform: translateY(-1px);
+      transform: scale(1.02);
     }
 
-    &.is-selected {
-      .slide-thumbnail-card {
-        border-color: #4285f4;
-        box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.5);
+    &.is-active {
+      .presentation-viewer-filmstrip__card-wrap {
+        border-color: #6965db;
+        box-shadow: 0 0 0 2px rgba(105, 101, 219, 0.4);
       }
     }
   }
 
-  &__host-badge {
+  &__card-wrap {
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+    background: rgba(12, 13, 16, 0.9);
+    transition: border-color 0.16s ease;
+  }
+
+  &__presenter-badge {
     position: absolute;
     top: 6px;
-    right: 8px;
+    right: 6px;
     z-index: 20;
-    background: #ea4335;
-    color: #ffffff;
-    font-size: 8px;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    padding: 2px 5px;
-    border-radius: 4px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(105, 101, 219, 0.95);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 9999px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    letter-spacing: 0.02em;
+    pointer-events: none;
+  }
+
+  &__presenter-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #4ade80;
+    animation: filmstripLiveDot 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes filmstripLiveDot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
   }
 }
