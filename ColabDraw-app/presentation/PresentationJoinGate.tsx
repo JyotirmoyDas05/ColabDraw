@@ -7,12 +7,14 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useAtom } from "../app-jotai";
 import { BrandMark } from "../components/BrandMark";
 
+import { isCollaborationLink } from "../data";
+
 import {
   activeRemotePresentationAtom,
   presentationModeAtom,
   rememberViewerPriorSceneId,
 } from "./presentationState";
-import { getOrderedSlides } from "./presentationUtils";
+import { cleanPresentationUrl, getOrderedSlides } from "./presentationUtils";
 import { SlideThumbnailCard } from "./SlideThumbnailCard";
 
 import "./PresentationJoinGate.scss";
@@ -86,6 +88,8 @@ export const PresentationJoinGate: React.FC<PresentationJoinGateProps> = ({
     hostName?.trim() || remotePresentation?.presenterUsername?.trim() || "Host";
 
   const hostInitial = effectiveHostName.charAt(0).toUpperCase();
+  const hasValidRoom =
+    typeof window !== "undefined" && isCollaborationLink(window.location.href);
 
   const handleJoin = (e?: React.FormEvent) => {
     if (e) {
@@ -189,7 +193,9 @@ export const PresentationJoinGate: React.FC<PresentationJoinGateProps> = ({
         {/* Right Side: Join Presentation Form */}
         <section className="presentation-join-gate__right">
           <h1 className="presentation-join-gate__title">
-            Ready to join presentation?
+            {hasValidRoom
+              ? "Ready to join presentation?"
+              : "Unable to Join Presentation"}
           </h1>
 
           <div className="presentation-join-gate__invite-subtext">
@@ -197,42 +203,72 @@ export const PresentationJoinGate: React.FC<PresentationJoinGateProps> = ({
               {hostInitial}
             </div>
             <span>
-              You have been invited by <strong>{effectiveHostName}</strong>
+              {hasValidRoom ? (
+                <>
+                  You have been invited by <strong>{effectiveHostName}</strong>
+                </>
+              ) : (
+                <>
+                  This link is missing room details. Ask{" "}
+                  <strong>{effectiveHostName}</strong> to share a new
+                  presentation link.
+                </>
+              )}
             </span>
           </div>
 
-          <form className="presentation-join-gate__form" onSubmit={handleJoin}>
-            <div className="presentation-join-gate__field">
-              <label
-                htmlFor="presentation-join-username"
-                className="presentation-join-gate__label"
-              >
-                Your name
-              </label>
-              <input
-                id="presentation-join-username"
-                type="text"
-                className="presentation-join-gate__input"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your name"
-                autoComplete="off"
-                autoFocus
-                maxLength={40}
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="presentation-join-gate__btn"
-              disabled={!username.trim()}
+          {hasValidRoom ? (
+            <form
+              className="presentation-join-gate__form"
+              onSubmit={handleJoin}
             >
-              Join Presentation
-            </button>
-          </form>
+              <div className="presentation-join-gate__field">
+                <label
+                  htmlFor="presentation-join-username"
+                  className="presentation-join-gate__label"
+                >
+                  Your name
+                </label>
+                <input
+                  id="presentation-join-username"
+                  type="text"
+                  className="presentation-join-gate__input"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter your name"
+                  autoComplete="off"
+                  autoFocus
+                  maxLength={40}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="presentation-join-gate__btn"
+                disabled={!username.trim()}
+              >
+                Join Presentation
+              </button>
+            </form>
+          ) : (
+            <div className="presentation-join-gate__form">
+              <button
+                type="button"
+                className="presentation-join-gate__btn"
+                onClick={() => {
+                  cleanPresentationUrl();
+                  onJoin();
+                }}
+              >
+                Go to Canvas
+              </button>
+            </div>
+          )}
 
           <p className="presentation-join-gate__terms">
-            By joining, you will follow the presenter's slides live.
+            {hasValidRoom
+              ? "By joining, you will follow the presenter's slides live."
+              : "You can continue to your canvas."}
           </p>
         </section>
       </div>

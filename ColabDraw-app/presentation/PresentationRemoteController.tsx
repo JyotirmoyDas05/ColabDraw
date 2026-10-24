@@ -51,9 +51,12 @@ export const PresentationRemoteController: React.FC<
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmEndOpen, setConfirmEndOpen] = useState(false);
   const [isEnded, setIsEnded] = useState(false);
+  const hasSeenActiveSession = useRef(false);
 
   useEffect(() => {
-    if (presentationSessionSupported && presentationSession === null) {
+    if (presentationSession !== null) {
+      hasSeenActiveSession.current = true;
+    } else if (hasSeenActiveSession.current && presentationSessionSupported) {
       setIsEnded(true);
       if (collabAPI && collabAPI.isCollaborating()) {
         collabAPI.stopCollaboration(false);
@@ -224,11 +227,14 @@ export const PresentationRemoteController: React.FC<
         setSettings((prev) => ({ ...prev, ...msg.settings }));
       } else if (msg.type === "STOP_PRESENTATION") {
         setIsEnded(true);
+        if (collabAPI && collabAPI.isCollaborating()) {
+          collabAPI.stopCollaboration(false);
+        }
       }
     });
 
     return unsub;
-  }, [onExit, setSettings, slides.length]);
+  }, [onExit, setSettings, slides.length, collabAPI]);
 
   const goToSlide = (index: number) => {
     if (!slides.length) {
