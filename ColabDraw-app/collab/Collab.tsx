@@ -993,11 +993,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         });
         appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
         appJotaiStore.set(activeRemotePresentationAtom, null);
-      } else if (
-        currentPres.isActive &&
-        this.portal.socket?.id &&
-        presentation?.hostId !== this.portal.socket.id
-      ) {
+      } else if (currentPres.isActive) {
         const roomLink = this.getActiveRoomLink();
         appJotaiStore.set(presentationEndedAtom, {
           presenterUsername: this.getUsername(),
