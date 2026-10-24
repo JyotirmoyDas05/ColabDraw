@@ -12,6 +12,7 @@ import {
   presentationModeAtom,
   presentationSettingsAtom,
   presentationSlideOrderAtom,
+  presentationStopConfirmAtom,
 } from "./presentationState";
 import { presentationSync } from "./presentationSync";
 import { getOrderedSlides } from "./presentationUtils";
@@ -42,6 +43,7 @@ export const usePresentationController = ({
   const [settings, setSettings] = useAtom(presentationSettingsAtom);
   const [customSlideOrder] = useAtom(presentationSlideOrderAtom);
   const [, setPresentationEnded] = useAtom(presentationEndedAtom);
+  const [, setStopConfirm] = useAtom(presentationStopConfirmAtom);
 
   const [orderedSlides, setOrderedSlides] = useState<
     ExcalidrawFrameLikeElement[]
@@ -451,6 +453,10 @@ export const usePresentationController = ({
         });
       }
 
+      if (collabAPI?.isCollaborating?.()) {
+        collabAPI.startPresentationSession?.();
+      }
+
       return true;
     },
     [
@@ -460,10 +466,12 @@ export const usePresentationController = ({
       setPresentationEnded,
       settings,
       refreshSlides,
+      collabAPI,
     ],
   );
 
   const stopPresentation = useCallback(() => {
+    collabAPI?.endPresentationSession?.();
     presentationSync.send({
       type: "SYNC_STATE",
       slideIndex: 0,
@@ -644,7 +652,7 @@ export const usePresentationController = ({
         }
         case "Escape": {
           e.preventDefault();
-          stopPresentation();
+          setStopConfirm((prev) => !prev);
           break;
         }
         case "l":
@@ -676,6 +684,7 @@ export const usePresentationController = ({
     stopPresentation,
     toggleFullscreen,
     toggleLaser,
+    setStopConfirm,
   ]);
 
   return {

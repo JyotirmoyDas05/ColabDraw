@@ -1,21 +1,39 @@
+import type { PresentationSessionInfo } from "../presentation/presentationState";
+
 export type CollabSocketEvents = {
-  joined: (payload: { first: boolean; members: string[] }) => void;
+  joined: (payload: {
+    first: boolean;
+    members: string[];
+    presentation: PresentationSessionInfo | null;
+    /** false when the deployed room server predates presentation sessions */
+    sessionSupported: boolean;
+  }) => void;
   members: (ids: string[]) => void;
   newUser: (id: string) => void;
   followers: (ids: string[]) => void;
   unfollowed: () => void;
+  presentation: (session: PresentationSessionInfo | null) => void;
   scene: (payload: { opcode: 1 | 2; iv: Uint8Array; data: Uint8Array }) => void;
   status: (status: "connecting" | "open" | "unavailable") => void;
 };
 
+/** What this socket is to the room. Only `editor` can draw or save. */
+export type CollabPresence = "editor" | "viewer" | "remote";
+
 type SceneOpcode = 1 | 2;
 
 type ServerControl =
-  | { t: "joined"; first: boolean; members: string[] }
+  | {
+      t: "joined";
+      first: boolean;
+      members: string[];
+      presentation?: PresentationSessionInfo | null;
+    }
   | { t: "members"; ids: string[] }
   | { t: "new-user"; id: string }
   | { t: "followers"; ids: string[] }
   | { t: "unfollowed" }
+  | { t: "presentation"; presentation: PresentationSessionInfo | null }
   | { t: "pong" };
 
 /** Matches the wire protocol: [1-byte opcode][12-byte IV][ciphertext]. */
@@ -43,6 +61,7 @@ export class CollabSocket {
   private readonly url: string;
   private socket: WebSocket | null = null;
   private isViewOnly: boolean;
+  private readonly presence: CollabPresence;
   private closed = false;
   private attempt = 0;
   private following: string | null = null;
@@ -53,7 +72,7 @@ export class CollabSocket {
   constructor(
     baseUrl: string,
     roomId: string,
-    options?: { isViewOnly?: boolean },
+    options?: { isViewOnly?: boolean; presence?: CollabPresence },
   ) {
     const rawUrl =
       baseUrl ||
@@ -66,6 +85,21 @@ export class CollabSocket {
       .replace(/^http/, "ws");
     this.url = `${cleanUrl}/rooms/${encodeURIComponent(roomId)}`;
     this.isViewOnly = options?.isViewOnly ?? false;
+    this.presence = options?.presence ?? "editor";
+  }
+
+  getPresence(): CollabPresence {
+    return this.presence;
+  }
+
+  /** Asks the room to own a presentation session for this socket. */
+  startPresentation(): void {
+    this.sendControl({ t: "presentation-start" });
+  }
+
+  /** Asks the room to end the session, whether we host it or drive it. */
+  endPresentation(): void {
+    this.sendControl({ t: "presentation-end" });
   }
 
   connect(): void {
@@ -147,6 +181,7 @@ export class CollabSocket {
     t: string;
     target?: string;
     clientId?: string;
+    presence?: CollabPresence;
   }): void {
     if (this.socket?.readyState !== WebSocket.OPEN) {
       return;
@@ -157,7 +192,7 @@ export class CollabSocket {
   private handleOpen = (): void => {
     this.attempt = 0;
     this.emit("status", "open");
-    this.sendControl({ t: "join", clientId: this.id });
+    this.sendControl({ t: "join", clientId: this.id, presence: this.presence });
     if (this.isViewOnly) {
       this.sendControl({ t: "view-only" });
     }
@@ -253,7 +288,12 @@ export class CollabSocket {
         this.emit("joined", {
           first: c.first === true,
           members: this.filterIds(c.members),
+          presentation: this.session(c.presentation),
+          sessionSupported: "presentation" in c,
         });
+        return;
+      case "presentation":
+        this.emit("presentation", this.session(c.presentation));
         return;
       case "members":
         this.emit("members", this.filterIds(c.ids));
@@ -280,6 +320,34 @@ export class CollabSocket {
 
   private filterIds(ids: unknown): string[] {
     return Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
+  }
+
+  /** Narrows an untrusted session payload; anything malformed reads as idle. */
+  private session(value: unknown): PresentationSessionInfo | null {
+    if (typeof value !== "object" || value === null) {
+      return null;
+    }
+    const candidate = value as {
+      sessionId?: unknown;
+      hostId?: unknown;
+      viewers?: unknown;
+      remote?: unknown;
+    };
+    if (
+      typeof candidate.sessionId !== "string" ||
+      typeof candidate.hostId !== "string"
+    ) {
+      return null;
+    }
+    return {
+      sessionId: candidate.sessionId,
+      hostId: candidate.hostId,
+      viewers:
+        typeof candidate.viewers === "number" && candidate.viewers >= 0
+          ? candidate.viewers
+          : 0,
+      remote: candidate.remote === true,
+    };
   }
 
   private emit<K extends keyof CollabSocketEvents>(

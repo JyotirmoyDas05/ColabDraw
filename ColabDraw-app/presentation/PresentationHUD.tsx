@@ -12,6 +12,7 @@ import { useAtom } from "../app-jotai";
 import { activeRoomLinkAtom, type CollabAPI } from "../collab/Collab";
 import { QRCode } from "../share/QRCode";
 
+import { PresentationEndConfirmDialog } from "./PresentationEndConfirmDialog";
 import { PresentationFocusOverlay } from "./PresentationFocusOverlay";
 import {
   exportPresentationToPdf,
@@ -25,6 +26,7 @@ import {
   type PresentationModeState,
   presentationEndedAtom,
   presentationSettingsAtom,
+  presentationStopConfirmAtom,
 } from "./presentationState";
 import { presentationSync } from "./presentationSync";
 import { getSlideTitle, restoreViewerOriginalScene } from "./presentationUtils";
@@ -89,6 +91,8 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
     activeRemotePresentationAtom,
   );
   const [settings, setSettings] = useAtom(presentationSettingsAtom);
+  const [stopConfirm, setStopConfirm] = useAtom(presentationStopConfirmAtom);
+  const [confirmEndOpen, setConfirmEndOpen] = useState(false);
   const [activeRoomLink] = useAtom(activeRoomLinkAtom);
   const [presentationEnded, setPresentationEnded] = useAtom(
     presentationEndedAtom,
@@ -843,7 +847,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
             <button
               type="button"
               className="presentation-hud__end-btn"
-              onClick={onStop}
+              onClick={() => setConfirmEndOpen(true)}
               title="End presentation (Esc)"
             >
               <svg viewBox="0 0 24 24" fill="currentColor">
@@ -973,7 +977,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
                 </button>
               </div>
             ) : (
-              <>
+              <div className="presentation-ended-card__choices">
                 {presentationEnded.shareUrl && (
                   <a
                     className="presentation-ended-card__link"
@@ -986,16 +990,84 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
                 )}
                 <button
                   type="button"
-                  className="presentation-ended-card__button"
+                  className="presentation-ended-card__action-btn presentation-ended-card__action-btn--dashboard"
+                  onClick={() => {
+                    setPresentationEnded(null);
+                    onOpenDashboard?.();
+                  }}
+                >
+                  <div className="presentation-ended-card__action-icon">
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="20"
+                      height="20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                    </svg>
+                  </div>
+                  <div className="presentation-ended-card__action-content">
+                    <span className="presentation-ended-card__action-title">
+                      Go to Dashboard
+                    </span>
+                    <span className="presentation-ended-card__action-desc">
+                      View and manage all your saved scenes
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="presentation-ended-card__action-btn presentation-ended-card__action-btn--scene"
                   onClick={() => setPresentationEnded(null)}
                 >
-                  Return to scene
+                  <div className="presentation-ended-card__action-icon">
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="20"
+                      height="20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M19 12H5M12 19l-7-7 7-7" />
+                    </svg>
+                  </div>
+                  <div className="presentation-ended-card__action-content">
+                    <span className="presentation-ended-card__action-title">
+                      Return to Scene
+                    </span>
+                    <span className="presentation-ended-card__action-desc">
+                      Resume working on your canvas
+                    </span>
+                  </div>
                 </button>
-              </>
+              </div>
             )}
           </div>
         </div>
       )}
+
+      <PresentationEndConfirmDialog
+        isOpen={confirmEndOpen || stopConfirm}
+        isPublic={settings.isPublic}
+        onTogglePublic={(val) => updateSetting("isPublic", val)}
+        onConfirmEnd={() => {
+          setConfirmEndOpen(false);
+          setStopConfirm(false);
+          collabAPI?.endPresentationSession?.();
+          onStop();
+        }}
+        onCancel={() => {
+          setConfirmEndOpen(false);
+          setStopConfirm(false);
+        }}
+      />
     </>
   );
 };

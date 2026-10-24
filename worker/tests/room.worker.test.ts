@@ -42,8 +42,15 @@ const inbox = (ws: WebSocket) => {
     });
 };
 
-const join = (ws: WebSocket, clientId: string) =>
-  ws.send(JSON.stringify({ t: "join", clientId }));
+type Presence = "editor" | "viewer" | "remote";
+
+const join = (ws: WebSocket, clientId: string, presence?: Presence) =>
+  ws.send(
+    JSON.stringify({ t: "join", clientId, ...(presence && { presence }) }),
+  );
+
+const control = (ws: WebSocket, payload: Record<string, unknown>) =>
+  ws.send(JSON.stringify(payload));
 
 const IV = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 
@@ -98,6 +105,22 @@ const threeIn = async (roomId: string) => {
   return { alice, bob, carol };
 };
 
+/**
+ * Opens and joins with a non-editor presence. Such a socket is not a member,
+ * so its only join frame is `joined`.
+ */
+const observer = async (
+  roomId: string,
+  clientId: string,
+  presence: "viewer" | "remote",
+) => {
+  const ws = await open(roomId);
+  const next = inbox(ws);
+  join(ws, clientId, presence);
+  const joined = JSON.parse((await next()) as string);
+  return { ws, next, joined };
+};
+
 const closed = (ws: WebSocket) =>
   new Promise<{ code: number; reason: string }>((resolve) =>
     ws.addEventListener("close", (event) =>
@@ -114,6 +137,7 @@ describe("room", () => {
 
     expect(JSON.parse((await next()) as string)).toEqual({
       t: "joined",
+      presentation: null,
       first: true,
       members: [ALICE],
     });
@@ -129,6 +153,7 @@ describe("room", () => {
 
     expect(JSON.parse((await next()) as string)).toEqual({
       t: "joined",
+      presentation: null,
       first: true,
       members: [ALICE],
     });
@@ -168,6 +193,7 @@ describe("room", () => {
 
     expect(JSON.parse((await bobIn()) as string)).toEqual({
       t: "joined",
+      presentation: null,
       first: false,
       members: [ALICE, BOB],
     });
@@ -216,6 +242,7 @@ describe("room", () => {
 
     expect(JSON.parse((await bobIn()) as string)).toEqual({
       t: "joined",
+      presentation: null,
       first: true,
       members: [BOB],
     });
@@ -229,6 +256,7 @@ describe("room", () => {
 
     expect(JSON.parse((await aliceIn()) as string)).toEqual({
       t: "joined",
+      presentation: null,
       first: true,
       members: [ALICE],
     });
@@ -242,6 +270,7 @@ describe("room", () => {
     join(bob, BOB);
     expect(JSON.parse((await bobIn()) as string)).toEqual({
       t: "joined",
+      presentation: null,
       first: false,
       members: [ALICE, BOB],
     });
@@ -380,6 +409,7 @@ describe("room", () => {
     expect((await firstClosed).code).toBe(4001);
     expect(JSON.parse((await secondIn()) as string)).toEqual({
       t: "joined",
+      presentation: null,
       first: true,
       members: [ALICE],
     });
@@ -391,4 +421,191 @@ describe("room", () => {
       ids: [ALICE],
     });
   });
+});
+
+describe("presentation sessions", () => {
+  it("keeps a viewer out of the room and drops its frames", async () => {
+    const alice = await participant("presence-viewer", ALICE);
+    const viewer = await observer("presence-viewer", BOB, "viewer");
+
+    expect(viewer.joined).toEqual({
+      t: "joined",
+      presentation: null,
+      first: false,
+      members: [ALICE],
+    });
+
+    viewer.ws.send(frame(1, new Uint8Array([1])));
+    // same-socket ordering proves the frame was processed: nothing came back
+    await ping(viewer.ws, viewer.next);
+    // and the host was never told the viewer exists
+    await ping(alice.ws, alice.next);
+  });
+
+  it("broadcasts a started session and replays it to a late joiner", async () => {
+    const { alice, bob } = await twoIn("presentation-start");
+
+    control(alice.ws, { t: "presentation-start" });
+
+    const started = JSON.parse((await alice.next()) as string);
+    expect(started.t).toBe("presentation");
+    expect(started.presentation).toMatchObject({
+      hostId: ALICE,
+      viewers: 0,
+      remote: false,
+    });
+    expect(started.presentation.sessionId).toEqual(expect.any(String));
+    expect(JSON.parse((await bob.next()) as string)).toEqual(started);
+
+    const carol = await open("presentation-start");
+    const carolIn = inbox(carol);
+    join(carol, CAROL);
+    expect(JSON.parse((await carolIn()) as string)).toEqual({
+      t: "joined",
+      presentation: started.presentation,
+      first: false,
+      members: [ALICE, BOB, CAROL],
+    });
+  });
+
+  it("keeps the same session when the host starts again", async () => {
+    const { alice } = await twoIn("presentation-restart");
+    control(alice.ws, { t: "presentation-start" });
+    const first = JSON.parse((await alice.next()) as string);
+
+    control(alice.ws, { t: "presentation-start" });
+    expect(JSON.parse((await alice.next()) as string)).toEqual(first);
+  });
+
+  it("ends the session for everyone when the host ends it", async () => {
+    const { alice, bob } = await twoIn("presentation-end");
+    control(alice.ws, { t: "presentation-start" });
+    await alice.next();
+    await bob.next();
+
+    control(alice.ws, { t: "presentation-end" });
+
+    for (const participant of [alice, bob]) {
+      expect(JSON.parse((await participant.next()) as string)).toEqual({
+        t: "presentation",
+        presentation: null,
+      });
+    }
+  });
+
+  it("ignores an end or a start from an editor that is not the host", async () => {
+    const { alice, bob, carol } = await threeIn("presentation-not-host");
+    control(alice.ws, { t: "presentation-start" });
+    for (const participant of [alice, bob, carol]) {
+      await participant.next();
+    }
+
+    control(bob.ws, { t: "presentation-end" });
+    await ping(bob.ws, bob.next);
+    await ping(carol.ws, carol.next);
+
+    control(alice.ws, { t: "presentation-end" });
+    expect(JSON.parse((await carol.next()) as string)).toEqual({
+      t: "presentation",
+      presentation: null,
+    });
+  });
+
+  it("lets the remote control end the session", async () => {
+    const host = await participant("presentation-remote-end", ALICE);
+    control(host.ws, { t: "presentation-start" });
+    await host.next();
+
+    const remote = await observer("presentation-remote-end", BOB, "remote");
+    expect(remote.joined.members).toEqual([ALICE]);
+    const joinedLive = JSON.parse((await host.next()) as string);
+    expect(joinedLive).toMatchObject({
+      t: "presentation",
+      presentation: { hostId: ALICE, remote: true, viewers: 0 },
+    });
+    expect(JSON.parse((await remote.next()) as string)).toEqual(joinedLive);
+
+    control(remote.ws, { t: "presentation-end" });
+
+    expect(JSON.parse((await host.next()) as string)).toEqual({
+      t: "presentation",
+      presentation: null,
+    });
+    expect(JSON.parse((await remote.next()) as string)).toEqual({
+      t: "presentation",
+      presentation: null,
+    });
+  });
+
+  it("relays the remote's presentation controls but not its edits", async () => {
+    const host = await participant("presentation-remote-frames", ALICE);
+    const remote = await observer("presentation-remote-frames", BOB, "remote");
+
+    remote.ws.send(frame(2, new Uint8Array([7])));
+    expect(bytes(await host.next())).toEqual(new Uint8Array([2, ...IV, 7]));
+
+    remote.ws.send(frame(1, new Uint8Array([8])));
+    await ping(host.ws, host.next);
+  });
+
+  it("counts viewers in the snapshot and reports when they leave", async () => {
+    const host = await participant("presentation-viewers", ALICE);
+    control(host.ws, { t: "presentation-start" });
+    await host.next();
+
+    const viewer = await observer("presentation-viewers", BOB, "viewer");
+    const withViewer = JSON.parse((await host.next()) as string);
+    expect(withViewer).toMatchObject({
+      t: "presentation",
+      presentation: { viewers: 1 },
+    });
+    expect(JSON.parse((await viewer.next()) as string)).toEqual(withViewer);
+
+    viewer.ws.close();
+
+    expect(JSON.parse((await host.next()) as string)).toMatchObject({
+      t: "presentation",
+      presentation: { viewers: 0 },
+    });
+  });
+
+  it("ends the session when the host goes away", async () => {
+    const host = await participant("presentation-host-gone", ALICE);
+    control(host.ws, { t: "presentation-start" });
+    await host.next();
+
+    const viewer = await observer("presentation-host-gone", BOB, "viewer");
+    await host.next(); // the viewer count
+    await viewer.next(); // the session snapshot
+
+    host.ws.close();
+
+    expect(JSON.parse((await viewer.next()) as string)).toEqual({
+      t: "members",
+      ids: [],
+    });
+    expect(JSON.parse((await viewer.next()) as string)).toEqual({
+      t: "presentation",
+      presentation: null,
+    });
+  }, 10_000);
+
+  it("keeps the session alive across a host reconnect", async () => {
+    const host = await participant("presentation-host-return", ALICE);
+    control(host.ws, { t: "presentation-start" });
+    await host.next();
+
+    host.ws.close();
+
+    const again = await open("presentation-host-return");
+    const againIn = inbox(again);
+    join(again, ALICE);
+    const joined = JSON.parse((await againIn()) as string);
+    expect(joined.presentation).toMatchObject({ hostId: ALICE });
+    await againIn(); // members
+
+    // well past the grace, the session must still be live
+    await new Promise((resolve) => setTimeout(resolve, 2400));
+    await ping(again, againIn);
+  }, 10_000);
 });
