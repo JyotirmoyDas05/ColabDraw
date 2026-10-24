@@ -143,14 +143,14 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
   const ensureCollabRoom = useCallback(async (): Promise<string> => {
     let link = activeRoomLink;
     if (!link && collabAPI) {
-      if (!collabAPI.isCollaborating()) {
+      if (
+        !collabAPI.isCollaborating() &&
+        !collabAPI.isPresentationOnlyRoom?.()
+      ) {
         try {
-          await collabAPI.startCollaboration(null);
+          await collabAPI.startCollaboration(null, { forPresentation: true });
         } catch (err) {
-          console.warn(
-            "Could not auto-start collaboration for presentation:",
-            err,
-          );
+          console.warn("Could not auto-start presentation room:", err);
         }
       }
       link = collabAPI.getActiveRoomLink() || window.location.href;
@@ -158,19 +158,22 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
     return link || window.location.href;
   }, [activeRoomLink, collabAPI]);
 
-  // When share popover or remote control accordion is visible in settings, ensure a live collab room exists
+  // When share popover or remote control accordion is visible in settings, ensure a live presentation room exists
   useEffect(() => {
     if (
       (shareOpen || (settingsOpen && remoteSectionOpen)) &&
       collabAPI &&
-      !collabAPI.isCollaborating()
+      !collabAPI.isCollaborating() &&
+      !collabAPI.isPresentationOnlyRoom?.()
     ) {
-      collabAPI.startCollaboration(null).catch((err) => {
-        console.warn(
-          "Could not auto-start collaboration for presentation share/remote",
-          err,
-        );
-      });
+      collabAPI
+        .startCollaboration(null, { forPresentation: true })
+        .catch((err) => {
+          console.warn(
+            "Could not auto-start presentation room for share/remote",
+            err,
+          );
+        });
     }
   }, [shareOpen, settingsOpen, remoteSectionOpen, collabAPI]);
 
@@ -184,12 +187,13 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
 
   // Collaborators in room
   const collaboratorsMap = excalidrawAPI?.getAppState().collaborators;
-  const collaboratorsList = collaboratorsMap
-    ? Array.from(collaboratorsMap.entries()).map(([id, c]) => ({
-        id,
-        username: c.username,
-      }))
-    : [];
+  const collaboratorsList =
+    collabAPI?.isCollaborating() && collaboratorsMap
+      ? Array.from(collaboratorsMap.entries()).map(([id, c]) => ({
+          id,
+          username: c.username,
+        }))
+      : [];
 
   const handleCopyPresentationLink = async () => {
     const baseUrl = await ensureCollabRoom();

@@ -136,6 +136,7 @@ type CollabInstance = InstanceType<typeof Collab>;
 export interface CollabAPI {
   /** function so that we can access the latest value from stale callbacks */
   isCollaborating: () => boolean;
+  isPresentationOnlyRoom: () => boolean;
   onPointerUpdate: CollabInstance["onPointerUpdate"];
   startCollaboration: CollabInstance["startCollaboration"];
   stopCollaboration: CollabInstance["stopCollaboration"];
@@ -190,6 +191,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   private followedBy = new Set<SocketId>();
   /** what this device is to the room; the presentation audience cannot edit */
   private presence: CollabPresence = "editor";
+  private isPresentationOnly: boolean = false;
 
   constructor(props: CollabProps) {
     super(props);
@@ -280,6 +282,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
     const collabAPI: CollabAPI = {
       isCollaborating: this.isCollaborating,
+      isPresentationOnlyRoom: this.isPresentationOnlyRoom,
       onPointerUpdate: this.onPointerUpdate,
       startCollaboration: this.startCollaboration,
       syncElements: this.syncElements,
@@ -341,6 +344,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   isViewOnly = () => appJotaiStore.get(isViewOnlyAtom)!;
   /** True for anyone the room does not treat as a peer: audience and remote. */
   isAudience = () => this.presence !== "editor";
+  isPresentationOnlyRoom = () => this.isPresentationOnly;
 
   private setIsCollaborating = (isCollaborating: boolean) => {
     appJotaiStore.set(isCollaboratingAtom, isCollaborating);
@@ -351,8 +355,8 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   };
 
   private beforeUnload = withBatchedUpdates((event: BeforeUnloadEvent) => {
-    // viewers have nothing to save, so don't nag them on close
-    if (this.isViewOnly() || this.isAudience()) {
+    // viewers and presentation-only hosts have nothing to save to backend, so don't nag them on close
+    if (this.isPresentationOnly || this.isViewOnly() || this.isAudience()) {
       return;
     }
 
@@ -382,8 +386,8 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   saveCollabRoomToBackend = async (
     syncableElements: readonly SyncableExcalidrawElement[],
   ) => {
-    // a viewer or the presentation audience must never write the room back
-    if (this.isViewOnly() || this.isAudience()) {
+    // a viewer, presentation audience, or presentation-only host must never write the room back
+    if (this.isPresentationOnly || this.isViewOnly() || this.isAudience()) {
       return;
     }
     syncableElements = cloneJSON(syncableElements);
@@ -433,13 +437,16 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.loadImageFiles.cancel();
     this.resetErrorIndicator(true);
 
-    if (this.isViewOnly() || this.isAudience()) {
-      // leaving is all a viewer or the presentation audience can do: nothing
+    if (this.isPresentationOnly || this.isViewOnly() || this.isAudience()) {
+      // leaving is all a viewer, presentation audience, or presentation-only host can do: nothing
       // to save, no confirmation
-      window.history.pushState({}, APP_NAME, window.location.origin);
+      if (this.isViewOnly() || this.isAudience()) {
+        window.history.pushState({}, APP_NAME, window.location.origin);
+      }
       this.destroySocketClient();
       this.excalidrawAPI.updateScene({ appState: { viewModeEnabled: false } });
       LocalData.fileStorage.reset();
+      this.isPresentationOnly = false;
       return;
     }
 
@@ -484,6 +491,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.fileManager.reset();
     this.followedBy = new Set();
     this.presence = "editor";
+    this.isPresentationOnly = false;
     appJotaiStore.set(syncUnavailableAtom, false);
     if (!opts?.isUnload) {
       this.setIsCollaborating(false);
@@ -562,6 +570,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       roomKey: string;
       isViewOnly?: boolean;
       presence?: CollabPresence;
+      forPresentation?: boolean;
+    },
+    opts?: {
+      forPresentation?: boolean;
     },
   ) => {
     if (!this.state.username) {
@@ -574,42 +586,6 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     if (this.portal.socket) {
       return null;
     }
-
-    let roomId;
-    let roomKey;
-    let isViewOnly = false;
-
-    if (existingRoomLinkData) {
-      ({ roomId, roomKey } = existingRoomLinkData);
-      isViewOnly = !!existingRoomLinkData.isViewOnly;
-    } else {
-      ({ roomId, roomKey } = await generateCollaborationLinkData());
-      window.history.pushState(
-        {},
-        APP_NAME,
-        getCollaborationLink({ roomId, roomKey }),
-      );
-    }
-
-    // TODO: `ImportedDataState` type here seems abused
-    const scenePromise = resolvablePromise<
-      | (ImportedDataState & { elements: readonly OrderedExcalidrawElement[] })
-      | null
-    >();
-
-    this.setIsCollaborating(true);
-    appJotaiStore.set(isViewOnlyAtom, isViewOnly);
-    LocalData.pauseSave("collaboration");
-
-    const fallbackInitializationHandler = () => {
-      this.initializeRoom({
-        roomLinkData: existingRoomLinkData,
-        fetchScene: true,
-      }).then((scene) => {
-        scenePromise.resolve(scene);
-      });
-    };
-    this.fallbackInitializationHandler = fallbackInitializationHandler;
 
     const linkMode =
       typeof window !== "undefined"
@@ -624,10 +600,60 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       presence = (existingRoomLinkData as any).presence;
     } else if (linkMode === "remote") {
       presence = "remote";
-    } else if (linkMode === "join" || isViewOnly) {
+    } else if (linkMode === "join" || existingRoomLinkData?.isViewOnly) {
       presence = "viewer";
     }
     this.presence = presence;
+
+    const isPresentation = Boolean(
+      opts?.forPresentation ||
+        existingRoomLinkData?.forPresentation ||
+        presence === "viewer" ||
+        presence === "remote" ||
+        linkMode === "join" ||
+        linkMode === "remote",
+    );
+
+    let roomId;
+    let roomKey;
+    let isViewOnly = false;
+
+    if (existingRoomLinkData) {
+      ({ roomId, roomKey } = existingRoomLinkData);
+      isViewOnly = !!existingRoomLinkData.isViewOnly;
+    } else {
+      ({ roomId, roomKey } = await generateCollaborationLinkData());
+      const collabLink = getCollaborationLink({ roomId, roomKey });
+      this.setActiveRoomLink(collabLink);
+      if (!isPresentation) {
+        window.history.pushState({}, APP_NAME, collabLink);
+      }
+    }
+
+    // TODO: `ImportedDataState` type here seems abused
+    const scenePromise = resolvablePromise<
+      | (ImportedDataState & { elements: readonly OrderedExcalidrawElement[] })
+      | null
+    >();
+
+    if (isPresentation) {
+      this.isPresentationOnly = !this.isCollaborating();
+    } else {
+      this.isPresentationOnly = false;
+      this.setIsCollaborating(true);
+      LocalData.pauseSave("collaboration");
+    }
+    appJotaiStore.set(isViewOnlyAtom, isViewOnly);
+
+    const fallbackInitializationHandler = () => {
+      this.initializeRoom({
+        roomLinkData: existingRoomLinkData,
+        fetchScene: true,
+      }).then((scene) => {
+        scenePromise.resolve(scene);
+      });
+    };
+    this.fallbackInitializationHandler = fallbackInitializationHandler;
 
     try {
       const socket = new CollabSocket(BACKEND_URL, roomId, {
@@ -845,7 +871,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
               currentPresState.presenterSocketId === socketId
             ) {
               this.setUserToFollow(null);
-              if (this.isCollaborating()) {
+              if (this.isCollaborating() || this.isPresentationOnly) {
                 this.stopCollaboration(false);
               }
               this.excalidrawAPI.resetScene();
@@ -885,13 +911,13 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
           if (action === "STOP_PRESENTATION") {
             if (this.presence === "remote") {
-              if (this.isCollaborating()) {
+              if (this.isCollaborating() || this.isPresentationOnly) {
                 this.stopCollaboration(false);
               }
             }
             if (currentPres.isFollower) {
               this.setUserToFollow(null);
-              if (this.isCollaborating()) {
+              if (this.isCollaborating() || this.isPresentationOnly) {
                 this.stopCollaboration(false);
               }
               this.excalidrawAPI.resetScene();
@@ -902,6 +928,17 @@ class Collab extends PureComponent<CollabProps, CollabState> {
                 shareUrl: null,
                 reason: "ended",
               });
+            } else if (currentPres.isActive && !currentPres.isFollower) {
+              const roomLink = this.getActiveRoomLink();
+              appJotaiStore.set(presentationEndedAtom, {
+                presenterUsername: this.getUsername(),
+                wasFollower: false,
+                shareUrl: roomLink ? stripPresentationParams(roomLink) : null,
+                reason: "stopped",
+              });
+              if (this.isPresentationOnly) {
+                this.stopCollaboration(false);
+              }
             }
             presentationSync.send({ type: "STOP_PRESENTATION" });
             appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
@@ -986,7 +1023,11 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
     this.initializeIdleDetector();
 
-    this.setActiveRoomLink(window.location.href);
+    const currentRoomLink =
+      (roomId && roomKey ? getCollaborationLink({ roomId, roomKey }) : null) ||
+      this.state.activeRoomLink ||
+      window.location.href;
+    this.setActiveRoomLink(currentRoomLink);
 
     return scenePromise;
   };
@@ -1001,13 +1042,13 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     const currentPres = appJotaiStore.get(presentationModeAtom);
     if (presentation === null) {
       if (this.presence === "remote") {
-        if (this.isCollaborating()) {
+        if (this.isCollaborating() || this.isPresentationOnly) {
           this.stopCollaboration(false);
         }
       }
       if (currentPres.isFollower) {
         this.setUserToFollow(null);
-        if (this.isCollaborating()) {
+        if (this.isCollaborating() || this.isPresentationOnly) {
           this.stopCollaboration(false);
         }
         this.excalidrawAPI.resetScene();
@@ -1020,17 +1061,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         });
         appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
         appJotaiStore.set(activeRemotePresentationAtom, null);
-      } else if (currentPres.isActive) {
-        const roomLink = this.getActiveRoomLink();
-        appJotaiStore.set(presentationEndedAtom, {
-          presenterUsername: this.getUsername(),
-          wasFollower: false,
-          shareUrl: roomLink ? stripPresentationParams(roomLink) : null,
-          reason: "stopped",
-        });
-        presentationSync.send({ type: "STOP_PRESENTATION" });
-        appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
-        appJotaiStore.set(activeRemotePresentationAtom, null);
+      } else if (currentPres.isActive && !currentPres.isFollower) {
+        // Active presenter never terminates their own presentation when a
+        // room snapshot arrives with presentation: null. Re-assert the session.
+        this.portal.startPresentationSession();
       }
     }
   };
