@@ -104,11 +104,9 @@ import {
 import { presentationSync } from "../presentation/presentationSync";
 import { cleanPresentationUrl } from "../presentation/presentationUtils";
 
-import type { CollabPresence } from "./CollabSocket";
-
 import { collabErrorIndicatorAtom } from "./CollabError";
 import Portal from "./Portal";
-import { CollabSocket } from "./CollabSocket";
+import { CollabSocket, type CollabPresence } from "./CollabSocket";
 
 import type { PresentationSettings } from "../presentation/presentationState";
 import type {

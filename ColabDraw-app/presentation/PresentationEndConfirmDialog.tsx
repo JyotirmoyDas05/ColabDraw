@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+
 import "./PresentationEndConfirmDialog.scss";
 
 interface PresentationEndConfirmDialogProps {
@@ -19,14 +20,11 @@ export const PresentationEndConfirmDialog: React.FC<
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        e.preventDefault();
         onCancel();
       }
     };
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown, true);
-    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onCancel]);
 
   if (!isOpen) {
@@ -37,14 +35,14 @@ export const PresentationEndConfirmDialog: React.FC<
     <div
       className="presentation-confirm-dialog-overlay"
       onClick={onCancel}
-      aria-hidden="false"
+      role="presentation"
     >
       <div
         className="presentation-confirm-dialog"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="presentation-confirm-dialog-title"
+        aria-labelledby="presentation-confirm-title"
       >
         <div className="presentation-confirm-dialog__header">
           <div className="presentation-confirm-dialog__icon-wrap">
@@ -56,12 +54,14 @@ export const PresentationEndConfirmDialog: React.FC<
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <rect x="5" y="5" width="14" height="14" rx="2" />
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="9" y1="9" x2="15" y2="15" />
+              <line x1="15" y1="9" x2="9" y2="15" />
             </svg>
           </div>
           <div className="presentation-confirm-dialog__titles">
             <h2
-              id="presentation-confirm-dialog-title"
+              id="presentation-confirm-title"
               className="presentation-confirm-dialog__title"
             >
               End presentation

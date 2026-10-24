@@ -466,6 +466,7 @@ export const usePresentationController = ({
       setPresentationEnded,
       settings,
       refreshSlides,
+      collabAPI,
     ],
   );
 
@@ -683,6 +684,7 @@ export const usePresentationController = ({
     stopPresentation,
     toggleFullscreen,
     toggleLaser,
+    setStopConfirm,
   ]);
 
   return {
