@@ -58,7 +58,10 @@ export const PresentationRemoteController: React.FC<
       hasSeenActiveSession.current = true;
     } else if (hasSeenActiveSession.current && presentationSessionSupported) {
       setIsEnded(true);
-      if (collabAPI && collabAPI.isCollaborating()) {
+      if (
+        collabAPI &&
+        (collabAPI.isCollaborating() || collabAPI.isPresentationOnlyRoom?.())
+      ) {
         collabAPI.stopCollaboration(false);
       }
     }
@@ -227,7 +230,10 @@ export const PresentationRemoteController: React.FC<
         setSettings((prev) => ({ ...prev, ...msg.settings }));
       } else if (msg.type === "STOP_PRESENTATION") {
         setIsEnded(true);
-        if (collabAPI && collabAPI.isCollaborating()) {
+        if (
+          collabAPI &&
+          (collabAPI.isCollaborating() || collabAPI.isPresentationOnlyRoom?.())
+        ) {
           collabAPI.stopCollaboration(false);
         }
       }
@@ -311,7 +317,10 @@ export const PresentationRemoteController: React.FC<
     setPresentationState(DEFAULT_PRESENTATION_STATE);
     setRemotePresentation(null);
     setIsEnded(true);
-    if (collabAPI && collabAPI.isCollaborating()) {
+    if (
+      collabAPI &&
+      (collabAPI.isCollaborating() || collabAPI.isPresentationOnlyRoom?.())
+    ) {
       collabAPI.stopCollaboration(false);
     }
   };

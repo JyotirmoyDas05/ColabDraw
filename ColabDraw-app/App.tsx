@@ -353,10 +353,16 @@ const initializeScene = async (opts: {
         ? "viewer"
         : "editor";
 
-    const scene = await opts.collabAPI.startCollaboration({
-      ...roomLinkData,
-      presence,
-    });
+    const forPresentation = presMode === "remote" || presMode === "join";
+
+    const scene = await opts.collabAPI.startCollaboration(
+      {
+        ...roomLinkData,
+        presence,
+        forPresentation,
+      },
+      { forPresentation },
+    );
 
     return {
       // when collaborating, the state may have already been updated at this
@@ -448,7 +454,10 @@ const ExcalidrawWrapper = () => {
   });
 
   const handleStopWatching = useCallback(() => {
-    if (collabAPI && collabAPI.isCollaborating()) {
+    if (
+      collabAPI &&
+      (collabAPI.isCollaborating() || collabAPI.isPresentationOnlyRoom?.())
+    ) {
       collabAPI.stopCollaboration(false);
     }
     collabAPI?.setUserToFollow(null);

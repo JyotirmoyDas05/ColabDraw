@@ -202,4 +202,17 @@ describe("presentationState & integration", () => {
     slides = getOrderedSlides(mockElements, ["s3", "s1", "s2"]);
     expect(slides.map((s) => s.id)).toEqual(["s3", "s1", "s2"]);
   });
+
+  it("isolates presentation mode from collaboration session", () => {
+    expect(appJotaiStore.get(presentationModeAtom).isActive).toBe(false);
+    appJotaiStore.set(presentationModeAtom, {
+      ...DEFAULT_PRESENTATION_STATE,
+      isActive: true,
+      currentSlideIndex: 0,
+      totalSlides: 3,
+    });
+    expect(appJotaiStore.get(presentationModeAtom).isActive).toBe(true);
+    appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
+    expect(appJotaiStore.get(presentationModeAtom).isActive).toBe(false);
+  });
 });

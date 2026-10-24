@@ -453,7 +453,10 @@ export const usePresentationController = ({
         });
       }
 
-      if (collabAPI?.isCollaborating?.()) {
+      if (
+        collabAPI?.isCollaborating?.() ||
+        collabAPI?.isPresentationOnlyRoom?.()
+      ) {
         collabAPI.startPresentationSession?.();
       }
 
@@ -513,6 +516,10 @@ export const usePresentationController = ({
     const roomLink = collabAPI?.getActiveRoomLink?.();
     const baseLink =
       roomLink || (typeof window !== "undefined" ? window.location.href : "");
+    if (collabAPI?.isPresentationOnlyRoom?.()) {
+      collabAPI.stopCollaboration(false);
+    }
+
     setPresentationEnded({
       presenterUsername: collabAPI?.getUsername?.() || null,
       wasFollower: false,
