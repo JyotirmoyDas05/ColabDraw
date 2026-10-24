@@ -87,4 +87,24 @@ describe("Portal", () => {
 
     expect(socket.sendUpdate).not.toHaveBeenCalled();
   });
+
+  it("keeps the presentation audience from editing but lets it drive", async () => {
+    const { portal, socket } = opened();
+    portal.presence = "remote";
+
+    await portal.broadcastScene("SCENE_UPDATE" as any, [], true);
+    await portal.broadcastMouseLocation({
+      pointer: { x: 1, y: 2, tool: "pointer" } as any,
+      button: "up",
+    });
+    expect(socket.sendUpdate).not.toHaveBeenCalled();
+
+    await portal.broadcastPresentationControl({ action: "NEXT_SLIDE" });
+    expect(socket.sendUpdate).toHaveBeenCalledTimes(1);
+    expect(socket.sendUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      { volatile: true, followersOnly: false },
+    );
+  });
 });

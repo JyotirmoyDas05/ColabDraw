@@ -40,6 +40,19 @@ export interface PresentationEndedInfo {
   reason?: "stopped" | "ended";
 }
 
+/**
+ * The presentation the room server says is running. The server owns the
+ * lifecycle: this atom mirrors it, so a remote device that wakes up after the
+ * host ended still learns the session is gone.
+ */
+export interface PresentationSessionInfo {
+  sessionId: string;
+  /** the client id of the presenting device */
+  hostId: string;
+  viewers: number;
+  remote: boolean;
+}
+
 export const DEFAULT_PRESENTATION_STATE: PresentationModeState = {
   isActive: false,
   currentSlideIndex: 0,
@@ -77,6 +90,27 @@ export const presentationSlideOrderAtom = atom<string[]>([]);
  * the "presentation has now ended" card. `null` means no ended card is shown.
  */
 export const presentationEndedAtom = atom<PresentationEndedInfo | null>(null);
+
+/**
+ * Mirrors the room server's presentation session. `null` means nothing is
+ * being presented — the audience uses that to show a closed screen, and the
+ * presenter uses it to notice a remote ended the session.
+ */
+export const presentationSessionAtom = atom<PresentationSessionInfo | null>(
+  null,
+);
+
+/**
+ * False until the server tells us it understands presentation sessions, so an
+ * older worker still gets the client-only behaviour instead of a dead screen.
+ */
+export const presentationSessionSupportedAtom = atom(false);
+
+/**
+ * The "end this presentation?" dialog shared by the presenter HUD, the Esc
+ * shortcut and the remote control.
+ */
+export const presentationStopConfirmAtom = atom(false);
 
 export const viewerPriorSceneIdAtom = atom<string | null>(null);
 

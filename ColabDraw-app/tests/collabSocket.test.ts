@@ -71,9 +71,40 @@ describe("CollabSocket", () => {
 
     expect(FakeSocket.instances[0].url).toBe("wss://api.test/rooms/room-1");
     expect(FakeSocket.instances[0].sent).toEqual([
-      JSON.stringify({ t: "join", clientId: socket.id }),
+      JSON.stringify({ t: "join", clientId: socket.id, presence: "editor" }),
       JSON.stringify({ t: "view-only" }),
     ]);
+  });
+
+  it("joins with the presence the caller asked for", () => {
+    for (const presence of ["viewer", "remote"] as const) {
+      FakeSocket.instances = [];
+      const socket = new CollabSocket("https://api.test", "room-1", {
+        presence,
+      });
+      socket.connect();
+      FakeSocket.instances[0].open();
+
+      expect(FakeSocket.instances[0].sent).toEqual([
+        JSON.stringify({ t: "join", clientId: socket.id, presence }),
+      ]);
+    }
+  });
+
+  it("sends presentation start and end controls", () => {
+    const socket = new CollabSocket("https://api.test", "room-1");
+    socket.connect();
+    FakeSocket.instances[0].open();
+
+    socket.startPresentation();
+    expect(FakeSocket.instances[0].sent.at(-1)).toBe(
+      JSON.stringify({ t: "presentation-start" }),
+    );
+
+    socket.endPresentation();
+    expect(FakeSocket.instances[0].sent.at(-1)).toBe(
+      JSON.stringify({ t: "presentation-end" }),
+    );
   });
 
   it("wraps an update in a binary frame with an opcode", () => {
@@ -111,9 +142,19 @@ describe("CollabSocket", () => {
     FakeSocket.instances[0].open();
 
     FakeSocket.instances[0].message(
-      JSON.stringify({ t: "joined", first: false, members: ["a"] }),
+      JSON.stringify({
+        t: "joined",
+        first: false,
+        members: ["a"],
+        presentation: null,
+      }),
     );
-    expect(joined).toHaveBeenCalledWith({ first: false, members: ["a"] });
+    expect(joined).toHaveBeenCalledWith({
+      first: false,
+      members: ["a"],
+      presentation: null,
+      sessionSupported: true,
+    });
 
     FakeSocket.instances[0].message(
       JSON.stringify({ t: "new-user", id: "user-b" }),
@@ -127,6 +168,58 @@ describe("CollabSocket", () => {
 
     FakeSocket.instances[0].message(JSON.stringify({ t: "unfollowed" }));
     expect(unfollowed).toHaveBeenCalled();
+  });
+
+  it("reports presentation sessions and old servers that have none", () => {
+    const socket = new CollabSocket("https://api.test", "room-1");
+    const joined = vi.fn();
+    const presentation = vi.fn();
+    socket.on("joined", joined);
+    socket.on("presentation", presentation);
+    socket.connect();
+    FakeSocket.instances[0].open();
+
+    const session = {
+      sessionId: "session-1",
+      hostId: "host-1",
+      viewers: 2,
+      remote: true,
+    };
+    FakeSocket.instances[0].message(
+      JSON.stringify({
+        t: "joined",
+        first: true,
+        members: ["host-1"],
+        presentation: session,
+      }),
+    );
+    expect(joined).toHaveBeenCalledWith({
+      first: true,
+      members: ["host-1"],
+      presentation: session,
+      sessionSupported: true,
+    });
+
+    FakeSocket.instances[0].message(
+      JSON.stringify({ t: "presentation", presentation: { ...session } }),
+    );
+    expect(presentation).toHaveBeenCalledWith({ ...session });
+
+    FakeSocket.instances[0].message(
+      JSON.stringify({ t: "presentation", presentation: null }),
+    );
+    expect(presentation).toHaveBeenLastCalledWith(null);
+
+    // a worker deployed before sessions existed omits the field entirely
+    FakeSocket.instances[0].message(
+      JSON.stringify({ t: "joined", first: false, members: [] }),
+    );
+    expect(joined).toHaveBeenLastCalledWith({
+      first: false,
+      members: [],
+      presentation: null,
+      sessionSupported: false,
+    });
   });
 
   it("decodes incoming binary scene frames and ignores invalid ones", () => {

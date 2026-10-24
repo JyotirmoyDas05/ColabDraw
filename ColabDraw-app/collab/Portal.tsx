@@ -21,7 +21,7 @@ import type {
   SyncableExcalidrawElement,
 } from "../data";
 import type { TCollabClass } from "./Collab";
-import type { CollabSocket } from "./CollabSocket";
+import type { CollabPresence, CollabSocket } from "./CollabSocket";
 
 class Portal {
   collab: TCollabClass;
@@ -30,6 +30,8 @@ class Portal {
   roomId: string | null = null;
   roomKey: string | null = null;
   isViewOnly: boolean = false;
+  /** What this device is to the room; only `editor` may change it. */
+  presence: CollabPresence = "editor";
   broadcastedElementVersions: Map<string, number> = new Map();
 
   constructor(collab: TCollabClass) {
@@ -46,6 +48,7 @@ class Portal {
     this.roomId = id;
     this.roomKey = key;
     this.isViewOnly = isViewOnly;
+    this.presence = socket.getPresence?.() ?? "editor";
 
     this.socket.on("newUser", async (_socketId: string) => {
       this.broadcastScene(
@@ -73,6 +76,7 @@ class Portal {
     this.roomId = null;
     this.roomKey = null;
     this.isViewOnly = false;
+    this.presence = "editor";
     this.socketInitialized = false;
     this.broadcastedElementVersions = new Map();
   }
@@ -92,8 +96,13 @@ class Portal {
     followersOnly: boolean = false,
     allowViewers: boolean = false,
   ) {
-    // viewers are read-only: never send scene updates, cursors or presence
+    // Read-only links never send anything. A presentation viewer and the
+    // remote control are not room editors either — the remote may still send
+    // its presentation commands, which the room relays as volatile frames.
     if (this.isViewOnly) {
+      return;
+    }
+    if (this.presence !== "editor" && !allowViewers) {
       return;
     }
     if (this.isOpen()) {
@@ -313,6 +322,18 @@ class Portal {
         payload.action === "FOLLOW" ? payload.userToFollow.socketId : null,
       );
     }
+  };
+
+  /**
+   * Presentation sessions live on the room server, not in the encrypted
+   * payloads: an end has to reach a device that was asleep when it happened.
+   */
+  startPresentationSession = () => {
+    this.socket?.startPresentation();
+  };
+
+  endPresentationSession = () => {
+    this.socket?.endPresentation();
   };
 }
 

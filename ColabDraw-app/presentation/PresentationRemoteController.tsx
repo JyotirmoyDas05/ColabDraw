@@ -12,10 +12,13 @@ import {
   activeRemotePresentationAtom,
   DEFAULT_PRESENTATION_STATE,
   presentationModeAtom,
+  presentationSessionAtom,
+  presentationSessionSupportedAtom,
   presentationSettingsAtom,
 } from "./presentationState";
 import { presentationSync } from "./presentationSync";
 import { getOrderedSlides, getSlideTitle } from "./presentationUtils";
+import { PresentationEndConfirmDialog } from "./PresentationEndConfirmDialog";
 import { SlideThumbnailCard } from "./SlideThumbnailCard";
 
 import "./PresentationRemoteController.scss";
@@ -41,9 +44,22 @@ export const PresentationRemoteController: React.FC<
   const [presentationState, setPresentationState] =
     useAtom(presentationModeAtom);
   const [settings, setSettings] = useAtom(presentationSettingsAtom);
+  const [presentationSession] = useAtom(presentationSessionAtom);
+  const [presentationSessionSupported] = useAtom(
+    presentationSessionSupportedAtom,
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmEndOpen, setConfirmEndOpen] = useState(false);
   const [isEnded, setIsEnded] = useState(false);
+
+  useEffect(() => {
+    if (presentationSessionSupported && presentationSession === null) {
+      setIsEnded(true);
+      if (collabAPI && collabAPI.isCollaborating()) {
+        collabAPI.stopCollaboration(false);
+      }
+    }
+  }, [presentationSessionSupported, presentationSession, collabAPI]);
   const [remotePresentation, setRemotePresentation] = useAtom(
     activeRemotePresentationAtom,
   );
@@ -279,6 +295,7 @@ export const PresentationRemoteController: React.FC<
     setConfirmEndOpen(false);
     presentationSync.send({ type: "STOP_PRESENTATION" });
     try {
+      collabAPI?.endPresentationSession?.();
       await collabAPI?.broadcastPresentationControl?.({
         action: "STOP_PRESENTATION",
       });
@@ -288,6 +305,9 @@ export const PresentationRemoteController: React.FC<
     setPresentationState(DEFAULT_PRESENTATION_STATE);
     setRemotePresentation(null);
     setIsEnded(true);
+    if (collabAPI && collabAPI.isCollaborating()) {
+      collabAPI.stopCollaboration(false);
+    }
   };
 
   const handleReturnToScene = () => {
@@ -330,7 +350,8 @@ export const PresentationRemoteController: React.FC<
             The presentation has now ended
           </h2>
           <p className="presentation-remote__ended-subtitle">
-            Thank you for attending!
+            The host has ended the presentation and this remote control link is
+            closed.
           </p>
 
           <div className="presentation-remote__ended-card">
@@ -550,75 +571,13 @@ export const PresentationRemoteController: React.FC<
         </button>
       </footer>
 
-      {/* Confirmation Bottom Sheet */}
-      {confirmEndOpen && (
-        <div
-          className="presentation-remote__confirm-overlay"
-          onClick={() => setConfirmEndOpen(false)}
-        >
-          <div
-            className="presentation-remote__confirm-sheet"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="presentation-remote__confirm-sheet-handle" />
-            <div className="presentation-remote__confirm-header">
-              <h2 className="presentation-remote__confirm-title">
-                End presentation
-              </h2>
-              <p className="presentation-remote__confirm-desc">
-                Are you sure you want to end this presentation? Viewers won't be
-                able to follow along anymore.
-              </p>
-            </div>
-
-            <div className="presentation-remote__confirm-card">
-              <div className="presentation-remote__confirm-card-heading">
-                Before you go...
-              </div>
-              <div className="presentation-remote__confirm-row">
-                <div className="presentation-remote__confirm-row-info">
-                  <span className="presentation-remote__confirm-row-title">
-                    Public access
-                  </span>
-                  <span className="presentation-remote__confirm-row-sub">
-                    Make this presentation public so anyone with the link can
-                    view it
-                  </span>
-                </div>
-                <label className="presentation-toggle-switch">
-                  <input
-                    type="checkbox"
-                    checked={settings.isPublic}
-                    onChange={(e) =>
-                      handleSettingChange("isPublic", e.target.checked)
-                    }
-                  />
-                  <span className="presentation-toggle-switch__slider" />
-                </label>
-              </div>
-            </div>
-
-            <div className="presentation-remote__confirm-actions">
-              <button
-                type="button"
-                className="presentation-remote__confirm-btn presentation-remote__confirm-btn--danger"
-                onClick={handleConfirmEnd}
-              >
-                End presentation
-              </button>
-              <button
-                type="button"
-                className="presentation-remote__confirm-btn presentation-remote__confirm-btn--cancel"
-                onClick={() => setConfirmEndOpen(false)}
-              >
-                Keep presenting
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PresentationEndConfirmDialog
+        isOpen={confirmEndOpen}
+        isPublic={settings.isPublic}
+        onTogglePublic={(val) => handleSettingChange("isPublic", val)}
+        onConfirmEnd={handleConfirmEnd}
+        onCancel={() => setConfirmEndOpen(false)}
+      />
     </div>
   );
 };

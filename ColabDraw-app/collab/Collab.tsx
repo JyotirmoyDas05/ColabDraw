@@ -92,10 +92,19 @@ import {
   DEFAULT_PRESENTATION_STATE,
   presentationEndedAtom,
   presentationModeAtom,
+  presentationSessionAtom,
+  presentationSessionSupportedAtom,
   presentationSettingsAtom,
+  type PresentationSessionInfo,
 } from "../presentation/presentationState";
+import {
+  getPresentationLinkMode,
+  stripPresentationParams,
+} from "../presentation/presentationLayout";
 import { presentationSync } from "../presentation/presentationSync";
 import { cleanPresentationUrl } from "../presentation/presentationUtils";
+
+import type { CollabPresence } from "./CollabSocket";
 
 import { collabErrorIndicatorAtom } from "./CollabError";
 import Portal from "./Portal";
@@ -159,6 +168,10 @@ export interface CollabAPI {
     settings?: Partial<PresentationSettings>;
   }) => Promise<void> | void;
   relayVisibleSceneBounds: (props?: { force: boolean }) => void;
+  /** Tells the room this device is presenting. */
+  startPresentationSession: () => void;
+  /** Ends the room's presentation, whether this device hosts or drives it. */
+  endPresentationSession: () => void;
 }
 
 interface CollabProps {
@@ -177,6 +190,8 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   private collaborators = new Map<SocketId, Collaborator>();
   /** the socket ids of the users following the current user */
   private followedBy = new Set<SocketId>();
+  /** what this device is to the room; the presentation audience cannot edit */
+  private presence: CollabPresence = "editor";
 
   constructor(props: CollabProps) {
     super(props);
@@ -282,6 +297,8 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       broadcastPresentationControl: (payload) =>
         this.portal.broadcastPresentationControl(payload),
       relayVisibleSceneBounds: (props) => this.relayVisibleSceneBounds(props),
+      startPresentationSession: () => this.portal.startPresentationSession(),
+      endPresentationSession: () => this.portal.endPresentationSession(),
     };
 
     appJotaiStore.set(collabAPIAtom, collabAPI);
@@ -324,6 +341,8 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
   isCollaborating = () => appJotaiStore.get(isCollaboratingAtom)!;
   isViewOnly = () => appJotaiStore.get(isViewOnlyAtom)!;
+  /** True for anyone the room does not treat as a peer: audience and remote. */
+  isAudience = () => this.presence !== "editor";
 
   private setIsCollaborating = (isCollaborating: boolean) => {
     appJotaiStore.set(isCollaboratingAtom, isCollaborating);
@@ -335,7 +354,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
   private beforeUnload = withBatchedUpdates((event: BeforeUnloadEvent) => {
     // viewers have nothing to save, so don't nag them on close
-    if (this.isViewOnly()) {
+    if (this.isViewOnly() || this.isAudience()) {
       return;
     }
 
@@ -365,8 +384,8 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   saveCollabRoomToBackend = async (
     syncableElements: readonly SyncableExcalidrawElement[],
   ) => {
-    // a viewer must never write the room back, even if its scene is stale
-    if (this.isViewOnly()) {
+    // a viewer or the presentation audience must never write the room back
+    if (this.isViewOnly() || this.isAudience()) {
       return;
     }
     syncableElements = cloneJSON(syncableElements);
@@ -416,8 +435,9 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.loadImageFiles.cancel();
     this.resetErrorIndicator(true);
 
-    if (this.isViewOnly()) {
-      // leaving is all a viewer can do: nothing to save, no confirmation
+    if (this.isViewOnly() || this.isAudience()) {
+      // leaving is all a viewer or the presentation audience can do: nothing
+      // to save, no confirmation
       window.history.pushState({}, APP_NAME, window.location.origin);
       this.destroySocketClient();
       this.excalidrawAPI.updateScene({ appState: { viewModeEnabled: false } });
@@ -465,10 +485,14 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.portal.close();
     this.fileManager.reset();
     this.followedBy = new Set();
+    this.presence = "editor";
     appJotaiStore.set(syncUnavailableAtom, false);
     if (!opts?.isUnload) {
       this.setIsCollaborating(false);
       appJotaiStore.set(isViewOnlyAtom, false);
+      // a disconnected device must not keep showing the room's session
+      appJotaiStore.set(presentationSessionAtom, null);
+      appJotaiStore.set(presentationSessionSupportedAtom, false);
       this.setActiveRoomLink(null);
       appJotaiStore.set(userToFollowAtom, null);
       this.collaborators = new Map();
@@ -539,6 +563,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       roomId: string;
       roomKey: string;
       isViewOnly?: boolean;
+      presence?: CollabPresence;
     },
   ) => {
     if (!this.state.username) {
@@ -588,8 +613,29 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     };
     this.fallbackInitializationHandler = fallbackInitializationHandler;
 
+    const linkMode =
+      typeof window !== "undefined"
+        ? getPresentationLinkMode(window.location.search)
+        : null;
+    let presence: CollabPresence = "editor";
+    if (
+      existingRoomLinkData &&
+      "presence" in existingRoomLinkData &&
+      (existingRoomLinkData as any).presence
+    ) {
+      presence = (existingRoomLinkData as any).presence;
+    } else if (linkMode === "remote") {
+      presence = "remote";
+    } else if (linkMode === "join" || isViewOnly) {
+      presence = "viewer";
+    }
+    this.presence = presence;
+
     try {
-      const socket = new CollabSocket(BACKEND_URL, roomId, { isViewOnly });
+      const socket = new CollabSocket(BACKEND_URL, roomId, {
+        isViewOnly,
+        presence,
+      });
       this.portal.open(socket, roomId, roomKey, isViewOnly);
 
       let hasConnected = false;
@@ -886,18 +932,30 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       }
     });
 
-    this.portal.socket!.on("joined", async ({ first }) => {
-      if (!first) {
-        return; // peers will send SCENE_INIT
-      }
-      if (this.portal.socketInitialized) {
-        return; // reconnect while alone: keep local edits
-      }
-      const sceneData = await this.initializeRoom({
-        fetchScene: true,
-        roomLinkData: existingRoomLinkData,
-      });
-      scenePromise.resolve(sceneData);
+    this.portal.socket!.on(
+      "joined",
+      async ({ first, presentation, sessionSupported }) => {
+        appJotaiStore.set(presentationSessionSupportedAtom, sessionSupported);
+        appJotaiStore.set(presentationSessionAtom, presentation);
+        this.handlePresentationSessionUpdate(presentation, sessionSupported);
+
+        if (!first) {
+          return; // peers will send SCENE_INIT
+        }
+        if (this.portal.socketInitialized) {
+          return; // reconnect while alone: keep local edits
+        }
+        const sceneData = await this.initializeRoom({
+          fetchScene: true,
+          roomLinkData: existingRoomLinkData,
+        });
+        scenePromise.resolve(sceneData);
+      },
+    );
+
+    this.portal.socket!.on("presentation", (presentation) => {
+      appJotaiStore.set(presentationSessionAtom, presentation);
+      this.handlePresentationSessionUpdate(presentation, true);
     });
 
     this.portal.socket!.on("followers", (followedBy: string[]) => {
@@ -911,6 +969,49 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     this.setActiveRoomLink(window.location.href);
 
     return scenePromise;
+  };
+
+  private handlePresentationSessionUpdate = (
+    presentation: PresentationSessionInfo | null,
+    sessionSupported: boolean,
+  ) => {
+    if (!sessionSupported) {
+      return;
+    }
+    const currentPres = appJotaiStore.get(presentationModeAtom);
+    if (presentation === null) {
+      if (currentPres.isFollower) {
+        this.setUserToFollow(null);
+        if (this.isCollaborating()) {
+          this.stopCollaboration(false);
+        }
+        this.excalidrawAPI.resetScene();
+        cleanPresentationUrl();
+        appJotaiStore.set(presentationEndedAtom, {
+          presenterUsername: currentPres.presenterUsername,
+          wasFollower: true,
+          shareUrl: null,
+          reason: "ended",
+        });
+        appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
+        appJotaiStore.set(activeRemotePresentationAtom, null);
+      } else if (
+        currentPres.isActive &&
+        this.portal.socket?.id &&
+        presentation?.hostId !== this.portal.socket.id
+      ) {
+        const roomLink = this.getActiveRoomLink();
+        appJotaiStore.set(presentationEndedAtom, {
+          presenterUsername: this.getUsername(),
+          wasFollower: false,
+          shareUrl: roomLink ? stripPresentationParams(roomLink) : null,
+          reason: "stopped",
+        });
+        presentationSync.send({ type: "STOP_PRESENTATION" });
+        appJotaiStore.set(presentationModeAtom, DEFAULT_PRESENTATION_STATE);
+        appJotaiStore.set(activeRemotePresentationAtom, null);
+      }
+    }
   };
 
   private initializeRoom = async ({
@@ -1120,6 +1221,9 @@ class Collab extends PureComponent<CollabProps, CollabState> {
 
   updateCollaborator = (socketId: SocketId, updates: Partial<Collaborator>) => {
     const isCurrentUser = socketId === this.portal.socket?.id;
+    if (!this.collaborators.has(socketId) && !isCurrentUser) {
+      return;
+    }
     const collaborators = new Map(this.collaborators);
     const user: Mutable<Collaborator> = Object.assign(
       // we never receive our own broadcasts, so we need to seed
@@ -1155,7 +1259,12 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       button: SocketUpdateDataSource["MOUSE_LOCATION"]["payload"]["button"];
       pointersMap: Gesture["pointers"];
     }) => {
-      if (!this.portal.socket || payload.pointersMap.size >= 2) {
+      if (
+        !this.portal.socket ||
+        payload.pointersMap.size >= 2 ||
+        this.isAudience() ||
+        this.isViewOnly()
+      ) {
         return;
       }
       // When presenting with "show cursor" disabled, keep broadcasting
@@ -1189,6 +1298,9 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   };
 
   broadcastElements = (elements: readonly OrderedExcalidrawElement[]) => {
+    if (this.isAudience() || this.isViewOnly()) {
+      return;
+    }
     if (
       getSceneVersion(elements) >
       this.getLastBroadcastedOrReceivedSceneVersion()
@@ -1200,7 +1312,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   };
 
   syncElements = (elements: readonly OrderedExcalidrawElement[]) => {
-    if (this.isViewOnly()) {
+    if (this.isViewOnly() || this.isAudience()) {
       return;
     }
     this.broadcastElements(elements);
@@ -1208,6 +1320,9 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   };
 
   queueBroadcastAllElements = throttle(() => {
+    if (this.isAudience() || this.isViewOnly()) {
+      return;
+    }
     this.portal.broadcastScene(
       WS_SUBTYPES.UPDATE,
       this.excalidrawAPI.getSceneElementsIncludingDeleted(),
