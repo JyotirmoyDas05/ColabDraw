@@ -5,6 +5,19 @@ $spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
     position: relative;
   }
 
+  // on phones the button sits top-left: open the panel from the screen's
+  // left edge rather than off it
+  .excalidraw-ui-top-left .ai-buddy-anchor {
+    position: static;
+
+    .ai-assistant {
+      position: fixed;
+      top: calc(var(--editor-container-padding, 0.75rem) + 3rem);
+      left: 1rem;
+      right: auto;
+    }
+  }
+
   .ai-assistant {
     position: absolute;
     top: calc(100% + 0.5rem);

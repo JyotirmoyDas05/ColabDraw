@@ -593,6 +593,15 @@ const ExcalidrawWrapper = () => {
     );
   });
 
+  // a join link to a room with no live presentation ends straight away:
+  // drop the gate so the "presentation has ended" card shows
+  const presentationEnded = useAtomValue(presentationEndedAtom);
+  useEffect(() => {
+    if (presentationEnded) {
+      setIsJoinPresentation(false);
+    }
+  }, [presentationEnded]);
+
   useEffect(() => {
     if (typeof window === "undefined" || !excalidrawAPI) {
       return;
@@ -1051,7 +1060,20 @@ const ExcalidrawWrapper = () => {
         initialData={initialStatePromiseRef.current.promise}
         isCollaborating={isCollaborating}
         validateEmbeddable={checkEmbeddable}
-        renderTopLeftUI={(isMobile) => (isMobile ? null : <SceneTitle />)}
+        renderTopLeftUI={(isMobile) =>
+          isMobile ? (
+            // phones get no top-right slot of ours (it keeps the editor's
+            // pen mode and library buttons), so the AI button sits here
+            <>
+              <SceneTitle />
+              {excalidrawAPI && !isViewOnly && (
+                <AIBuddyButton excalidrawAPI={excalidrawAPI} />
+              )}
+            </>
+          ) : (
+            <SceneTitle />
+          )
+        }
         onPointerUpdate={collabAPI?.onPointerUpdate}
         UIOptions={{
           canvasActions: {

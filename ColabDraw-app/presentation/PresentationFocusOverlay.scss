@@ -43,9 +43,17 @@
     }
   }
 
+  // the presenter keeps the canvas around the slide, dimmed and blurred;
+  // only the audience gets the opaque stage
   &--host {
     .presentation-focus-overlay__mask {
-      background: var(--presentation-stage-bg);
+      background: rgba(9, 9, 14, 0.56);
+      backdrop-filter: blur(7px) saturate(0.72);
+      -webkit-backdrop-filter: blur(7px) saturate(0.72);
+    }
+
+    &.presentation-focus-overlay--dark .presentation-focus-overlay__mask {
+      background: rgba(0, 0, 0, 0.62);
     }
   }
 }

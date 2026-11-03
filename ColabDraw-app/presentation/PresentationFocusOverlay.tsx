@@ -156,7 +156,8 @@ export const PresentationFocusOverlay: React.FC<
         className="presentation-focus-overlay__spotlight"
         style={panelStyle(layout.spotlight)}
       >
-        {transitionKey > 0 && (
+        {/* the presenter keeps its own slide transition: no curtain flash */}
+        {isViewer && transitionKey > 0 && (
           <div
             key={transitionKey}
             className="presentation-focus-overlay__dissolve"

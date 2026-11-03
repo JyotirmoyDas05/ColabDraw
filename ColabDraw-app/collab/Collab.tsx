@@ -100,6 +100,7 @@ import {
   viewerPresentationStateAtom,
 } from "../presentation/presentationState";
 import {
+  getPresentationJoinHost,
   getPresentationLinkMode,
   stripPresentationParams,
 } from "../presentation/presentationLayout";
@@ -734,7 +735,9 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         case WS_SUBTYPES.INVALID_RESPONSE:
           return;
         case WS_SUBTYPES.INIT: {
-          if (!this.portal.socketInitialized) {
+          // the audience never edits, so it always takes the host's full
+          // scene, even one that lands after the fallback init timed out
+          if (!this.portal.socketInitialized || this.isAudience()) {
             this.initializeRoom({ fetchScene: false });
             const remoteElements = toBrandedType<
               readonly RemoteExcalidrawElement[]
@@ -1052,7 +1055,15 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           this.stopCollaboration(false);
         }
       }
-      if (currentPres.isFollower) {
+      // a viewer still at the join gate joined a room with no live
+      // presentation (stale link, host gone): end it like a finished one
+      if (
+        currentPres.isFollower ||
+        getPresentationLinkMode(window.location.search) === "join"
+      ) {
+        const presenterUsername =
+          currentPres.presenterUsername ||
+          getPresentationJoinHost(window.location.search);
         this.setUserToFollow(null);
         if (this.isCollaborating() || this.isPresentationOnly) {
           this.stopCollaboration(false);
@@ -1060,7 +1071,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         this.excalidrawAPI.resetScene();
         cleanPresentationUrl();
         appJotaiStore.set(presentationEndedAtom, {
-          presenterUsername: currentPres.presenterUsername,
+          presenterUsername,
           wasFollower: true,
           shareUrl: null,
           reason: "ended",
