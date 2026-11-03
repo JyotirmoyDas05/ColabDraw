@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
-import { atom, useAtomValue, useSetAtom } from "../app-jotai";
+import { atom, useAtom, useAtomValue, useSetAtom } from "../app-jotai";
 import { openNewScene, openScene } from "../data/sceneActions";
 import { activeSceneAtom, trashScene } from "../data/scenes";
 
@@ -120,7 +120,7 @@ export const SceneSidebar = ({
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   isCollaborating: boolean;
 }) => {
-  const open = useAtomValue(sceneSidebarOpenAtom);
+  const [open, setOpen] = useAtom(sceneSidebarOpenAtom);
   const openDashboard = useSetAtom(dashboardOpenAtom);
   const active = useAtomValue(activeSceneAtom);
   const { scenes, collections } = useSceneLibrary(open);
@@ -184,152 +184,164 @@ export const SceneSidebar = ({
     alive.filter((s) => s.collectionId === id).length;
 
   return (
-    <aside className="colab-scene-sidebar" aria-label="Scenes">
-      <div className="colab-scene-sidebar__brand">
-        <BrandMark />
-      </div>
-
-      <label className="colab-scene-sidebar__search">
-        {searchIcon}
-        <input
-          type="search"
-          placeholder="Quick search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </label>
-
+    <>
+      {/* phones only (see the scss): the sidebar overlays the editor there,
+          so tapping beside it closes it */}
       <button
         type="button"
-        className="colab-scene-sidebar__tab"
-        onClick={() => openDashboard(true)}
-      >
-        {GridIcon} Dashboard
-      </button>
+        className="colab-scene-sidebar__backdrop"
+        aria-label="Close the sidebar"
+        onClick={() => setOpen(false)}
+      />
+      <aside className="colab-scene-sidebar" aria-label="Scenes">
+        <div className="colab-scene-sidebar__brand">
+          <BrandMark />
+        </div>
 
-      {listing && !needle ? (
-        <>
-          <div className="colab-scene-sidebar__heading">
-            <h2>Collections</h2>
-          </div>
-          <ul className="colab-scene-sidebar__list">
-            {[{ id: null, icon: null, name: "Private" }, ...collections].map(
-              (entry) => (
-                <li key={entry.id ?? "private"}>
-                  <button
-                    type="button"
-                    className={clsx("colab-scene-sidebar__collection", {
-                      "is-active": entry.id === collectionId,
-                    })}
-                    onClick={() => {
-                      setBrowsing(entry.id);
-                      setListing(false);
-                    }}
-                  >
-                    <span className="colab-scene-sidebar__collection-icon">
-                      {entry.icon ?? LockIcon}
-                    </span>
-                    {entry.name}
-                    <em>{countIn(entry.id) || ""}</em>
-                  </button>
-                </li>
-              ),
-            )}
-          </ul>
-        </>
-      ) : (
-        <>
-          <div className="colab-scene-sidebar__heading">
-            {!needle && (
-              <button
-                type="button"
-                className="colab-scene-sidebar__icon"
-                aria-label="All collections"
-                title="All collections"
-                onClick={() => setListing(true)}
-              >
-                {ChevronLeftIcon}
-              </button>
-            )}
-            <h2
-              title={needle ? "Search results" : collection?.name ?? "Private"}
-            >
-              {!needle && (
-                <span className="colab-scene-sidebar__collection-icon">
-                  {collection ? collection.icon : LockIcon}
-                </span>
+        <label className="colab-scene-sidebar__search">
+          {searchIcon}
+          <input
+            type="search"
+            placeholder="Quick search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+
+        <button
+          type="button"
+          className="colab-scene-sidebar__tab"
+          onClick={() => openDashboard(true)}
+        >
+          {GridIcon} Dashboard
+        </button>
+
+        {listing && !needle ? (
+          <>
+            <div className="colab-scene-sidebar__heading">
+              <h2>Collections</h2>
+            </div>
+            <ul className="colab-scene-sidebar__list">
+              {[{ id: null, icon: null, name: "Private" }, ...collections].map(
+                (entry) => (
+                  <li key={entry.id ?? "private"}>
+                    <button
+                      type="button"
+                      className={clsx("colab-scene-sidebar__collection", {
+                        "is-active": entry.id === collectionId,
+                      })}
+                      onClick={() => {
+                        setBrowsing(entry.id);
+                        setListing(false);
+                      }}
+                    >
+                      <span className="colab-scene-sidebar__collection-icon">
+                        {entry.icon ?? LockIcon}
+                      </span>
+                      {entry.name}
+                      <em>{countIn(entry.id) || ""}</em>
+                    </button>
+                  </li>
+                ),
               )}
-              {needle ? "Search results" : collection?.name ?? "Private"}
-            </h2>
-            {!needle && (
-              <>
+            </ul>
+          </>
+        ) : (
+          <>
+            <div className="colab-scene-sidebar__heading">
+              {!needle && (
                 <button
                   type="button"
                   className="colab-scene-sidebar__icon"
-                  aria-label={`Sorted by ${SORT_LABELS[sort]}. Change sorting`}
-                  title={SORT_LABELS[sort]}
-                  onClick={() =>
-                    setSort(SORTS[(SORTS.indexOf(sort) + 1) % SORTS.length])
-                  }
+                  aria-label="All collections"
+                  title="All collections"
+                  onClick={() => setListing(true)}
                 >
-                  {SortIcon}
+                  {ChevronLeftIcon}
                 </button>
-                <button
-                  type="button"
-                  className="colab-scene-sidebar__add"
-                  aria-label="New scene"
-                  title="New scene"
-                  disabled={busy || isCollaborating}
-                  onClick={() =>
-                    run(() => openNewScene(excalidrawAPI!, collectionId))
-                  }
-                >
-                  {PlusIcon}
-                </button>
-              </>
-            )}
-          </div>
-
-          {isCollaborating && (
-            <p className="colab-scene-sidebar__note">
-              Leave the live session to switch scenes.
-            </p>
-          )}
-
-          <ul className="colab-scene-sidebar__list">
-            {list.map((scene) => (
-              <SidebarRow
-                key={scene.id}
-                scene={scene}
-                collections={collections}
-                isActive={scene.id === active?.id}
-                disabled={busy || isCollaborating}
-                onOpen={(id) => run(() => openScene(excalidrawAPI!, id))}
-                onRename={(target) =>
-                  setPrompt({ kind: "renameScene", scene: target })
+              )}
+              <h2
+                title={
+                  needle ? "Search results" : collection?.name ?? "Private"
                 }
-                onTrash={trash}
-              />
-            ))}
-            {!list.length && (
-              <li className="colab-scene-sidebar__empty">
-                {needle ? "No scenes match." : "No scenes here yet."}
-              </li>
+              >
+                {!needle && (
+                  <span className="colab-scene-sidebar__collection-icon">
+                    {collection ? collection.icon : LockIcon}
+                  </span>
+                )}
+                {needle ? "Search results" : collection?.name ?? "Private"}
+              </h2>
+              {!needle && (
+                <>
+                  <button
+                    type="button"
+                    className="colab-scene-sidebar__icon"
+                    aria-label={`Sorted by ${SORT_LABELS[sort]}. Change sorting`}
+                    title={SORT_LABELS[sort]}
+                    onClick={() =>
+                      setSort(SORTS[(SORTS.indexOf(sort) + 1) % SORTS.length])
+                    }
+                  >
+                    {SortIcon}
+                  </button>
+                  <button
+                    type="button"
+                    className="colab-scene-sidebar__add"
+                    aria-label="New scene"
+                    title="New scene"
+                    disabled={busy || isCollaborating}
+                    onClick={() =>
+                      run(() => openNewScene(excalidrawAPI!, collectionId))
+                    }
+                  >
+                    {PlusIcon}
+                  </button>
+                </>
+              )}
+            </div>
+
+            {isCollaborating && (
+              <p className="colab-scene-sidebar__note">
+                Leave the live session to switch scenes.
+              </p>
             )}
-          </ul>
-        </>
-      )}
 
-      {prompt && (
-        <PromptDialog prompt={prompt} onClose={() => setPrompt(null)} />
-      )}
+            <ul className="colab-scene-sidebar__list">
+              {list.map((scene) => (
+                <SidebarRow
+                  key={scene.id}
+                  scene={scene}
+                  collections={collections}
+                  isActive={scene.id === active?.id}
+                  disabled={busy || isCollaborating}
+                  onOpen={(id) => run(() => openScene(excalidrawAPI!, id))}
+                  onRename={(target) =>
+                    setPrompt({ kind: "renameScene", scene: target })
+                  }
+                  onTrash={trash}
+                />
+              ))}
+              {!list.length && (
+                <li className="colab-scene-sidebar__empty">
+                  {needle ? "No scenes match." : "No scenes here yet."}
+                </li>
+              )}
+            </ul>
+          </>
+        )}
 
-      <div className="colab-scene-sidebar__user">
-        <span className="colab-scene-sidebar__avatar colab-scene-sidebar__avatar--user">
-          {username.slice(0, 1).toUpperCase()}
-        </span>
-        <strong>{username}</strong>
-      </div>
-    </aside>
+        {prompt && (
+          <PromptDialog prompt={prompt} onClose={() => setPrompt(null)} />
+        )}
+
+        <div className="colab-scene-sidebar__user">
+          <span className="colab-scene-sidebar__avatar colab-scene-sidebar__avatar--user">
+            {username.slice(0, 1).toUpperCase()}
+          </span>
+          <strong>{username}</strong>
+        </div>
+      </aside>
+    </>
   );
 };

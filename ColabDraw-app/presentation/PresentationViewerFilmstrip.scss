@@ -3,12 +3,12 @@
   left: 0;
   top: 0;
   bottom: 0;
-  width: 210px;
-  background: rgba(20, 22, 28, 0.94);
+  width: 220px;
+  box-sizing: border-box;
+  background: rgba(20, 22, 28, 0.96);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-right: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 6px 0 28px rgba(0, 0, 0, 0.45);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
   z-index: 1001;
@@ -16,12 +16,14 @@
   transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
 
+  // the shadow only while shown, or it peeks in from the left edge
   &.is-visible {
     transform: translateX(0);
+    box-shadow: 6px 0 28px rgba(0, 0, 0, 0.45);
   }
 
   &.is-pinned {
-    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
+    box-shadow: none;
   }
 
   &__edge-trigger {
@@ -37,8 +39,16 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 14px;
+    height: 48px;
+    padding: 0 12px 0 16px;
+    flex-shrink: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  &__title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   &__title {
@@ -46,36 +56,57 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: rgba(255, 255, 255, 0.55);
+    color: rgba(255, 255, 255, 0.6);
   }
 
-  &__header-actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;
+  &__count {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    box-sizing: border-box;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 18px;
+    text-align: center;
   }
 
-  &__action-btn {
-    display: flex;
+  &__pin-btn {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
+    gap: 5px;
+    height: 26px;
+    padding: 0 9px;
     border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
     background: transparent;
-    border: none;
-    color: rgba(255, 255, 255, 0.65);
+    color: rgba(255, 255, 255, 0.75);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
     cursor: pointer;
-    transition: all 0.15s ease;
-    padding: 0;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+    svg {
+      flex-shrink: 0;
+    }
 
     &:hover {
-      background: rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.08);
       color: #fff;
     }
 
+    &:focus-visible {
+      outline: 2px solid #6965db;
+      outline-offset: 2px;
+    }
+
     &.is-active {
-      color: #6965db;
+      color: #a5a2ff;
+      border-color: rgba(105, 101, 219, 0.5);
       background: rgba(105, 101, 219, 0.16);
     }
   }
@@ -84,10 +115,10 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 10px 8px;
+    padding: 14px 14px 20px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 14px;
 
     &::-webkit-scrollbar {
       width: 5px;
@@ -103,67 +134,46 @@
 
   &__item {
     position: relative;
+    flex-shrink: 0;
     cursor: pointer;
-    border-radius: 6px;
-    padding: 2px;
-    transition: transform 0.16s ease;
 
-    &:hover {
-      transform: scale(1.02);
-    }
+    .presentation-slide-card.presentation-slide-card--preview-only {
+      height: auto;
+      border-radius: 6px;
+      border: 2px solid transparent;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      transition: border-color 0.15s ease;
 
-    &.is-active {
-      .presentation-viewer-filmstrip__card-wrap {
-        border-color: #6965db;
-        box-shadow: 0 0 0 2px rgba(105, 101, 219, 0.4);
+      .presentation-slide-card__preview {
+        border-radius: 4px;
       }
     }
+
+    &:hover .presentation-slide-card.presentation-slide-card--preview-only {
+      border-color: rgba(255, 255, 255, 0.35);
+    }
+
+    &.is-selected
+      .presentation-slide-card.presentation-slide-card--preview-only {
+      border-color: #6965db;
+      box-shadow: 0 0 0 1px #6965db;
+    }
   }
 
-  &__card-wrap {
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    overflow: hidden;
-    background: rgba(12, 13, 16, 0.9);
-    transition: border-color 0.16s ease;
-  }
-
-  &__presenter-badge {
+  &__host-badge {
     position: absolute;
     top: 6px;
-    right: 6px;
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    background: rgba(105, 101, 219, 0.95);
-    color: #fff;
-    font-size: 10px;
-    font-weight: 600;
+    left: 6px;
+    z-index: 2;
     padding: 2px 6px;
-    border-radius: 9999px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-    letter-spacing: 0.02em;
+    border-radius: 4px;
+    background: #6965db;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.4;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
     pointer-events: none;
-  }
-
-  &__presenter-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: #4ade80;
-    animation: filmstripLiveDot 1.4s ease-in-out infinite;
-  }
-}
-
-@keyframes filmstripLiveDot {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.4;
-    transform: scale(0.85);
   }
 }

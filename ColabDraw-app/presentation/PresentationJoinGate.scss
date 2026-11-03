@@ -22,13 +22,6 @@
     display: flex;
     align-items: center;
     filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
-
-    .colab-brand {
-      color: #ffffff;
-      img {
-        filter: brightness(0) invert(1);
-      }
-    }
   }
 
   &__card {

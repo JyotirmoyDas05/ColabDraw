@@ -12,6 +12,41 @@
   transform: translateX(var(--colab-sidebar-width));
 }
 
+.excalidraw .colab-scene-sidebar__backdrop {
+  display: none;
+}
+
+// phones: too narrow to make room, so the sidebar is a drawer over the
+// editor. The editor hides every `aside` on phones, hence the specificity.
+.excalidraw.excalidraw--mobile {
+  .colab-scene-sidebar {
+    display: flex;
+    // over the phone's top bar, bottom toolbar and main menu
+    z-index: calc(var(--zIndex-ui-main-menu) + 2);
+    width: min(18rem, 85vw);
+    padding-top: calc(1rem + var(--sat, 0px));
+    box-shadow: 0 0 32px rgba(0, 0, 0, 0.25);
+  }
+
+  .colab-scene-sidebar__backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--zIndex-ui-main-menu) + 1);
+    padding: 0;
+    border: 0;
+    background: rgba(0, 0, 0, 0.35);
+    pointer-events: all;
+  }
+}
+
+.excalidraw-app.has-scene-sidebar
+  .excalidraw.excalidraw--mobile
+  .layer-ui__wrapper {
+  width: auto;
+  transform: none;
+}
+
 // the welcome logo is sized by the window, so step it down one size
 // while the sidebar takes a slice of that width
 .excalidraw-app.has-scene-sidebar .excalidraw .ExcalidrawLogo {

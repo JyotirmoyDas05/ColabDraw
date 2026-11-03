@@ -21,6 +21,12 @@ import { getOrderedSlides } from "./presentationUtils";
 import type { CollabAPI } from "../collab/Collab";
 import type { PresentationSettings } from "./presentationState";
 
+/** matches `.presentation-viewer-filmstrip` width */
+const VIEWER_FILMSTRIP_WIDTH = 220;
+const VIEWER_STAGE_GUTTER = 40;
+/** gutter plus the viewer's bottom controls */
+const VIEWER_STAGE_BOTTOM = 96;
+
 interface UsePresentationControllerOptions {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   collabAPI?: CollabAPI | null;
@@ -206,7 +212,13 @@ export const usePresentationController = ({
     }
 
     if (targetSlide) {
-      const leftOffset = viewerPresentationState.isFilmstripPinned ? 210 : 0;
+      // breathing room around the slide on the viewer's stage, clear of the
+      // pinned filmstrip and the bottom controls
+      const leftOffset =
+        VIEWER_STAGE_GUTTER +
+        (viewerPresentationState.isFilmstripPinned
+          ? VIEWER_FILMSTRIP_WIDTH
+          : 0);
       const isSlideChange =
         prevViewerSlideIdRef.current !== null &&
         prevViewerSlideIdRef.current !== targetSlide.id;
@@ -219,6 +231,9 @@ export const usePresentationController = ({
         // Pin/unpin sidebar adjustments on the same slide remain smoothly animated.
         animation: isSlideChange ? false : settings.animateSlideMovement,
         offsets: {
+          top: VIEWER_STAGE_GUTTER,
+          right: VIEWER_STAGE_GUTTER,
+          bottom: VIEWER_STAGE_BOTTOM,
           left: leftOffset,
         },
         lock: {

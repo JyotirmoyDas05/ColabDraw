@@ -357,7 +357,7 @@ export const PresentationHUD: React.FC<PresentationHUDProps> = ({
       <PresentationFocusOverlay
         excalidrawAPI={excalidrawAPI}
         slide={activeOverlaySlide}
-        enabled={presentationState.isActive}
+        enabled={presentationState.isActive || presentationState.isFollower}
         isViewer={presentationState.isFollower}
         appTheme={appTheme === "dark" ? "dark" : "light"}
       />
